@@ -24,7 +24,7 @@
 
 1. **Clona il repository**
 ```bash
-git clone https://github.com/TUO_USERNAME/CouponGen.git
+git clone https://github.com/lorenzoMuro88/CouponGen.git
 cd CouponGen
 ```
 
@@ -172,8 +172,8 @@ Distribuito sotto licenza MIT. Vedi `LICENSE` per maggiori informazioni.
 ## 🆘 Supporto
 
 Per supporto e domande:
-- Apri una [Issue](https://github.com/TUO_USERNAME/CouponGen/issues)
-- Controlla la [documentazione](https://github.com/TUO_USERNAME/CouponGen/wiki)
+- Apri una [Issue](https://github.com/lorenzoMuro88/CouponGen/issues)
+- Controlla la [documentazione](https://github.com/lorenzoMuro88/CouponGen/wiki)
 
 ## 🔄 Changelog
 
