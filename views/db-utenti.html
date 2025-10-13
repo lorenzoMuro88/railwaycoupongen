@@ -1,0 +1,1812 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Utenti - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        /* Navigation Bar */
+        .navbar {
+            background: var(--gradient-primary);
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-medium);
+        }
+        
+        .navbar-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 2rem;
+        }
+        
+        .navbar-brand {
+            color: var(--white);
+            font-size: 1.8rem;
+            font-weight: 300;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .navbar-brand:hover {
+            color: var(--light-green);
+        }
+        
+        .navbar-nav {
+            display: flex;
+            gap: 0.5rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .nav-item {
+            margin: 0;
+        }
+        
+        .nav-link {
+            color: var(--white);
+            text-decoration: none;
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-weight: 400;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.95rem;
+        }
+        
+        .nav-link:hover {
+            background: rgba(255,255,255,0.15);
+            color: var(--light-green);
+            transform: translateY(-1px);
+        }
+        
+        .nav-link.active {
+            background: var(--gold-accent);
+            color: var(--text-dark);
+            font-weight: 500;
+        }
+        
+        .nav-link.active:hover {
+            background: #f4d03f;
+            color: var(--text-dark);
+        }
+        
+        .navbar-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        
+        /* Mobile Navigation */
+        @media (max-width: 768px) {
+            .navbar-container {
+                flex-direction: column;
+                gap: 1rem;
+                padding: 0 1rem;
+            }
+            
+            .navbar-nav {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            
+            .nav-link {
+                padding: 0.5rem 1rem;
+                font-size: 0.9rem;
+            }
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary-green);
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: var(--text-medium);
+            font-size: 0.9rem;
+        }
+        
+        .table-container {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--light-gray);
+        }
+        
+        th {
+            background: var(--light-green);
+            font-weight: bold;
+            color: var(--primary-green);
+        }
+        
+        tr:hover {
+            background: var(--light-green);
+        }
+        
+        .campaigns-cell {
+            max-width: 200px;
+            word-wrap: break-word;
+        }
+        
+        .campaign-tag {
+            display: inline-block;
+            background: var(--primary-green);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin: 0.1rem;
+        }
+        
+        .no-data {
+            text-align: center;
+            color: var(--text-light);
+            font-style: italic;
+            padding: 3rem;
+        }
+        
+        .loading {
+            text-align: center;
+            color: var(--text-medium);
+            padding: 2rem;
+        }
+        
+        /* Stili refresh-btn rimossi - ora usa il sistema universale */
+        
+        .filters-container {
+            background: var(--light-green);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .filter-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 2rem;
+            align-items: end;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .filter-label {
+            font-weight: 600;
+            color: var(--text-dark);
+            font-size: 0.9rem;
+        }
+        
+        .filter-input {
+            padding: 1rem 1.25rem;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-dark);
+            transition: all 0.3s ease;
+            height: 50px;
+            box-sizing: border-box;
+        }
+        
+        .filter-input:focus {
+            outline: none;
+            border-color: var(--dark-green);
+            background: var(--light-green);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .filter-input:hover {
+            border-color: var(--dark-green);
+            background: var(--light-green);
+        }
+        
+        .dropdown-container {
+            position: relative;
+        }
+        
+        .dropdown-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            height: 50px;
+            font-weight: 500;
+            color: var(--text-dark);
+            box-sizing: border-box;
+        }
+
+        .dropdown-trigger:hover {
+            border-color: var(--dark-green);
+            background: var(--light-green);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .dropdown-arrow {
+            color: var(--text-medium);
+            transition: transform 0.3s ease;
+        }
+        
+        .dropdown-trigger.open .dropdown-arrow {
+            transform: rotate(180deg);
+        }
+        
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            z-index: 1000;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        .dropdown-menu.show {
+            display: block;
+        }
+        
+        .dropdown-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
+            color: var(--white);
+            border-radius: 10px 10px 0 0;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        
+        .clear-btn {
+            background: rgba(255,255,255,0.2);
+            color: var(--white);
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .clear-btn:hover {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.5);
+        }
+        
+        .dropdown-options {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .dropdown-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .dropdown-option:hover {
+            background: var(--light-green);
+            transform: translateX(4px);
+        }
+        
+        .dropdown-option:last-child {
+            border-bottom: none;
+        }
+        
+        .dropdown-option input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: var(--primary-green);
+            order: 2;
+        }
+        
+        .dropdown-option label {
+            cursor: pointer;
+            flex: 1;
+            margin: 0;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text-dark);
+            order: 1;
+        }
+        
+        .loading-option {
+            padding: 0.75rem;
+            text-align: center;
+            color: var(--text-medium);
+            font-style: italic;
+        }
+        
+        .filter-actions {
+            display: flex;
+            align-items: end;
+        }
+        
+        .clear-all-btn {
+            background: var(--text-light);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        
+        .clear-all-btn:hover {
+            background: var(--text-medium);
+        }
+
+        /* Column Visibility Section */
+        .column-visibility-container {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 1px solid var(--light-gray);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .column-visibility-header {
+            margin-bottom: 1rem;
+        }
+
+        .column-visibility-header h3 {
+            margin: 0 0 0.5rem 0;
+            color: var(--text-dark);
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .column-visibility-header p {
+            margin: 0;
+            color: var(--text-medium);
+            font-size: 0.9rem;
+        }
+
+        .column-visibility-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .column-visibility-controls .dropdown-container {
+            min-width: 400px;
+            max-width: 600px;
+            flex: 1;
+        }
+
+        .column-visibility-controls .dropdown-trigger {
+            background: var(--white);
+            border: 2px solid var(--primary-green);
+            font-weight: 500;
+            color: var(--text-dark);
+            padding: 1rem 1.25rem;
+            font-size: 1rem;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .column-visibility-controls .dropdown-trigger:hover {
+            border-color: var(--dark-green);
+            background: var(--light-green);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .column-visibility-controls .dropdown-menu {
+            min-width: 400px;
+            max-width: 600px;
+            width: 100%;
+            max-height: 400px;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .column-visibility-controls .dropdown-header {
+            background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
+            color: var(--white);
+            padding: 1rem 1.25rem;
+            border-radius: 10px 10px 0 0;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .column-visibility-controls .clear-btn {
+            background: rgba(255,255,255,0.2);
+            color: var(--white);
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .column-visibility-controls .clear-btn:hover {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-1px);
+        }
+
+        .column-visibility-controls .dropdown-options {
+            max-height: 300px;
+            padding: 0.5rem 0;
+        }
+
+        .column-visibility-controls .dropdown-option {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid #f0f0f0;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .column-visibility-controls .dropdown-option:hover {
+            background: var(--light-green);
+            transform: translateX(4px);
+        }
+
+        .column-visibility-controls .dropdown-option:last-child {
+            border-bottom: none;
+        }
+
+        .column-visibility-controls .dropdown-option input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: var(--primary-green);
+        }
+
+        .column-visibility-controls .dropdown-option label {
+            cursor: pointer;
+            flex: 1;
+            margin: 0;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .column-visibility-controls .dropdown-option input:disabled + label {
+            color: var(--text-light);
+            font-style: italic;
+        }
+
+        .column-visibility-controls .dropdown-option input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .column-visibility-controls .loading-option {
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-medium);
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+
+        /* Action buttons - aligned with project style */
+        .action-btn {
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 0.25rem;
+            text-decoration: none;
+        }
+
+        .action-btn:hover {
+        }
+
+        .action-btn:active {
+        }
+
+        .edit-btn {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+
+        .edit-btn:hover {
+            background: var(--accent-green);
+        }
+
+        .delete-btn {
+            background: #e74c3c;
+            color: var(--white);
+        }
+
+        .delete-btn:hover {
+            background: #c0392b;
+        }
+
+        /* Small action buttons for table */
+        .action-btn.small {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.75rem;
+            margin: 0 0.15rem;
+        }
+
+        /* Form styles for edit modal */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--border-light);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(45, 90, 61, 0.1);
+        }
+
+        #customFieldsContainer {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-light);
+        }
+
+        #customFieldsContainer .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Coupon section styles */
+        .coupon-item {
+            background: var(--white);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+
+        .coupon-item:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .coupon-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .coupon-code {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: var(--primary-green);
+        }
+
+        .coupon-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .coupon-status.active {
+            background: var(--light-green);
+            color: var(--primary-green);
+        }
+
+        .coupon-status.redeemed {
+            background: #e8f5e8;
+            color: #2d5a3d;
+        }
+
+        .coupon-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-medium);
+            margin-bottom: 0.75rem;
+        }
+
+        .coupon-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+
+        .coupon-btn {
+            padding: 0.4rem 0.8rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .coupon-btn.delete {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .coupon-btn.delete:hover {
+            background: #c0392b;
+        }
+
+        .coupon-btn:active {
+        }
+
+        .coupon-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .coupon-btn:disabled:hover {
+            background: #e74c3c;
+            transform: none;
+        }
+
+        .no-coupons {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-medium);
+            font-style: italic;
+            background: var(--light-green);
+            border-radius: 8px;
+            border: 1px solid var(--border-light);
+        }
+
+        /* Actions column styling */
+        td:last-child {
+            white-space: nowrap;
+            text-align: center;
+            min-width: 160px;
+        }
+        
+        @media (max-width: 768px) {
+            .filter-row {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            .filter-actions {
+                justify-content: center;
+            }
+
+            .column-visibility-controls .dropdown-container {
+                min-width: 100%;
+                max-width: 100%;
+            }
+
+            .column-visibility-controls .dropdown-menu {
+                min-width: 100%;
+                max-width: 100%;
+            }
+
+            .column-visibility-controls .dropdown-option {
+                padding: 0.75rem 1rem;
+            }
+
+            .column-visibility-controls .dropdown-option label {
+                font-size: 0.9rem;
+            }
+        }
+        .site-footer { 
+            text-align: center; 
+            padding: 1rem; 
+            color: var(--text-light); 
+            font-size: 0.85rem; 
+            border-top: 1px solid var(--light-gray);
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/admin" class="navbar-brand">
+                CouponGen Admin
+            </a>
+            
+            <ul class="navbar-nav">
+                <li class="nav-item"><a href="/admin" class="nav-link">Dashboard</a></li>
+                <li class="nav-item"><a href="/formsetup" class="nav-link">Form Setup</a></li>
+                <li class="nav-item"><a href="/db-utenti" class="nav-link active">DB Utenti</a></li>
+                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
+                <li class="nav-item"><a href="/form-design" class="nav-link">Personalizzazione</a></li>
+                <li class="nav-item"><a href="/analytics" class="nav-link">Analytics</a></li>
+                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
+            </ul>
+            
+            <div class="navbar-actions">
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header>
+            <h1>Database Utenti</h1>
+        </header>
+
+        <main>
+            <div class="stats-container">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalUsers">-</div>
+                    <div class="stat-label">Utenti Totali</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="totalCoupons">-</div>
+                    <div class="stat-label">Coupon Generati</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="activeCampaigns">-</div>
+                    <div class="stat-label">Campagne Attive</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2>Elenco Utenti</h2>
+                    <button class="refresh-btn" onclick="loadUsersWithFeedback(this)">
+                        <span class="btn-text">Aggiorna</span>
+                    </button>
+                </div>
+                
+                <div class="filters-container">
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label class="filter-label">Cerca per Cognome</label>
+                            <input 
+                                type="text" 
+                                id="searchInput" 
+                                placeholder="Digita il cognome..." 
+                                class="filter-input"
+                                oninput="searchUsers()"
+                            />
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label class="filter-label">Filtra per Campagne</label>
+                            <div class="dropdown-container">
+                                <div class="dropdown-trigger" onclick="toggleCampaignDropdown()">
+                                    <span id="campaignDropdownText">Seleziona campagne...</span>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                <div id="campaignDropdown" class="dropdown-menu">
+                                    <div class="dropdown-header">
+                                        <span>Seleziona una o più campagne</span>
+                                        <button onclick="clearCampaignFilter()" class="clear-btn">Pulisci</button>
+                                    </div>
+                                    <div id="campaignOptions" class="dropdown-options">
+                                        <div class="loading-option">Caricamento campagne...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-actions">
+                            <button onclick="clearAllFilters()" class="clear-all-btn">
+                                Pulisci Tutto
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column Visibility Section -->
+                <div class="column-visibility-container">
+                    <div class="column-visibility-header">
+                        <h3>Personalizza Visualizzazione</h3>
+                        <p>Seleziona le colonne da mostrare nella tabella</p>
+                    </div>
+                    <div class="column-visibility-controls">
+                        <div class="dropdown-container">
+                            <div class="dropdown-trigger" onclick="toggleColumnsDropdown()">
+                                <span id="columnsDropdownText">Tutte le colonne</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            <div id="columnsDropdown" class="dropdown-menu">
+                                <div class="dropdown-header">
+                                    <span>Mostra/Nascondi colonne</span>
+                                    <button onclick="resetColumnsVisibility()" class="clear-btn">Ripristina</button>
+                                </div>
+                                <div id="columnsOptions" class="dropdown-options">
+                                    <div class="loading-option">Caricamento colonne...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="loadingMessage" class="loading">
+                    Caricamento dati...
+                </div>
+                
+                <div id="usersTable" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Nome</th>
+                                <th>Cognome</th>
+                                <th>Campagne</th>
+                                <th>Campi Custom</th>
+                                <th>Coupon</th>
+                                <th>Primo Coupon</th>
+                                <th>Ultimo Coupon</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="noDataMessage" class="no-data" style="display: none;">
+                    Nessun utente trovato
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <footer class="site-footer">CouponGen</footer>
+
+    <!-- Modal per modifica utente -->
+    <div id="editUserModal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Modifica Utente</h3>
+                <button onclick="closeEditModal()" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editUserForm">
+                    <div class="form-group">
+                        <label for="editEmail">Email *</label>
+                        <input type="email" id="editEmail" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editFirstName">Nome</label>
+                        <input type="text" id="editFirstName" name="first_name">
+                    </div>
+                    <div class="form-group">
+                        <label for="editLastName">Cognome</label>
+                        <input type="text" id="editLastName" name="last_name">
+                    </div>
+                    <div id="customFieldsContainer">
+                        <h4 style="color: var(--earth-brown); font-size: 1.1rem; font-weight: 600; margin: 0 0 1rem 0;">
+                            Campi Personalizzati
+                        </h4>
+                        <!-- I campi custom verranno aggiunti dinamicamente -->
+                    </div>
+                </form>
+                
+                <!-- Sezione Coupon -->
+                <div id="couponsSection" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 2px solid var(--border-light);">
+                    <h4 style="color: var(--earth-brown); font-size: 1.1rem; font-weight: 600; margin: 0 0 1rem 0;">
+                        Coupon Assegnati
+                    </h4>
+                    <div id="couponsContainer">
+                        <div style="text-align: center; padding: 1rem; color: var(--text-medium); font-style: italic;">
+                            Caricamento coupon...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeEditModal()" class="modal-btn modal-btn-secondary">Annulla</button>
+                <button onclick="saveUserChanges()" class="modal-btn modal-btn-primary">Salva Modifiche</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCampaigns();
+            loadUsers();
+        });
+
+        // Funzione universale per feedback bottoni
+        function setButtonState(button, state, duration = 2000) {
+            // Rimuovi tutti gli stati precedenti
+            button.classList.remove('loading', 'success', 'error');
+            
+            if (state === 'loading') {
+                button.classList.add('loading');
+                button.disabled = true;
+            } else if (state === 'success') {
+                button.classList.add('success');
+                setTimeout(() => {
+                    button.classList.remove('success');
+                    button.disabled = false;
+                }, duration);
+            } else if (state === 'error') {
+                button.classList.add('error');
+                setTimeout(() => {
+                    button.classList.remove('error');
+                    button.disabled = false;
+                }, duration);
+            }
+        }
+
+        // Funzione wrapper per loadUsers con feedback
+        async function loadUsersWithFeedback(button) {
+            setButtonState(button, 'loading');
+            
+            try {
+                await loadUsers();
+                setButtonState(button, 'success');
+            } catch (error) {
+                console.error('Errore durante il caricamento utenti:', error);
+                setButtonState(button, 'error');
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                document.getElementById('loadingMessage').style.display = 'block';
+                document.getElementById('usersTable').style.display = 'none';
+                document.getElementById('noDataMessage').style.display = 'none';
+                
+                // Get search term and selected campaigns
+                const searchTerm = document.getElementById('searchInput').value.trim();
+                
+                // Build URL with parameters
+                const params = new URLSearchParams();
+                if (searchTerm) {
+                    params.append('search', searchTerm);
+                }
+                if (selectedCampaigns.length > 0) {
+                    params.append('campaigns', selectedCampaigns.join(','));
+                }
+                
+                const url = `/api/admin/users${params.toString() ? '?' + params.toString() : ''}`;
+                const response = await fetch(url);
+                const users = await response.json();
+                
+                if (users.length === 0) {
+                    document.getElementById('loadingMessage').style.display = 'none';
+                    document.getElementById('noDataMessage').style.display = 'block';
+                    return;
+                }
+                
+                // Update stats (only if no filters are active)
+                if (!searchTerm && selectedCampaigns.length === 0) {
+                    updateStats(users);
+                }
+                
+                // Populate table
+                populateUsersTable(users);
+                // Apply column visibility after rendering
+                applyColumnVisibility();
+                
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('usersTable').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Errore nel caricamento degli utenti:', error);
+                document.getElementById('loadingMessage').style.display = 'none';
+                showModal({
+                    title: 'Errore',
+                    message: 'Errore nel caricamento dei dati utenti',
+                    type: 'error',
+                    showCancel: false
+                });
+            }
+        }
+
+        let searchTimeout;
+        
+        function searchUsers() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                loadUsers();
+            }, 300); // 300ms delay
+        }
+
+        let selectedCampaigns = [];
+        let isDropdownOpen = false;
+        let isColumnsDropdownOpen = false;
+        const allColumns = [
+            { key: 'email', label: 'Email', index: 0, required: true },
+            { key: 'firstName', label: 'Nome', index: 1, required: false },
+            { key: 'lastName', label: 'Cognome', index: 2, required: true },
+            { key: 'campaigns', label: 'Campagne', index: 3, required: false },
+            { key: 'customFields', label: 'Campi Custom', index: 4, required: false },
+            { key: 'totalCoupons', label: 'Coupon', index: 5, required: false },
+            { key: 'firstDate', label: 'Primo Coupon', index: 6, required: false },
+            { key: 'lastDate', label: 'Ultimo Coupon', index: 7, required: false },
+            { key: 'actions', label: 'Azioni', index: 8, required: true }
+        ];
+        const minVisibleCount = 3; // manteniamo almeno 3 colonne visibili
+        let visibleColumnKeys = [];
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            loadUsers();
+        }
+
+        function clearCampaignFilter() {
+            selectedCampaigns = [];
+            updateCampaignDropdownText();
+            updateCampaignCheckboxes();
+            loadUsers();
+        }
+
+        function clearAllFilters() {
+            document.getElementById('searchInput').value = '';
+            clearCampaignFilter();
+        }
+
+        function toggleCampaignDropdown() {
+            const dropdown = document.getElementById('campaignDropdown');
+            const trigger = document.querySelector('.dropdown-trigger');
+            
+            isDropdownOpen = !isDropdownOpen;
+            
+            if (isDropdownOpen) {
+                dropdown.classList.add('show');
+                trigger.classList.add('open');
+            } else {
+                dropdown.classList.remove('show');
+                trigger.classList.remove('open');
+            }
+        }
+
+        function updateCampaignDropdownText() {
+            const textElement = document.getElementById('campaignDropdownText');
+            if (selectedCampaigns.length === 0) {
+                textElement.textContent = 'Seleziona campagne...';
+            } else if (selectedCampaigns.length === 1) {
+                textElement.textContent = selectedCampaigns[0];
+            } else {
+                textElement.textContent = `${selectedCampaigns.length} campagne selezionate`;
+            }
+        }
+
+        function updateCampaignCheckboxes() {
+            const checkboxes = document.querySelectorAll('#campaignOptions input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectedCampaigns.includes(checkbox.value);
+            });
+        }
+
+        function toggleCampaign(campaignName) {
+            const index = selectedCampaigns.indexOf(campaignName);
+            if (index > -1) {
+                selectedCampaigns.splice(index, 1);
+            } else {
+                selectedCampaigns.push(campaignName);
+            }
+            
+            updateCampaignDropdownText();
+            updateCampaignCheckboxes();
+            loadUsers();
+        }
+
+        async function loadCampaigns() {
+            try {
+                const response = await fetch('/api/admin/campaigns-list');
+                const campaigns = await response.json();
+                
+                const optionsContainer = document.getElementById('campaignOptions');
+                optionsContainer.innerHTML = '';
+                
+                campaigns.forEach(campaign => {
+                    const optionDiv = document.createElement('div');
+                    optionDiv.className = 'dropdown-option';
+                    optionDiv.innerHTML = `
+                        <input type="checkbox" id="campaign_${campaign}" value="${campaign}" onchange="toggleCampaign('${campaign}')">
+                        <label for="campaign_${campaign}">${campaign}</label>
+                    `;
+                    optionsContainer.appendChild(optionDiv);
+                });
+                
+                // Setup columns dropdown once on load
+                setupColumnsDropdown();
+                loadVisibleColumns();
+                updateColumnsDropdownText();
+                applyColumnVisibility();
+            } catch (error) {
+                console.error('Errore nel caricamento delle campagne:', error);
+                const optionsContainer = document.getElementById('campaignOptions');
+                optionsContainer.innerHTML = '<div class="loading-option">Errore nel caricamento</div>';
+            }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('campaignDropdown');
+            const trigger = document.querySelector('.dropdown-trigger');
+            
+            if (!dropdown.contains(event.target) && !trigger.contains(event.target)) {
+                dropdown.classList.remove('show');
+                trigger.classList.remove('open');
+                isDropdownOpen = false;
+            }
+
+            const columnsDropdown = document.getElementById('columnsDropdown');
+            const columnsTrigger = document.querySelectorAll('.dropdown-trigger')[1];
+            if (columnsDropdown && columnsTrigger && !columnsDropdown.contains(event.target) && !columnsTrigger.contains(event.target)) {
+                columnsDropdown.classList.remove('show');
+                columnsTrigger.classList.remove('open');
+                isColumnsDropdownOpen = false;
+            }
+        });
+
+        function setupColumnsDropdown() {
+            const container = document.getElementById('columnsOptions');
+            if (!container) return;
+            container.innerHTML = '';
+            allColumns.forEach(col => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'dropdown-option';
+                const disabledAttr = col.required ? 'disabled' : '';
+                optionDiv.innerHTML = `
+                    <input type="checkbox" id="col_${col.key}" value="${col.key}" onchange="toggleColumnVisibility('${col.key}')" ${disabledAttr}>
+                    <label for="col_${col.key}">${col.label}${col.required ? ' (obbligatoria)' : ''}</label>
+                `;
+                container.appendChild(optionDiv);
+            });
+            updateColumnsCheckboxes();
+        }
+
+        function toggleColumnsDropdown() {
+            const dropdown = document.getElementById('columnsDropdown');
+            const trigger = document.querySelectorAll('.dropdown-trigger')[1];
+            isColumnsDropdownOpen = !isColumnsDropdownOpen;
+            if (isColumnsDropdownOpen) {
+                dropdown.classList.add('show');
+                trigger.classList.add('open');
+            } else {
+                dropdown.classList.remove('show');
+                trigger.classList.remove('open');
+            }
+        }
+
+        function loadVisibleColumns() {
+            const saved = localStorage.getItem('dbUsersVisibleColumns');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    const validKeys = allColumns.map(c => c.key);
+                    visibleColumnKeys = parsed.filter(k => validKeys.includes(k));
+                } catch (_) {
+                    visibleColumnKeys = allColumns.map(c => c.key);
+                }
+            } else {
+                visibleColumnKeys = allColumns.map(c => c.key);
+            }
+            // Ensure required columns present and minimum count
+            const requiredKeys = allColumns.filter(c => c.required).map(c => c.key);
+            requiredKeys.forEach(k => { if (!visibleColumnKeys.includes(k)) visibleColumnKeys.push(k); });
+            if (visibleColumnKeys.length < minVisibleCount) {
+                const toAdd = allColumns.map(c => c.key).slice(0, minVisibleCount);
+                toAdd.forEach(k => { if (!visibleColumnKeys.includes(k)) visibleColumnKeys.push(k); });
+            }
+            saveVisibleColumns();
+            updateColumnsCheckboxes();
+        }
+
+        function saveVisibleColumns() {
+            localStorage.setItem('dbUsersVisibleColumns', JSON.stringify(visibleColumnKeys));
+            updateColumnsDropdownText();
+        }
+
+        function updateColumnsDropdownText() {
+            const text = document.getElementById('columnsDropdownText');
+            if (!text) return;
+            if (visibleColumnKeys.length === allColumns.length) {
+                text.textContent = 'Tutte le colonne';
+            } else {
+                text.textContent = `${visibleColumnKeys.length}/${allColumns.length} visibili`;
+            }
+        }
+
+        function updateColumnsCheckboxes() {
+            allColumns.forEach(col => {
+                const cb = document.getElementById(`col_${col.key}`);
+                if (cb) cb.checked = visibleColumnKeys.includes(col.key);
+            });
+        }
+
+        function resetColumnsVisibility() {
+            visibleColumnKeys = allColumns.map(c => c.key);
+            saveVisibleColumns();
+            updateColumnsCheckboxes();
+            applyColumnVisibility();
+        }
+
+        function toggleColumnVisibility(key) {
+            const column = allColumns.find(c => c.key === key);
+            if (!column) return;
+            if (column.required) return; // non disattivabile
+
+            const isVisible = visibleColumnKeys.includes(key);
+            if (isVisible) {
+                // Prevent dropping below minimum or removing required ones
+                const prospective = visibleColumnKeys.filter(k => k !== key);
+                const requiredKeys = allColumns.filter(c => c.required).map(c => c.key);
+                const stillHasRequired = requiredKeys.every(k => prospective.includes(k));
+                if (!stillHasRequired || prospective.length < minVisibleCount) {
+                    showModal({
+                        title: 'Attenzione',
+                        message: `Devi mantenere almeno ${minVisibleCount} colonne visibili e non puoi nascondere le colonne obbligatorie.`,
+                        type: 'warning',
+                        showCancel: false
+                    });
+                    updateColumnsCheckboxes();
+                    return;
+                }
+                visibleColumnKeys = prospective;
+            } else {
+                visibleColumnKeys.push(key);
+            }
+            saveVisibleColumns();
+            updateColumnsCheckboxes();
+            applyColumnVisibility();
+        }
+
+        function applyColumnVisibility() {
+            const table = document.querySelector('#usersTable table');
+            if (!table) return;
+            const headerCells = table.querySelectorAll('thead th');
+            const rows = table.querySelectorAll('tbody tr');
+            allColumns.forEach(col => {
+                const display = visibleColumnKeys.includes(col.key) ? '' : 'none';
+                if (headerCells[col.index]) headerCells[col.index].style.display = display;
+                rows.forEach(row => {
+                    const cells = row.children;
+                    if (cells[col.index]) cells[col.index].style.display = display;
+                });
+            });
+        }
+
+        function updateStats(users) {
+            const totalUsers = users.length;
+            const totalCoupons = users.reduce((sum, user) => sum + user.total_coupons, 0);
+            
+            // Count unique campaigns
+            const allCampaigns = users
+                .map(user => user.campaigns)
+                .filter(campaigns => campaigns)
+                .join(',')
+                .split(',')
+                .filter(campaign => campaign.trim())
+                .map(campaign => campaign.trim());
+            const uniqueCampaigns = [...new Set(allCampaigns)].length;
+            
+            document.getElementById('totalUsers').textContent = totalUsers;
+            document.getElementById('totalCoupons').textContent = totalCoupons;
+            document.getElementById('activeCampaigns').textContent = uniqueCampaigns;
+        }
+
+        function populateUsersTable(users) {
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = '';
+            
+            users.forEach(user => {
+                const row = document.createElement('tr');
+                
+                const campaigns = user.campaigns ? user.campaigns.split(',').map(c => c.trim()) : [];
+                const campaignsHtml = campaigns.length > 0 
+                    ? campaigns.map(campaign => `<span class="campaign-tag">${campaign}</span>`).join('')
+                    : '<span style="color: var(--text-light); font-style: italic;">Nessuna</span>';
+                
+                // Custom fields
+                const customFields = user.customFields || {};
+                const customFieldsHtml = Object.keys(customFields).length > 0 
+                    ? Object.entries(customFields).map(([key, value]) => 
+                        `<div style="margin-bottom: 4px;"><strong>${key}:</strong> ${value}</div>`
+                      ).join('')
+                    : '<span style="color: var(--text-light); font-style: italic;">Nessuno</span>';
+                
+                const firstDate = user.first_coupon_date ? new Date(user.first_coupon_date).toLocaleDateString('it-IT') : '-';
+                const lastDate = user.last_coupon_date ? new Date(user.last_coupon_date).toLocaleDateString('it-IT') : '-';
+                
+                row.innerHTML = `
+                    <td>${user.email}</td>
+                    <td>${user.first_name || '-'}</td>
+                    <td>${user.last_name || '-'}</td>
+                    <td class="campaigns-cell">${campaignsHtml}</td>
+                    <td style="max-width: 200px; font-size: 0.9rem;">${customFieldsHtml}</td>
+                    <td>${user.total_coupons}</td>
+                    <td>${firstDate}</td>
+                    <td>${lastDate}</td>
+                    <td>
+                        <button onclick="editUser(${user.id})" class="action-btn edit-btn small" title="Modifica utente">
+                            Modifica
+                        </button>
+                        <button onclick="deleteUser(${user.id}, '${user.email}')" class="action-btn delete-btn small" title="Elimina utente">
+                            Elimina
+                        </button>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        // Modal system
+        function showModal({ title, message, type = 'info', showCancel = false, onConfirm = null }) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+            `;
+
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 2rem;
+                max-width: 400px;
+                width: 90%;
+                text-align: center;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            `;
+
+            const colors = {
+                success: '#28a745',
+                error: '#dc3545',
+                warning: '#ffc107',
+                info: '#17a2b8'
+            };
+
+            modalContent.innerHTML = `
+                <h3 style="margin: 0 0 1rem 0; color: ${colors[type] || colors.info};">${title}</h3>
+                <p style="margin: 0 0 2rem 0; color: var(--text-dark);">${message}</p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    ${showCancel ? '<button onclick="closeModal()" style="padding: 0.5rem 1rem; border: 1px solid #ccc; background: white; border-radius: 4px; cursor: pointer;">Annulla</button>' : ''}
+                    <button onclick="confirmModal()" style="padding: 0.5rem 1rem; border: none; background: ${colors[type] || colors.info}; color: white; border-radius: 4px; cursor: pointer;">OK</button>
+                </div>
+            `;
+
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+
+            window.closeModal = () => {
+                document.body.removeChild(modal);
+            };
+
+            window.confirmModal = () => {
+                document.body.removeChild(modal);
+                if (onConfirm) onConfirm();
+            };
+        }
+
+        // User management functions
+        let currentEditingUserId = null;
+        let userCoupons = [];
+
+        async function editUser(userId) {
+            try {
+                currentEditingUserId = userId;
+                const response = await fetch(`/api/admin/users/${userId}`);
+                const user = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(user.error || 'Errore nel caricamento dell\'utente');
+                }
+                
+                // Populate form fields
+                document.getElementById('editEmail').value = user.email || '';
+                document.getElementById('editFirstName').value = user.first_name || '';
+                document.getElementById('editLastName').value = user.last_name || '';
+                
+                // Populate custom fields
+                populateCustomFields(user.customFields || {});
+                
+                // Load user coupons
+                await loadUserCoupons(userId);
+                
+                // Show modal with animation
+                const modal = document.getElementById('editUserModal');
+                modal.style.display = 'flex';
+                setTimeout(() => {
+                    modal.classList.add('show');
+                }, 10);
+            } catch (error) {
+                console.error('Errore nel caricamento dell\'utente:', error);
+                showModal({
+                    title: 'Errore',
+                    message: 'Errore nel caricamento dei dati dell\'utente',
+                    type: 'error',
+                    showCancel: false
+                });
+            }
+        }
+
+        function populateCustomFields(customFields) {
+            const container = document.getElementById('customFieldsContainer');
+            // Keep the title and clear only the content after it
+            const title = container.querySelector('h4');
+            container.innerHTML = '';
+            if (title) {
+                container.appendChild(title);
+            }
+            
+            if (Object.keys(customFields).length === 0) {
+                const emptyDiv = document.createElement('div');
+                emptyDiv.style.cssText = 'text-align: center; padding: 1rem; color: var(--text-medium); font-style: italic; background: var(--light-green); border-radius: 8px; border: 1px solid var(--border-light);';
+                emptyDiv.innerHTML = 'Nessun campo custom per questo utente';
+                container.appendChild(emptyDiv);
+                return;
+            }
+            
+            Object.entries(customFields).forEach(([fieldName, fieldValue]) => {
+                const fieldDiv = document.createElement('div');
+                fieldDiv.className = 'form-group';
+                fieldDiv.innerHTML = `
+                    <label for="custom_${fieldName}">${fieldName}</label>
+                    <input type="text" id="custom_${fieldName}" name="custom_${fieldName}" value="${fieldValue || ''}">
+                `;
+                container.appendChild(fieldDiv);
+            });
+        }
+
+        async function loadUserCoupons(userId) {
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/coupons`);
+                const coupons = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(coupons.error || 'Errore nel caricamento dei coupon');
+                }
+                
+                userCoupons = coupons;
+                populateCouponsList(coupons);
+            } catch (error) {
+                console.error('Errore nel caricamento dei coupon:', error);
+                const container = document.getElementById('couponsContainer');
+                container.innerHTML = '<div class="no-coupons">Errore nel caricamento dei coupon</div>';
+            }
+        }
+
+        function populateCouponsList(coupons) {
+            const container = document.getElementById('couponsContainer');
+            container.innerHTML = '';
+            
+            if (coupons.length === 0) {
+                container.innerHTML = '<div class="no-coupons">Nessun coupon assegnato a questo utente</div>';
+                return;
+            }
+            
+            coupons.forEach(coupon => {
+                const couponDiv = document.createElement('div');
+                couponDiv.className = 'coupon-item';
+                
+                const issuedDate = new Date(coupon.issued_at).toLocaleDateString('it-IT');
+                const redeemedDate = coupon.redeemed_at ? new Date(coupon.redeemed_at).toLocaleDateString('it-IT') : '-';
+                const discountText = coupon.discount_type === 'percent' ? `${coupon.discount_value}%` : coupon.discount_value;
+                
+                couponDiv.innerHTML = `
+                    <div class="coupon-header">
+                        <span class="coupon-code">${coupon.code}</span>
+                        <span class="coupon-status ${coupon.status}">${coupon.status === 'active' ? 'Attivo' : 'Utilizzato'}</span>
+                    </div>
+                    <div class="coupon-details">
+                        <div><strong>Campagna:</strong> ${coupon.campaign_name || 'N/A'}</div>
+                        <div><strong>Sconto:</strong> ${discountText}</div>
+                        <div><strong>Emesso:</strong> ${issuedDate}</div>
+                        <div><strong>Utilizzato:</strong> ${redeemedDate}</div>
+                    </div>
+                    <div class="coupon-actions">
+                        <button class="coupon-btn delete" onclick="deleteCoupon(${coupon.id}, '${coupon.code}')" 
+                                ${coupon.status === 'redeemed' ? 'disabled title="Coupon già utilizzato"' : ''}>
+                            Elimina
+                        </button>
+                    </div>
+                `;
+                
+                container.appendChild(couponDiv);
+            });
+        }
+
+        function deleteCoupon(couponId, couponCode) {
+            showModal({
+                title: 'Conferma Eliminazione',
+                message: `Sei sicuro di voler eliminare il coupon "${couponCode}"? Questa azione non può essere annullata.`,
+                type: 'warning',
+                showCancel: true,
+                onConfirm: () => performDeleteCoupon(couponId)
+            });
+        }
+
+        async function performDeleteCoupon(couponId) {
+            try {
+                const response = await fetch(`/api/admin/coupons/${couponId}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Errore durante l\'eliminazione del coupon');
+                }
+                
+                // Reload coupons
+                await loadUserCoupons(currentEditingUserId);
+                
+                // Refresh users list to update coupon count
+                loadUsers();
+                
+                showModal({
+                    title: 'Successo',
+                    message: 'Coupon eliminato con successo!',
+                    type: 'success',
+                    showCancel: false
+                });
+                
+            } catch (error) {
+                console.error('Errore durante l\'eliminazione del coupon:', error);
+                showModal({
+                    title: 'Errore',
+                    message: error.message || 'Errore durante l\'eliminazione del coupon',
+                    type: 'error',
+                    showCancel: false
+                });
+            }
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editUserModal');
+            modal.classList.remove('show');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 300);
+            currentEditingUserId = null;
+            userCoupons = [];
+        }
+
+        async function saveUserChanges() {
+            try {
+                if (!currentEditingUserId) {
+                    throw new Error('Nessun utente selezionato per la modifica');
+                }
+                
+                // Collect form data
+                const formData = {
+                    email: document.getElementById('editEmail').value,
+                    first_name: document.getElementById('editFirstName').value,
+                    last_name: document.getElementById('editLastName').value,
+                    customFields: {}
+                };
+                
+                // Collect custom fields
+                const customInputs = document.querySelectorAll('#customFieldsContainer input[name^="custom_"]');
+                customInputs.forEach(input => {
+                    const fieldName = input.name.replace('custom_', '');
+                    const fieldValue = input.value.trim();
+                    if (fieldValue) {
+                        formData.customFields[fieldName] = fieldValue;
+                    }
+                });
+                
+                // Validate required fields
+                if (!formData.email.trim()) {
+                    showModal({
+                        title: 'Errore',
+                        message: 'L\'email è obbligatoria',
+                        type: 'error',
+                        showCancel: false
+                    });
+                    return;
+                }
+                
+                // Send update request
+                const response = await fetch(`/api/admin/users/${currentEditingUserId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`Risposta non valida dal server: ${text.substring(0, 100)}...`);
+                }
+                
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Errore durante l\'aggiornamento dell\'utente');
+                }
+                
+                // Close modal and refresh data
+                closeEditModal();
+                loadUsers();
+                
+                showModal({
+                    title: 'Successo',
+                    message: 'Utente aggiornato con successo!',
+                    type: 'success',
+                    showCancel: false
+                });
+                
+            } catch (error) {
+                console.error('Errore durante l\'aggiornamento dell\'utente:', error);
+                showModal({
+                    title: 'Errore',
+                    message: error.message || 'Errore durante l\'aggiornamento dell\'utente',
+                    type: 'error',
+                    showCancel: false
+                });
+            }
+        }
+
+        function deleteUser(userId, userEmail) {
+            showModal({
+                title: 'Conferma Eliminazione',
+                message: `Sei sicuro di voler eliminare l'utente "${userEmail}"? Questa azione non può essere annullata. Se l'utente ha dei coupon attivi, eliminali prima dalla sezione di modifica.`,
+                type: 'warning',
+                showCancel: true,
+                onConfirm: () => performDeleteUser(userId)
+            });
+        }
+
+        async function performDeleteUser(userId) {
+            try {
+                const response = await fetch(`/api/admin/users/${userId}`, {
+                    method: 'DELETE'
+                });
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`Risposta non valida dal server: ${text.substring(0, 100)}...`);
+                }
+                
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Errore durante l\'eliminazione dell\'utente');
+                }
+                
+                // Refresh data
+                loadUsers();
+                
+                showModal({
+                    title: 'Successo',
+                    message: 'Utente eliminato con successo!',
+                    type: 'success',
+                    showCancel: false
+                });
+                
+            } catch (error) {
+                console.error('Errore durante l\'eliminazione dell\'utente:', error);
+                showModal({
+                    title: 'Errore',
+                    message: error.message || 'Errore durante l\'eliminazione dell\'utente',
+                    type: 'error',
+                    showCancel: false
+                });
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('editUserModal');
+            if (event.target.classList.contains('modal-overlay')) {
+                closeEditModal();
+            }
+        });
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const modal = document.getElementById('editUserModal');
+                if (modal && modal.style.display !== 'none') {
+                    closeEditModal();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

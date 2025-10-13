@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personalizza Template Email - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <style>
+        .navbar { background: var(--gradient-primary); padding: 1rem 0; margin-bottom: 2rem; box-shadow: var(--shadow-medium); }
+        .navbar-container { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 0 2rem; }
+        .navbar-brand { color: var(--white); font-size: 1.8rem; font-weight: 300; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; letter-spacing: -0.02em; }
+        .navbar-brand:hover { color: var(--light-green); }
+        .navbar-nav { display: flex; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
+        .nav-link { color: var(--white); text-decoration: none; padding: 0.75rem 1.25rem; border-radius: 8px; transition: all 0.3s ease; font-weight: 400; display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; }
+        .nav-link:hover { background: rgba(255,255,255,0.15); color: var(--light-green); }
+        .nav-link.active { background: var(--gold-accent); color: var(--text-dark); font-weight: 500; }
+
+        .grid { display: grid; grid-template-columns: 380px 1fr; gap: 1.5rem; align-items: start; }
+        @media (max-width: 992px) { .grid { grid-template-columns: 1fr; } }
+        .panel { background: var(--white); border: 1px solid var(--border-light); border-radius: 12px; padding: 1rem; }
+        .panel h3 { margin-top: 0; color: var(--primary-green); }
+        .form-group { margin-bottom: 0.75rem; }
+        .form-group label { display:block; font-weight:600; margin-bottom: 0.4rem; color: var(--text-dark); }
+        .row-2 { display:grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+        .hint { color: var(--text-medium); font-size: 0.9rem; }
+        .token { background: var(--light-green); color: var(--primary-green); padding: 0.2rem 0.4rem; border-radius: 6px; font-family: monospace; }
+        .controls-actions { display:flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.5rem; }
+        .preview { background: var(--white); border: 1px solid var(--border-light); border-radius: 12px; padding: 1rem; }
+        iframe { width:100%; height: 600px; border: 1px solid var(--border-light); border-radius: 8px; background: white; }
+
+        .toolbar { display:flex; gap: .35rem; margin: .35rem 0 .6rem 0; }
+        .tool-btn { background: var(--white); color: var(--primary-green); border: 2px solid var(--primary-green); padding: .35rem .6rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .tool-btn:hover { background: var(--light-green); }
+        textarea.text-block { width: 100%; min-height: 70px; border: 2px solid var(--border-light); border-radius: 8px; padding: .6rem .8rem; }
+
+        /* Disabled buttons visual state */
+        .btn[disabled], .refresh-btn[disabled] {
+            opacity: .6;
+            cursor: not-allowed;
+            filter: grayscale(20%);
+            box-shadow: none;
+        }
+        .btn.btn-secondary[disabled] {
+            background: var(--text-light);
+            color: var(--white);
+            border: none;
+        }
+
+        /* Accordion styles (coerenti con pagina form-setup) */
+        .setup-section { background: transparent; border-radius: 8px; margin-bottom: .8rem; border: 1px solid var(--border-light); }
+        .section-title { font-size: 1rem; font-weight: 600; color: var(--primary-green); padding: .8rem 1rem; display:flex; align-items:center; justify-content:space-between; cursor:pointer; background: var(--light-green); border-radius: 8px; user-select:none; }
+        .section-title:hover { background: var(--accent-green); color: var(--white); }
+        .section-title.active { background: var(--primary-green); color: var(--white); }
+        .dropdown-arrow { transition: transform .3s ease; font-size: .9rem; }
+        .section-title.active .dropdown-arrow { transform: rotate(180deg); }
+        .section-content { display:none; padding: 1rem; }
+        .section-content.show { display:block; }
+        
+        .site-footer { 
+            text-align: center; 
+            padding: 1rem; 
+            color: var(--text-light); 
+            font-size: 0.85rem; 
+            border-top: 1px solid var(--border-light);
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/css/suneditor.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/suneditor.min.js"></script>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/admin" class="navbar-brand">CouponGen Admin</a>
+            <ul class="navbar-nav">
+                <li class="nav-item"><a href="/admin" class="nav-link">Dashboard</a></li>
+                <li class="nav-item"><a href="/formsetup" class="nav-link">Form Setup</a></li>
+                <li class="nav-item"><a href="/db-utenti" class="nav-link">DB Utenti</a></li>
+                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
+                <li class="nav-item"><a href="/form-design" class="nav-link">Personalizzazione</a></li>
+                <li class="nav-item"><a href="/analytics" class="nav-link">Analytics</a></li>
+                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="container">
+        <h1>Personalizza Template Email</h1>
+        <p class="hint">Parametri modificabili (nessun codice necessario). Variabili automatiche: 
+            <span class="token">{{firstName}}</span> <span class="token">{{lastName}}</span> 
+            <span class="token">{{code}}</span> <span class="token">{{discountText}}</span> 
+            <span class="token">{{redemptionUrl}}</span>
+        </p>
+
+        <div class="grid">
+            <div class="panel">
+                <h3>Impostazioni</h3>
+
+                <div class="setup-section">
+                    <div class="section-title active" onclick="toggleAccSection(this)">
+                        Base
+                        <span class="dropdown-arrow">▼</span>
+                    </div>
+                    <div class="section-content show">
+                        <div class="form-group">
+                            <label>Oggetto</label>
+                            <input type="text" id="emailSubject" placeholder="Oggetto email" />
+                        </div>
+                        <div class="form-group">
+                            <label>Nome Brand (facoltativo)</label>
+                            <input type="text" id="brandName" placeholder="Es. Pasticceria Verdi" />
+                        </div>
+                        <div class="form-group">
+                            <label>Logo URL (facoltativo)</label>
+                            <input type="text" id="logoUrl" placeholder="https://.../logo.png" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-section">
+                    <div class="section-title" onclick="toggleAccSection(this)">
+                        Colori
+                        <span class="dropdown-arrow">▼</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="row-2">
+                            <div class="form-group">
+                                <label>Colore primario</label>
+                                <input type="color" id="primaryColor" value="#2d5a3d" />
+                            </div>
+                            <div class="form-group">
+                                <label>Colore secondario</label>
+                                <input type="color" id="accentColor" value="#4a7c59" />
+                            </div>
+                        </div>
+                        <div class="row-2">
+                            <div class="form-group">
+                                <label>Colore sfondo</label>
+                                <input type="color" id="backgroundColor" value="#faf8f3" />
+                            </div>
+                            <div class="form-group">
+                                <label>Colore testo</label>
+                                <input type="color" id="textColor" value="#2c3e50" />
+                            </div>
+                        </div>
+                        <div class="row-2">
+                            <div class="form-group">
+                                <label>Colore bottone</label>
+                                <input type="color" id="buttonColor" value="#2d5a3d" />
+                            </div>
+                            <div class="form-group">
+                                <label>Colore testo bottone</label>
+                                <input type="color" id="buttonTextColor" value="#ffffff" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-section">
+                    <div class="section-title" onclick="toggleAccSection(this)">
+                        Testi
+                        <span class="dropdown-arrow">▼</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="form-group">
+                            <label>Saluto iniziale</label>
+                            <textarea id="greeting" class="text-block">Ciao</textarea>
+                            <div class="controls-actions" style="justify-content:flex-start; gap:.35rem; margin-top:.35rem;">
+                                <button id="saveGreeting" type="button" class="btn btn-secondary" style="padding:.35rem .7rem; text-transform:none;" disabled onclick="saveSection('greeting')">Salva</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Testo introduttivo</label>
+                            <textarea id="introText" class="text-block">Ecco il tuo coupon personale</textarea>
+                            <div class="controls-actions" style="justify-content:flex-start; gap:.35rem; margin-top:.35rem;">
+                                <button id="saveIntro" type="button" class="btn btn-secondary" style="padding:.35rem .7rem; text-transform:none;" disabled onclick="saveSection('intro')">Salva</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Testo footer</label>
+                            <textarea id="footerText" class="text-block">Grazie per averci scelto</textarea>
+                            <div class="controls-actions" style="justify-content:flex-start; gap:.35rem; margin-top:.35rem;">
+                                <button id="saveFooter" type="button" class="btn btn-secondary" style="padding:.35rem .7rem; text-transform:none;" disabled onclick="saveSection('footer')">Salva</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                
+
+                <div class="controls-actions">
+                    <button type="button" class="btn btn-secondary" style="padding:.35rem .7rem; text-transform:none; opacity:.85; margin-right:auto;" onclick="resetDefaults()">Ripristina</button>
+                    <button class="refresh-btn" onclick="saveTemplate(this)"><span class="btn-text">Salva</span></button>
+                </div>
+            </div>
+
+            <div class="preview">
+                <h3>Anteprima</h3>
+                <iframe id="previewFrame"></iframe>
+            </div>
+        </div>
+
+        <!-- Manteniamo un campo nascosto per eventuale debug/manuale -->
+        <textarea id="emailHtml" style="display:none"></textarea>
+    </main>
+
+    <footer class="site-footer">CouponGen</footer>
+
+    <script>
+        function setButtonState(button, state, duration = 2000) {
+            button.classList.remove('loading', 'success', 'error');
+            if (state === 'loading') { button.classList.add('loading'); button.disabled = true; }
+            else if (state === 'success') { button.classList.add('success'); setTimeout(()=>{ button.classList.remove('success'); button.disabled = false; }, duration); }
+            else if (state === 'error') { button.classList.add('error'); setTimeout(()=>{ button.classList.remove('error'); button.disabled = false; }, duration); }
+        }
+
+        async function loadTemplate(){
+            try {
+                const r = await fetch('/api/admin/email-template');
+                const t = await r.json();
+                document.getElementById('emailSubject').value = t.subject || 'Il tuo coupon';
+                // Non proviamo a fare il parsing del template salvato, manteniamo i default dell'editor
+                buildAndPreview();
+            } catch(e) { console.error(e); }
+        }
+
+        function buildTemplateHtml(){
+            const subject = (document.getElementById('emailSubject').value || 'Il tuo coupon').trim();
+            const brandName = document.getElementById('brandName').value || '';
+            const logoUrl = document.getElementById('logoUrl').value || '';
+            const primary = document.getElementById('primaryColor').value || '#2d5a3d';
+            const accent = document.getElementById('accentColor').value || '#4a7c59';
+            const bg = document.getElementById('backgroundColor').value || '#faf8f3';
+            const text = document.getElementById('textColor').value || '#2c3e50';
+             const btnBg = document.getElementById('buttonColor').value || primary;
+             const btnText = document.getElementById('buttonTextColor').value || '#ffffff';
+            const greeting = (window.sunEditors?.greeting?.getContents() || document.getElementById('greeting').value || 'Ciao');
+            const introText = (window.sunEditors?.intro?.getContents() || document.getElementById('introText').value || 'Ecco il tuo coupon personale');
+            const footerText = (window.sunEditors?.footer?.getContents() || document.getElementById('footerText').value || 'Grazie per averci scelto');
+
+            // Email HTML responsive semplice, con tabelle e stili inline
+            const html = `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${subject}</title>
+  </head>
+  <body style="margin:0;padding:0;background:${bg};color:${text};font-family:Segoe UI,Arial,sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${bg};">
+      <tr>
+        <td align="center" style="padding:24px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e1e8ed;">
+            <tr>
+              <td align="center" style="background:${primary};padding:20px 24px;color:#ffffff;">
+                ${logoUrl ? `<img src="${logoUrl}" alt="logo" style="max-width:140px;height:auto;display:block;margin:0 auto 8px auto;" />` : ''}
+                <div style="font-size:20px;font-weight:600;letter-spacing:.3px;">${brandName || 'CouponGen'}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px;">
+                <p style="margin:0 0 12px 0;font-size:16px;">${greeting} {{firstName}} {{lastName}}</p>
+                <p style="margin:0 0 12px 0;font-size:16px;">${introText} <strong>{{code}}</strong> che vale {{discountText}}.</p>
+                <p style="margin:0 0 16px 0;font-size:16px;">Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.</p>
+
+                <div style="text-align:center;margin:16px 0;">
+                  <img src="cid:couponqr" alt="QR Code" style="width:180px;height:180px;display:inline-block;border:6px solid ${accent};border-radius:12px;" />
+                </div>
+
+                <p style="margin:16px 0 0 0;font-size:14px;color:${text};opacity:.85;">${footerText}</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="background:${bg};padding:12px;color:${text};font-size:12px;">© ${new Date().getFullYear()} ${brandName || 'CouponGen'}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+            return { subject, html };
+        }
+
+        function buildAndPreview(){
+            const { subject, html } = buildTemplateHtml();
+            document.getElementById('emailHtml').value = html;
+            const iframe = document.getElementById('previewFrame');
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            let sample = html
+                .replaceAll('{{firstName}}', '')
+                .replaceAll('{{lastName}}', '')
+                .replaceAll('{{code}}', 'ABC123XYZ')
+                .replaceAll('{{discountText}}', 'uno sconto del 10%')
+                .replaceAll('{{redemptionUrl}}', 'https://example.com/redeem/ABC123XYZ');
+            // Sostituisci l'immagine CID con un QR di anteprima (solo preview)
+            const qrPreviewUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=ABC123XYZ';
+            sample = sample.replace('cid:couponqr', qrPreviewUrl);
+            doc.open(); doc.write(sample); doc.close();
+        }
+
+        async function saveTemplate(btn){
+            setButtonState(btn, 'loading');
+            try {
+                const { subject, html } = buildTemplateHtml();
+                const r = await fetch('/api/admin/email-template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject, html }) });
+                if(!r.ok) throw new Error('Save failed');
+                setButtonState(btn, 'success');
+            } catch(e){ console.error(e); setButtonState(btn, 'error'); }
+        }
+
+        function resetDefaults(){
+            // valori default
+            document.getElementById('emailSubject').value = 'Il tuo coupon';
+            document.getElementById('brandName').value = '';
+            document.getElementById('logoUrl').value = '';
+            document.getElementById('primaryColor').value = '#2d5a3d';
+            document.getElementById('accentColor').value = '#4a7c59';
+            document.getElementById('backgroundColor').value = '#faf8f3';
+            document.getElementById('textColor').value = '#2c3e50';
+            document.getElementById('buttonColor').value = '#2d5a3d';
+            document.getElementById('buttonTextColor').value = '#ffffff';
+            document.getElementById('buttonLabel').value = 'Usa in cassa';
+
+            // editor
+            if (window.sunEditors?.greeting) window.sunEditors.greeting.setContents('Ciao');
+            else document.getElementById('greeting').value = 'Ciao';
+            if (window.sunEditors?.intro) window.sunEditors.intro.setContents('Ecco il tuo coupon personale');
+            else document.getElementById('introText').value = 'Ecco il tuo coupon personale';
+            if (window.sunEditors?.footer) window.sunEditors.footer.setContents('Grazie per averci scelto');
+            else document.getElementById('footerText').value = 'Grazie per averci scelto';
+
+            // disabilita i piccoli salva
+            ['saveGreeting','saveIntro','saveFooter'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = true; });
+            buildAndPreview();
+        }
+
+        function initEditors(){
+            window.sunEditors = window.sunEditors || {};
+            const common = {
+                height: 160,
+                buttonList: [
+                    ['bold', 'italic', 'underline', 'removeFormat'],
+                    ['align', 'list', 'link']
+                ],
+                callBackSave: (contents) => { buildAndPreview(); },
+                callBackUpdate: (contents) => { buildAndPreview(); }
+            };
+            window.sunEditors.intro = SUNEDITOR.create(document.getElementById('introText'), common);
+            window.sunEditors.footer = SUNEDITOR.create(document.getElementById('footerText'), common);
+            window.sunEditors.greeting = SUNEDITOR.create(document.getElementById('greeting'), common);
+            // Prima render dopo init
+            setTimeout(buildAndPreview, 100);
+
+            // Abilita i pulsanti Salva quando ci sono modifiche
+            const map = [
+                { ed: 'greeting', btn: 'saveGreeting' },
+                { ed: 'intro', btn: 'saveIntro' },
+                { ed: 'footer', btn: 'saveFooter' }
+            ];
+            map.forEach(({ ed, btn }) => {
+                const editor = window.sunEditors[ed];
+                const button = document.getElementById(btn);
+                if (editor && button) {
+                    const enable = () => { button.disabled = false; };
+                    editor.onChange = enable;
+                    editor.onKeyDown = enable;
+                    editor.onKeyUp = enable;
+                }
+            });
+        }
+
+        function saveSection(section){
+            buildAndPreview();
+            const map = { greeting: 'saveGreeting', intro: 'saveIntro', footer: 'saveFooter' };
+            const btnId = map[section];
+            const btn = document.getElementById(btnId);
+            if (btn) btn.disabled = true;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTemplate();
+            ['emailSubject','brandName','logoUrl','primaryColor','accentColor','backgroundColor','textColor','buttonColor','buttonTextColor','greeting','buttonLabel']
+                .forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', buildAndPreview); });
+            initEditors();
+        });
+
+        function toggleAccSection(el){
+            const active = el.classList.contains('active');
+            // chiudi tutte
+            document.querySelectorAll('.section-title').forEach(t => { t.classList.remove('active'); t.nextElementSibling.classList.remove('show'); });
+            // apri se non attiva
+            if (!active) { el.classList.add('active'); el.nextElementSibling.classList.add('show'); }
+        }
+    </script>
+</body>
+</html>
+
+

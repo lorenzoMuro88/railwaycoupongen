@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personalizzazione Form - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <style>
+        :root {
+            --primary-green: #2d5a3d;
+            --accent-green: #4a7c59;
+            --light-green: #e8f5e8;
+            --earth-brown: #8b6f47;
+            --gold-accent: #d4af37;
+            --cream: #faf8f3;
+            --white: #ffffff;
+            --text-dark: #2c3e50;
+            --text-medium: #5a6c7d;
+            --text-light: #8a9ba8;
+            --border-light: #e1e8ed;
+            --shadow-light: rgba(45, 90, 61, 0.08);
+            --shadow-medium: rgba(45, 90, 61, 0.15);
+            --gradient-primary: linear-gradient(135deg, var(--primary-green) 0%, var(--accent-green) 100%);
+            --gradient-gold: linear-gradient(135deg, var(--gold-accent) 0%, #f4d03f 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--cream);
+            color: var(--text-dark);
+            line-height: 1.6;
+        }
+
+        /* Navigation Bar */
+        .navbar {
+            background: var(--gradient-primary);
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-medium);
+        }
+        
+        .navbar-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 2rem;
+        }
+        
+        .navbar-brand {
+            color: var(--white);
+            font-size: 1.8rem;
+            font-weight: 300;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .navbar-brand:hover {
+            color: var(--light-green);
+        }
+        
+        .navbar-nav {
+            display: flex;
+            gap: 0.5rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .nav-item {
+            margin: 0;
+        }
+        
+        .nav-link {
+            color: var(--white);
+            text-decoration: none;
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-weight: 400;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.95rem;
+        }
+        
+        .nav-link:hover {
+            background: rgba(255,255,255,0.15);
+            color: var(--light-green);
+        }
+        
+        .nav-link.active {
+            background: var(--gold-accent);
+            color: var(--text-dark);
+            font-weight: 500;
+        }
+        
+        .nav-link.active:hover {
+            background: #f4d03f;
+            color: var(--text-dark);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: var(--primary-green);
+            margin-bottom: 1rem;
+        }
+
+        .page-header p {
+            font-size: 1.1rem;
+            color: var(--text-medium);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 2rem;
+            margin-bottom: 3rem;
+            min-height: 80vh;
+        }
+
+        .controls-sidebar {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow-light);
+            border: 1px solid var(--border-light);
+            height: fit-content;
+            position: sticky;
+            top: 2rem;
+            overflow-y: auto;
+            max-height: calc(100vh - 4rem);
+        }
+
+        .preview-main {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow-light);
+            border: 1px solid var(--border-light);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 600px;
+        }
+
+        .setup-grid {
+            display: none; /* Nascondiamo il vecchio layout */
+        }
+
+        .setup-section {
+            background: transparent;
+            border-radius: 0;
+            padding: 0;
+            box-shadow: none;
+            border: none;
+            margin-bottom: 2rem;
+        }
+
+        .setup-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--primary-green);
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            background: var(--light-green);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .section-title:hover {
+            background: var(--accent-green);
+            color: var(--white);
+        }
+
+        .section-title.active {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+
+        .section-content {
+            padding: 1rem;
+            background: var(--white);
+            border-radius: 0 0 8px 8px;
+            border: 1px solid var(--light-green);
+            border-top: none;
+            display: none;
+        }
+
+        .section-content.show {
+            display: block;
+        }
+
+        .dropdown-arrow {
+            transition: transform 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .section-title.active .dropdown-arrow {
+            transform: rotate(180deg);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--primary-green);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            background: var(--white);
+            color: var(--text-dark);
+            transition: all 0.3s ease;
+            height: 40px;
+            box-sizing: border-box;
+        }
+
+        .form-group select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 16px;
+            padding-right: 3rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--accent-green);
+            background: var(--light-green);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .form-group input:hover,
+        .form-group select:hover {
+            border-color: var(--accent-green);
+            background: var(--light-green);
+        }
+
+        .color-picker-group {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .color-picker {
+            width: 50px;
+            height: 40px;
+            border: 2px solid var(--primary-green);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .color-picker:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .color-picker input {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .color-value {
+            flex: 1;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: var(--text-medium);
+        }
+
+        .preview-section {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow-light);
+            border: 1px solid var(--border-light);
+            margin-bottom: 2rem;
+        }
+
+        .preview-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--primary-green);
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .form-preview {
+            background: var(--cream);
+            border-radius: 16px;
+            padding: 3rem;
+            border: 2px solid var(--border-light);
+            max-width: 600px;
+            width: 100%;
+            margin: 0 auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .preview-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .preview-title-text {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--primary-green);
+            margin-bottom: 0.5rem;
+        }
+
+        .preview-subtitle {
+            color: var(--text-medium);
+            font-size: 1rem;
+        }
+
+        .preview-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .preview-input {
+            padding: 1rem 1.25rem;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            font-size: 1rem;
+            background: var(--white);
+            color: var(--text-dark);
+        }
+
+        .preview-button {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            padding: 1.2rem 2.5rem;
+            border-radius: 12px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 1.5rem;
+            width: 100%;
+        }
+
+        .preview-button:hover {
+            box-shadow: 0 6px 20px rgba(45, 90, 61, 0.3);
+        }
+
+        .actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .email-template-cta { display: none; }
+
+        .email-cta {
+            padding: 0.9rem 1.8rem;
+            border-radius: 10px;
+            background: var(--gradient-primary);
+            color: var(--white);
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            text-decoration: none;
+            box-shadow: 0 6px 20px rgba(45, 90, 61, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .email-cta:hover {
+            box-shadow: 0 10px 28px rgba(45, 90, 61, 0.35);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: var(--white);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px rgba(45, 90, 61, 0.3);
+        }
+
+        .btn-secondary {
+            background: var(--white);
+            color: var(--primary-green);
+            border: 2px solid var(--primary-green);
+        }
+
+        .btn-secondary:hover {
+            background: var(--light-green);
+        }
+
+        .toggle-group {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 25px;
+            background: var(--border-light);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-switch.active {
+            background: var(--primary-green);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 21px;
+            height: 21px;
+            background: var(--white);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(25px);
+        }
+
+        .range-group {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .range-slider {
+            flex: 1;
+            height: 4px;
+            border-radius: 2px;
+            background: var(--border-light);
+            outline: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+
+        .range-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary-green);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .range-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 4px 12px rgba(45, 90, 61, 0.3);
+        }
+
+        .range-value {
+            min-width: 40px;
+            text-align: center;
+            font-weight: 600;
+            color: var(--primary-green);
+        }
+
+        @media (max-width: 1024px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            .controls-sidebar {
+                position: static;
+                max-height: none;
+                order: 2;
+            }
+            
+            .preview-main {
+                order: 1;
+                min-height: 400px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .navbar-container {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .navbar-nav {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            
+            .controls-sidebar {
+                padding: 1rem;
+            }
+            
+            .preview-main {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/admin" class="navbar-brand">CouponGen Admin</a>
+            <ul class="navbar-nav">
+                <li class="nav-item"><a href="/admin" class="nav-link">Dashboard</a></li>
+                <li class="nav-item"><a href="/formsetup" class="nav-link">Form Setup</a></li>
+                <li class="nav-item"><a href="/db-utenti" class="nav-link">DB Utenti</a></li>
+                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
+                <li class="nav-item"><a href="/form-design" class="nav-link active">Personalizzazione</a></li>
+                <li class="nav-item"><a href="/analytics" class="nav-link">Analytics</a></li>
+                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Personalizzazione Form</h1>
+            <p>Personalizza l'aspetto estetico del form di generazione coupon per adattarlo al tuo brand</p>
+        </div>
+
+        
+
+        
+
+        <div class="main-layout">
+            <div class="controls-sidebar">
+                <h2 style="margin-bottom: 2rem; text-align: center; color: var(--primary-green); font-size: 1.5rem;">Controlli</h2>
+            <!-- Colori -->
+            <div class="setup-section">
+                <h2 class="section-title active" onclick="toggleSection(this)">
+                    Colori
+                    <span class="dropdown-arrow">▼</span>
+                </h2>
+                <div class="section-content show">
+                
+                <div class="form-group">
+                    <label>Colore Primario</label>
+                    <div class="color-picker-group">
+                        <div class="color-picker">
+                            <input type="color" id="primaryColor" value="#2d5a3d">
+                        </div>
+                        <span class="color-value" id="primaryColorValue">#2d5a3d</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Colore Accent</label>
+                    <div class="color-picker-group">
+                        <div class="color-picker">
+                            <input type="color" id="accentColor" value="#4a7c59">
+                        </div>
+                        <span class="color-value" id="accentColorValue">#4a7c59</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Colore Sfondo</label>
+                    <div class="color-picker-group">
+                        <div class="color-picker">
+                            <input type="color" id="backgroundColor" value="#faf8f3">
+                        </div>
+                        <span class="color-value" id="backgroundColorValue">#faf8f3</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Colore Testo</label>
+                    <div class="color-picker-group">
+                        <div class="color-picker">
+                            <input type="color" id="textColor" value="#2c3e50">
+                        </div>
+                        <span class="color-value" id="textColorValue">#2c3e50</span>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <!-- Tipografia -->
+            <div class="setup-section">
+                <h2 class="section-title" onclick="toggleSection(this)">
+                    Tipografia
+                    <span class="dropdown-arrow">▼</span>
+                </h2>
+                <div class="section-content">
+                
+                <div class="form-group">
+                    <label>Famiglia Font</label>
+                    <select id="fontFamily">
+                        <option value="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif">Segoe UI (Sistema)</option>
+                        <option value="'Arial', sans-serif">Arial</option>
+                        <option value="'Helvetica', sans-serif">Helvetica</option>
+                        <option value="'Georgia', serif">Georgia</option>
+                        <option value="'Times New Roman', serif">Times New Roman</option>
+                        <option value="'Courier New', monospace">Courier New</option>
+                        <option value="'Roboto', sans-serif">Roboto</option>
+                        <option value="'Open Sans', sans-serif">Open Sans</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Dimensione Titolo</label>
+                    <div class="range-group">
+                        <input type="range" class="range-slider" id="titleSize" min="16" max="32" value="24">
+                        <span class="range-value" id="titleSizeValue">24px</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Dimensione Testo</label>
+                    <div class="range-group">
+                        <input type="range" class="range-slider" id="textSize" min="12" max="20" value="16">
+                        <span class="range-value" id="textSizeValue">16px</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Peso Font</label>
+                    <select id="fontWeight">
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                    </select>
+                </div>
+                </div>
+            </div>
+
+            <!-- Layout -->
+            <div class="setup-section">
+                <h2 class="section-title" onclick="toggleSection(this)">
+                    Layout
+                    <span class="dropdown-arrow">▼</span>
+                </h2>
+                <div class="section-content">
+                
+                <div class="form-group">
+                    <label>Larghezza Form</label>
+                    <div class="range-group">
+                        <input type="range" class="range-slider" id="formWidth" min="300" max="600" value="500">
+                        <span class="range-value" id="formWidthValue">500px</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Spaziatura Elementi</label>
+                    <div class="range-group">
+                        <input type="range" class="range-slider" id="elementSpacing" min="8" max="24" value="16">
+                        <span class="range-value" id="elementSpacingValue">16px</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Raggio Bordi</label>
+                    <div class="range-group">
+                        <input type="range" class="range-slider" id="borderRadius" min="0" max="20" value="12">
+                        <span class="range-value" id="borderRadiusValue">12px</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Ombra</label>
+                    <div class="toggle-group">
+                        <div class="toggle-switch" id="shadowToggle"></div>
+                        <span>Abilita ombra</span>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <!-- Contenuto -->
+            <div class="setup-section">
+                <h2 class="section-title" onclick="toggleSection(this)">
+                    Contenuto
+                    <span class="dropdown-arrow">▼</span>
+                </h2>
+                <div class="section-content">
+                
+                <div class="form-group">
+                    <label>Titolo Form</label>
+                    <input type="text" id="formTitle" value="Genera il Tuo Coupon" placeholder="Inserisci il titolo del form">
+                </div>
+
+                <div class="form-group">
+                    <label>Sottotitolo Form</label>
+                    <input type="text" id="formSubtitle" value="Compila il form per ricevere il tuo coupon personalizzato" placeholder="Inserisci il sottotitolo">
+                </div>
+
+                <div class="form-group">
+                    <label>Testo Bottone</label>
+                    <input type="text" id="buttonText" value="Genera Coupon" placeholder="Inserisci il testo del bottone">
+                </div>
+
+                <div class="form-group">
+                    <label>Placeholder Email</label>
+                    <input type="text" id="emailPlaceholder" value="La tua email" placeholder="Inserisci il placeholder per l'email">
+                </div>
+                </div>
+            </div>
+            </div>
+
+            <div class="preview-main">
+                <h2 class="preview-title">Anteprima Form</h2>
+                <div class="form-preview" id="formPreview">
+                    <div class="preview-header">
+                        <h3 class="preview-title-text" id="previewTitle">Genera il Tuo Coupon</h3>
+                        <p class="preview-subtitle" id="previewSubtitle">Compila il form per ricevere il tuo coupon personalizzato</p>
+                    </div>
+                    <form class="preview-form">
+                        <input type="email" class="preview-input" placeholder="La tua email" id="previewEmail">
+                        <input type="text" class="preview-input" placeholder="Nome" id="previewName">
+                        <input type="text" class="preview-input" placeholder="Cognome" id="previewSurname">
+                        <button type="button" class="preview-button" id="previewButton">Genera Coupon</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-secondary" onclick="resetToDefault()">Ripristina Default</button>
+            <button class="btn btn-primary" onclick="saveConfiguration()">Salva Configurazione</button>
+        </div>
+
+        
+    </div>
+
+    <script>
+        // Carica configurazione salvata
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+            // Carica configurazione immediatamente dal localStorage
+            loadConfiguration();
+        });
+
+        function setupEventListeners() {
+            // Colori
+            const primaryColor = document.getElementById('primaryColor');
+            if (primaryColor) primaryColor.addEventListener('input', updatePreview);
+            
+            const accentColor = document.getElementById('accentColor');
+            if (accentColor) accentColor.addEventListener('input', updatePreview);
+            
+            const backgroundColor = document.getElementById('backgroundColor');
+            if (backgroundColor) backgroundColor.addEventListener('input', updatePreview);
+            
+            const textColor = document.getElementById('textColor');
+            if (textColor) textColor.addEventListener('input', updatePreview);
+
+            // Tipografia
+            const fontFamily = document.getElementById('fontFamily');
+            if (fontFamily) fontFamily.addEventListener('change', updatePreview);
+            
+            const titleSize = document.getElementById('titleSize');
+            if (titleSize) titleSize.addEventListener('input', updatePreview);
+            
+            const textSize = document.getElementById('textSize');
+            if (textSize) textSize.addEventListener('input', updatePreview);
+            
+            const fontWeight = document.getElementById('fontWeight');
+            if (fontWeight) fontWeight.addEventListener('change', updatePreview);
+
+            // Layout
+            const formWidth = document.getElementById('formWidth');
+            if (formWidth) formWidth.addEventListener('input', updatePreview);
+            
+            const elementSpacing = document.getElementById('elementSpacing');
+            if (elementSpacing) elementSpacing.addEventListener('input', updatePreview);
+            
+            const borderRadius = document.getElementById('borderRadius');
+            if (borderRadius) borderRadius.addEventListener('input', updatePreview);
+            
+            const shadowToggle = document.getElementById('shadowToggle');
+            if (shadowToggle) shadowToggle.addEventListener('click', toggleShadow);
+
+            // Contenuto
+            const formTitle = document.getElementById('formTitle');
+            if (formTitle) formTitle.addEventListener('input', updatePreview);
+            
+            const formSubtitle = document.getElementById('formSubtitle');
+            if (formSubtitle) formSubtitle.addEventListener('input', updatePreview);
+            
+            const buttonText = document.getElementById('buttonText');
+            if (buttonText) buttonText.addEventListener('input', updatePreview);
+            
+            const emailPlaceholder = document.getElementById('emailPlaceholder');
+            if (emailPlaceholder) emailPlaceholder.addEventListener('input', updatePreview);
+
+            // Aggiorna valori dei range
+            document.querySelectorAll('.range-slider').forEach(slider => {
+                slider.addEventListener('input', function() {
+                    const valueSpan = document.getElementById(this.id + 'Value');
+                    if (valueSpan) {
+                        valueSpan.textContent = this.value + (this.id.includes('Size') || this.id.includes('Width') ? 'px' : 'px');
+                    }
+                });
+            });
+
+            // Aggiorna valori dei colori
+            document.querySelectorAll('input[type="color"]').forEach(colorInput => {
+                colorInput.addEventListener('input', function() {
+                    const valueSpan = document.getElementById(this.id + 'Value');
+                    if (valueSpan) {
+                        valueSpan.textContent = this.value;
+                    }
+                });
+            });
+        }
+
+        function updatePreview() {
+            const preview = document.getElementById('formPreview');
+            if (!preview) return;
+            
+            const primaryColor = document.getElementById('primaryColor')?.value || '#2d5a3d';
+            const accentColor = document.getElementById('accentColor')?.value || '#4a7c59';
+            const backgroundColor = document.getElementById('backgroundColor')?.value || '#faf8f3';
+            const textColor = document.getElementById('textColor')?.value || '#2c3e50';
+            const fontFamily = document.getElementById('fontFamily')?.value || "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+            const titleSize = (document.getElementById('titleSize')?.value || 24) + 'px';
+            const textSize = (document.getElementById('textSize')?.value || 16) + 'px';
+            const fontWeight = document.getElementById('fontWeight')?.value || '400';
+            const formWidth = (document.getElementById('formWidth')?.value || 500) + 'px';
+            const elementSpacing = (document.getElementById('elementSpacing')?.value || 16) + 'px';
+            const borderRadius = (document.getElementById('borderRadius')?.value || 12) + 'px';
+            const shadowEnabled = document.getElementById('shadowToggle')?.classList.contains('active') || false;
+
+            // Aggiorna stili del preview
+            preview.style.backgroundColor = backgroundColor;
+            preview.style.fontFamily = fontFamily;
+            preview.style.width = formWidth;
+            
+            // Aggiorna spaziatura elementi nel form preview
+            const previewForm = preview.querySelector('.preview-form');
+            if (previewForm) {
+                previewForm.style.gap = elementSpacing;
+            }
+
+            // Aggiorna titolo
+            const title = document.getElementById('previewTitle');
+            if (title) {
+                title.style.color = primaryColor;
+                title.style.fontSize = titleSize;
+                title.style.fontWeight = fontWeight;
+            }
+
+            // Aggiorna sottotitolo
+            const subtitle = document.getElementById('previewSubtitle');
+            if (subtitle) {
+                subtitle.style.color = textColor;
+                subtitle.style.fontSize = textSize;
+            }
+
+            // Aggiorna input
+            const inputs = preview.querySelectorAll('.preview-input');
+            inputs.forEach(input => {
+                input.style.borderColor = primaryColor;
+                input.style.borderRadius = borderRadius;
+                input.style.fontSize = textSize;
+                input.style.color = textColor;
+            });
+
+            // Aggiorna bottone
+            const button = document.getElementById('previewButton');
+            if (button) {
+                button.style.background = `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`;
+                button.style.borderRadius = borderRadius;
+                button.style.fontSize = textSize;
+                button.style.fontWeight = fontWeight;
+            }
+
+            // Aggiorna testi in tempo reale
+            const formTitle = document.getElementById('formTitle')?.value || 'Genera il Tuo Coupon';
+            const formSubtitle = document.getElementById('formSubtitle')?.value || 'Compila il form per ricevere il tuo coupon personalizzato';
+            const buttonText = document.getElementById('buttonText')?.value || 'Genera Coupon';
+            const emailPlaceholder = document.getElementById('emailPlaceholder')?.value || 'La tua email';
+
+            // Aggiorna titolo del preview
+            if (title) {
+                title.textContent = formTitle;
+            }
+
+            // Aggiorna sottotitolo del preview
+            if (subtitle) {
+                subtitle.textContent = formSubtitle;
+            }
+
+            // Aggiorna testo del bottone
+            if (button) {
+                button.textContent = buttonText;
+            }
+
+            // Aggiorna placeholder email
+            const emailInput = document.getElementById('previewEmail');
+            if (emailInput) {
+                emailInput.placeholder = emailPlaceholder;
+            }
+
+            // Aggiorna placeholder per gli altri input (se necessario)
+            const nameInput = document.getElementById('previewName');
+            const surnameInput = document.getElementById('previewSurname');
+            if (nameInput) nameInput.placeholder = 'Nome';
+            if (surnameInput) surnameInput.placeholder = 'Cognome';
+
+            // Aggiorna ombra
+            if (shadowEnabled) {
+                preview.style.boxShadow = '0 8px 32px rgba(0,0,0,0.1)';
+            } else {
+                preview.style.boxShadow = 'none';
+            }
+        }
+
+        function toggleShadow() {
+            const toggle = document.getElementById('shadowToggle');
+            if (toggle) {
+                toggle.classList.toggle('active');
+                updatePreview();
+            }
+        }
+
+        function loadConfiguration() {
+            // Carica dal localStorage (più veloce e affidabile)
+            const savedConfig = localStorage.getItem('formCustomization');
+            if (savedConfig) {
+                try {
+                    const config = JSON.parse(savedConfig);
+                    applyConfiguration(config);
+                    return;
+                } catch (parseError) {
+                    console.error('Errore parsing localStorage:', parseError);
+                }
+            }
+            
+            // Se non c'è configurazione salvata, usa i valori predefiniti
+            updatePreview();
+            
+            // Prova a caricare dal server in background (senza bloccare l'UI)
+            loadFromServer();
+        }
+        
+        async function loadFromServer() {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    if (!controller.signal.aborted) {
+                        controller.abort();
+                    }
+                }, 8000); // 8 secondi timeout per il caricamento
+                
+                const response = await fetch('/api/admin/form-customization', {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa('admin:admin123')
+                    },
+                    signal: controller.signal
+                });
+                
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const config = await response.json();
+                if (config && Object.keys(config).length > 0) {
+                    applyConfiguration(config);
+                    // Salva anche nel localStorage per cache
+                    localStorage.setItem('formCustomization', JSON.stringify(config));
+                }
+            } catch (error) {
+                console.error('Errore caricamento configurazione dal server:', error);
+                // Non mostrare errori per il caricamento in background
+            }
+        }
+        
+        function applyConfiguration(config) {
+            Object.keys(config).forEach(key => {
+                const element = document.getElementById(key);
+                if (element) {
+                    element.value = config[key];
+                    if (element.type === 'color') {
+                        const valueElement = document.getElementById(key + 'Value');
+                        if (valueElement) {
+                            valueElement.textContent = config[key];
+                        }
+                    }
+                }
+            });
+            
+            // Aggiorna toggle shadow
+            if (config.shadowEnabled) {
+                const shadowToggle = document.getElementById('shadowToggle');
+                if (shadowToggle) {
+                    shadowToggle.classList.add('active');
+                }
+            }
+            
+            updatePreview();
+        }
+
+        async function saveConfiguration() {
+            // Disabilita il bottone di salvataggio per evitare doppi click
+            const saveButton = document.querySelector('button[onclick="saveConfiguration()"]');
+            const originalText = saveButton?.textContent;
+            if (saveButton) {
+                saveButton.disabled = true;
+                saveButton.textContent = 'Salvataggio...';
+            }
+
+            const config = {
+                primaryColor: document.getElementById('primaryColor')?.value || '#2d5a3d',
+                accentColor: document.getElementById('accentColor')?.value || '#4a7c59',
+                backgroundColor: document.getElementById('backgroundColor')?.value || '#faf8f3',
+                textColor: document.getElementById('textColor')?.value || '#2c3e50',
+                fontFamily: document.getElementById('fontFamily')?.value || "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+                titleSize: document.getElementById('titleSize')?.value || '24',
+                textSize: document.getElementById('textSize')?.value || '16',
+                fontWeight: document.getElementById('fontWeight')?.value || '400',
+                formWidth: document.getElementById('formWidth')?.value || '500',
+                elementSpacing: document.getElementById('elementSpacing')?.value || '16',
+                borderRadius: document.getElementById('borderRadius')?.value || '12',
+                shadowEnabled: document.getElementById('shadowToggle')?.classList.contains('active') || false,
+                formTitle: document.getElementById('formTitle')?.value || 'Genera il Tuo Coupon',
+                formSubtitle: document.getElementById('formSubtitle')?.value || 'Compila il form per ricevere il tuo coupon personalizzato',
+                buttonText: document.getElementById('buttonText')?.value || 'Genera Coupon',
+                emailPlaceholder: document.getElementById('emailPlaceholder')?.value || 'La tua email'
+            };
+
+            // Salva sempre nel localStorage per sicurezza
+            localStorage.setItem('formCustomization', JSON.stringify(config));
+
+            try {
+                console.log('Inviando richiesta al server...');
+                console.log('Config da inviare:', config);
+                
+                // Crea una Promise con timeout manuale
+                const fetchWithTimeout = (url, options, timeout = 10000) => {
+                    return Promise.race([
+                        fetch(url, options),
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Timeout della richiesta')), timeout)
+                        )
+                    ]);
+                };
+                
+                const response = await fetchWithTimeout('/api/form-customization', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                }, 15000); // 15 secondi di timeout
+                
+                console.log('Risposta ricevuta:', response.status, response.statusText);
+                console.log('Headers risposta:', response.headers);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showModal({
+                        title: 'Successo',
+                        message: 'Configurazione salvata con successo! Il nuovo stile è ora attivo.',
+                        type: 'success'
+                    });
+                } else {
+                    showModal({
+                        title: 'Errore',
+                        message: 'Errore durante il salvataggio: ' + (result.message || 'Errore sconosciuto'),
+                        type: 'error'
+                    });
+                }
+            } catch (error) {
+                console.error('Errore salvataggio configurazione:', error);
+                
+                // Gestisci diversi tipi di errore
+                let errorMessage = 'Configurazione salvata localmente. ';
+                if (error.name === 'AbortError') {
+                    errorMessage += 'Timeout della richiesta al server.';
+                } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    errorMessage += 'Errore di connessione al server.';
+                } else {
+                    errorMessage += 'Errore di connessione al server.';
+                }
+                
+                showModal({
+                    title: 'Avviso',
+                    message: errorMessage,
+                    type: 'warning'
+                });
+            } finally {
+                // Ripristina sempre il bottone
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.textContent = originalText || 'Salva Configurazione';
+                }
+            }
+        }
+
+        function resetToDefault() {
+            showModal({
+                title: 'Conferma Ripristino',
+                message: 'Sei sicuro di voler ripristinare le impostazioni predefinite? Questa azione non può essere annullata.',
+                type: 'warning',
+                showCancel: true,
+                onConfirm: () => {
+                    localStorage.removeItem('formCustomization');
+                    location.reload();
+                }
+            });
+        }
+
+        // Modal System
+        function showModal(options) {
+            const { title, message, type = 'info', showCancel = false, onConfirm, onCancel } = options;
+            
+            const modalHtml = `
+                <div class="modal-overlay" id="modalOverlay">
+                    <div class="modal ${type}">
+                        <div class="modal-header">
+                            <h3 class="modal-title">${title}</h3>
+                            <button class="modal-close" onclick="closeModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="modal-icon ${type}">${getModalIcon(type)}</div>
+                            <p>${message}</p>
+                        </div>
+                        <div class="modal-footer">
+                            ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
+                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">OK</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('modalOverlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal with animation
+            setTimeout(() => {
+                document.getElementById('modalOverlay').classList.add('show');
+            }, 10);
+            
+            // Store callbacks
+            window.modalCallbacks = { onConfirm, onCancel };
+        }
+        
+        function getModalIcon(type) {
+            switch(type) {
+                case 'success': return '✓';
+                case 'error': return '✗';
+                case 'warning': return '!';
+                default: return 'i';
+            }
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('modalOverlay');
+            if (modal) {
+                modal.classList.remove('show');
+                setTimeout(() => {
+                    modal.remove();
+                }, 300);
+            }
+            if (window.modalCallbacks?.onCancel) {
+                window.modalCallbacks.onCancel();
+            }
+        }
+        
+        function confirmModal() {
+            if (window.modalCallbacks?.onConfirm) {
+                window.modalCallbacks.onConfirm();
+            }
+            closeModal();
+        }
+        
+        // Close modal on overlay click
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeModal();
+            }
+        });
+        
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        function toggleSection(element) {
+            const content = element.nextElementSibling;
+            const isActive = element.classList.contains('active');
+            
+            // Chiudi tutte le altre sezioni
+            document.querySelectorAll('.section-title').forEach(title => {
+                title.classList.remove('active');
+                title.nextElementSibling.classList.remove('show');
+            });
+            
+            // Apri/chiudi la sezione corrente
+            if (!isActive) {
+                element.classList.add('active');
+                content.classList.add('show');
+            }
+        }
+    </script>
+</body>
+</html>

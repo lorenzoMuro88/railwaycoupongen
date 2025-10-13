@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cassa - Verifica coupon</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <style>
+        .search-section {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px var(--shadow-light);
+        }
+        
+        .active-coupons, .redeemed-coupons { 
+            margin-top: 2rem; 
+        }
+        
+        .redeemed-coupons { 
+            background: var(--light-green); 
+            padding: 2rem; 
+            border-radius: 16px; 
+            border: 2px solid var(--accent-green);
+        }
+        
+        .refresh-btn { 
+            margin-bottom: 2rem; 
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            box-shadow: 0 4px 15px rgba(45, 90, 61, 0.3);
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-header h2 {
+            margin: 0;
+            color: var(--primary-green);
+        }
+        
+        .coupon-count {
+            background: var(--accent-green);
+            color: var(--white);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .burn-btn {
+            background: #e74c3c;
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .burn-btn:hover {
+            background: #c0392b;
+        }
+        
+        .campaign-badge {
+            background: var(--gradient-gold);
+            color: var(--white);
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+        
+        /* Prevent campaign column from overflowing/wrapping */
+        table td:nth-child(5) {
+            max-width: 160px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .no-data {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-light);
+            font-style: italic;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--border-light);
+            border-radius: 50%;
+            border-top-color: var(--accent-green);
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <div class="text-center mb-2">
+            <h1>Area Cassa</h1>
+            <p style="color: var(--text-medium); font-size: 1.1rem;">
+                Verifica e gestisci i coupon dei clienti
+            </p>
+        </div>
+        
+        <div class="search-section">
+            <h3 style="color: var(--primary-green); margin-bottom: 1.5rem;">Ricerca Coupon</h3>
+            
+            <div style="margin-bottom: 2rem;">
+                <div style="display: flex; gap: 1rem; align-items: end;">
+                    <div style="flex: 1;">
+                        <label for="searchQuery" style="margin-bottom: 0.5rem; display: block; font-weight: 600; color: var(--text-dark);">
+                            Codice (parziale) o Cognome
+            </label>
+                        <input 
+                            type="text" 
+                            id="searchQuery" 
+                            placeholder="Es: ABC123 o Rossi"
+                            style="width: 100%;"
+                            oninput="searchCoupons(this.value)"
+                        />
+                    </div>
+                    <button type="button" onclick="clearSearch()" style="background: var(--text-light); color: var(--white); border: none; padding: 1rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+                        Pulisci
+                    </button>
+                </div>
+                <div id="searchResults" style="margin-top: 1rem;"></div>
+            </div>
+        </div>
+        
+        <div class="active-coupons">
+            <div class="section-header">
+                <h2>Coupon Attivi</h2>
+                <div class="coupon-count" id="activeCount">0</div>
+            </div>
+            <button class="refresh-btn" onclick="loadActiveCouponsWithFeedback(this)">
+                <span class="btn-text">Aggiorna Lista</span>
+            </button>
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Codice</th>
+                            <th>Cliente</th>
+                            <th>Email</th>
+                            <th>Sconto</th>
+                            <th>Campagna</th>
+                            <th>Emesso</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeCouponsTable"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="redeemed-coupons">
+            <div class="section-header">
+                <h2>Coupon Bruciati</h2>
+                <div class="coupon-count" id="redeemedCount">0</div>
+            </div>
+            <button class="refresh-btn" onclick="loadRedeemedCouponsWithFeedback(this)">
+                <span class="btn-text">Aggiorna Lista</span>
+            </button>
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Codice</th>
+                            <th>Cliente</th>
+                            <th>Email</th>
+                            <th>Sconto</th>
+                            <th>Campagna</th>
+                            <th>Emesso</th>
+                            <th>Bruciato</th>
+                        </tr>
+                    </thead>
+                    <tbody id="redeemedCouponsTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+    <script>
+        // Modal System
+        function showModal(options) {
+            const { title, message, type = 'info', showCancel = false, onConfirm, onCancel } = options;
+            
+            const modalHtml = `
+                <div class="modal-overlay" id="modalOverlay">
+                    <div class="modal ${type}">
+                        <div class="modal-header">
+                            <h3 class="modal-title">${title}</h3>
+                            <button class="modal-close" onclick="closeModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="modal-icon ${type}">${getModalIcon(type)}</div>
+                            <p>${message}</p>
+                        </div>
+                        <div class="modal-footer">
+                            ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
+                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">OK</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('modalOverlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal with animation
+            setTimeout(() => {
+                document.getElementById('modalOverlay').classList.add('show');
+            }, 10);
+            
+            // Store callbacks
+            window.modalCallbacks = { onConfirm, onCancel };
+        }
+        
+        function getModalIcon(type) {
+            switch(type) {
+                case 'success': return '✓';
+                case 'error': return '✗';
+                case 'warning': return '!';
+                default: return 'i';
+            }
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('modalOverlay');
+            if (modal) {
+                modal.classList.remove('show');
+                setTimeout(() => {
+                    modal.remove();
+                }, 300);
+            }
+            if (window.modalCallbacks?.onCancel) {
+                window.modalCallbacks.onCancel();
+            }
+        }
+        
+        function confirmModal() {
+            if (window.modalCallbacks?.onConfirm) {
+                window.modalCallbacks.onConfirm();
+            }
+            closeModal();
+        }
+        
+        // Close modal on overlay click
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeModal();
+            }
+        });
+        
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+        
+        async function redeem(code){
+            const r = await fetch(`/api/coupons/${encodeURIComponent(code)}/redeem`, { method: 'POST' });
+            if(!r.ok){
+                const j = await r.json().catch(()=>({error:'Errore'}));
+                showModal({
+                    title: 'Errore',
+                    message: j.error || 'Si è verificato un errore durante il riscatto del coupon.',
+                    type: 'error'
+                });
+                return;
+            }
+            showModal({
+                title: 'Successo',
+                message: 'Il coupon è stato bruciato con successo!',
+                type: 'success',
+                onConfirm: () => {
+                    document.getElementById('searchResults').innerHTML='';
+                    // Ricarica entrambe le liste
+                    loadActiveCoupons();
+                    loadRedeemedCoupons();
+                }
+            });
+        }
+        
+        async function loadActiveCoupons(){
+            try {
+                const r = await fetch('/api/store/coupons/active');
+                const tbody = document.getElementById('activeCouponsTable');
+                const countEl = document.getElementById('activeCount');
+                
+                if(!r.ok){
+                    tbody.innerHTML = '<tr><td colspan="7" class="no-data">Errore nel caricamento</td></tr>';
+                    countEl.textContent = '0';
+                    return;
+                }
+                const coupons = await r.json();
+                countEl.textContent = coupons.length;
+                
+                if(coupons.length === 0){
+                    tbody.innerHTML = '<tr><td colspan="7" class="no-data">📭 Nessun coupon attivo</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = coupons.map(coupon => {
+                    const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : 
+                                        coupon.discountType === 'fixed' ? `&euro;${coupon.discountValue}` : coupon.discountValue;
+                    const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
+                    return `
+                    <tr>
+                        <td><code>${coupon.code}</code></td>
+                        <td>${clientName}</td>
+                        <td>${coupon.email}</td>
+                        <td><strong>${discountText}</strong></td>
+                        <td>${coupon.campaignName ? `<span class="campaign-badge">${coupon.campaignName}</span>` : '-'}</td>
+                        <td>${new Date(coupon.issuedAt).toLocaleDateString('it-IT')}</td>
+                        <td><button class="burn-btn" onclick="redeem('${coupon.code}')">Brucia</button></td>
+                    </tr>`;
+                }).join('');
+            } catch(e) {
+                document.getElementById('activeCouponsTable').innerHTML = '<tr><td colspan="7" class="no-data">Errore nel caricamento</td></tr>';
+                document.getElementById('activeCount').textContent = '0';
+            }
+        }
+        
+        async function loadRedeemedCoupons(){
+            try {
+                const r = await fetch('/api/store/coupons/redeemed');
+                const tbody = document.getElementById('redeemedCouponsTable');
+                const countEl = document.getElementById('redeemedCount');
+                
+                if(!r.ok){
+                    tbody.innerHTML = '<tr><td colspan="7" class="no-data">Errore nel caricamento</td></tr>';
+                    countEl.textContent = '0';
+                    return;
+                }
+                const coupons = await r.json();
+                countEl.textContent = coupons.length;
+                
+                if(coupons.length === 0){
+                    tbody.innerHTML = '<tr><td colspan="7" class="no-data">Nessun coupon bruciato</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = coupons.map(coupon => {
+                    const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : 
+                                        coupon.discountType === 'fixed' ? `&euro;${coupon.discountValue}` : coupon.discountValue;
+                    const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
+                    return `
+                    <tr>
+                        <td><code>${coupon.code}</code></td>
+                        <td>${clientName}</td>
+                        <td>${coupon.email}</td>
+                        <td><strong>${discountText}</strong></td>
+                        <td>${coupon.campaignName ? `<span class="campaign-badge">${coupon.campaignName}</span>` : '-'}</td>
+                        <td>${new Date(coupon.issuedAt).toLocaleDateString('it-IT')}</td>
+                        <td>${new Date(coupon.redeemedAt).toLocaleDateString('it-IT')}</td>
+                    </tr>`;
+                }).join('');
+            } catch(e) {
+                document.getElementById('redeemedCouponsTable').innerHTML = '<tr><td colspan="7" class="no-data">Errore nel caricamento</td></tr>';
+                document.getElementById('redeemedCount').textContent = '0';
+            }
+        }
+        
+        // Funzioni per ricerca avanzata
+        let searchTimeout;
+        
+        async function searchCoupons(query) {
+            if (query.length < 2) {
+                document.getElementById('searchResults').innerHTML = '';
+                return;
+            }
+            
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/store/coupons/search?q=${encodeURIComponent(query)}`);
+                    const coupons = await response.json();
+                    displaySearchResults(coupons);
+                } catch (error) {
+                    console.error('Errore nella ricerca:', error);
+                    document.getElementById('searchResults').innerHTML = '<div class="no-data">Errore nella ricerca</div>';
+                }
+            }, 300);
+        }
+        
+        function displaySearchResults(coupons) {
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (coupons.length === 0) {
+                resultsDiv.innerHTML = '<div class="no-data">Nessun coupon trovato</div>';
+                return;
+            }
+            
+            // Se c'è un solo risultato, mostra i dettagli completi
+            if (coupons.length === 1) {
+                const coupon = coupons[0];
+                const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : coupon.discountValue;
+                const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
+                const statusClass = coupon.status === 'active' ? 'status-active' : 'status-redeemed';
+                const statusText = coupon.status === 'active' ? 'ATTIVO' : 'BRUCIATO';
+                
+                resultsDiv.innerHTML = `
+                    <div class="card">
+                        <h4 style="color: var(--primary-green); margin: 0 0 1.5rem 0;">Dettagli Coupon</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                            <div><strong>Codice:</strong><br><code>${coupon.code}</code></div>
+                            <div><strong>Cliente:</strong><br>${clientName}</div>
+                            <div><strong>Email:</strong><br>${coupon.email}</div>
+                            <div><strong>Stato:</strong><br><span class="${statusClass}">${statusText}</span></div>
+                            <div><strong>Sconto:</strong><br>${discountText}</div>
+                            <div><strong>Campagna:</strong><br>${coupon.campaignName ? `<span class="campaign-badge">${coupon.campaignName}</span>` : '-'}</div>
+                        </div>
+                        ${coupon.status === 'active' ? 
+                            `<button class="burn-btn" onclick="redeem('${coupon.code}')">Brucia Coupon</button>` : 
+                            '<div style="text-align: center; color: var(--text-light); font-style: italic;">Coupon già utilizzato</div>'
+                        }
+                    </div>
+                `;
+                return;
+            }
+            
+            // Se ci sono più risultati, mostra la tabella
+            const resultsHtml = `
+                <div style="background: var(--white); border: 2px solid var(--border-light); border-radius: 12px; padding: 1.5rem; margin-top: 1rem;">
+                    <h4 style="color: var(--primary-green); margin-bottom: 1rem;">Risultati Ricerca (${coupons.length})</h4>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: var(--light-green);">
+                                    <th style="padding: 0.8rem; text-align: left; border-bottom: 2px solid var(--border-light);">Codice</th>
+                                    <th style="padding: 0.8rem; text-align: left; border-bottom: 2px solid var(--border-light);">Cliente</th>
+                                    <th style="padding: 0.8rem; text-align: left; border-bottom: 2px solid var(--border-light);">Email</th>
+                                    <th style="padding: 0.8rem; text-align: left; border-bottom: 2px solid var(--border-light);">Sconto</th>
+                                    <th style="padding: 0.8rem; text-align: left; border-bottom: 2px solid var(--border-light);">Campagna</th>
+                                    <th style="padding: 0.8rem; text-align: left; border-bottom: 2px solid var(--border-light);">Stato</th>
+                                    <th style="padding: 0.8rem; text-align: left; border-bottom: 2px solid var(--border-light);">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${coupons.map(coupon => {
+                                    const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : 
+                                        coupon.discountType === 'fixed' ? `&euro;${coupon.discountValue}` : coupon.discountValue;
+                                    const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
+                                    const statusBadge = coupon.status === 'active' ? 
+                                        '<span class="status-active">ATTIVO</span>' : 
+                                        '<span class="status-redeemed">BRUCIATO</span>';
+                                    const actionButton = coupon.status === 'active' ? 
+                                        `<button class="burn-btn" onclick="redeem('${coupon.code}')">Brucia</button>` : 
+                                        '<span style="color: var(--text-light);">-</span>';
+                                    
+                                    return `
+                                    <tr style="border-bottom: 1px solid var(--border-light);">
+                                        <td style="padding: 0.8rem;"><code>${coupon.code}</code></td>
+                                        <td style="padding: 0.8rem;">${clientName}</td>
+                                        <td style="padding: 0.8rem;">${coupon.email}</td>
+                                        <td style="padding: 0.8rem;"><strong>${discountText}</strong></td>
+                                        <td style="padding: 0.8rem;">${coupon.campaignName ? `<span class="campaign-badge">${coupon.campaignName}</span>` : '-'}</td>
+                                        <td style="padding: 0.8rem;">${statusBadge}</td>
+                                        <td style="padding: 0.8rem;">${actionButton}</td>
+                                    </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.innerHTML = resultsHtml;
+        }
+        
+        function clearSearch() {
+            document.getElementById('searchQuery').value = '';
+            document.getElementById('searchResults').innerHTML = '';
+        }
+        
+        // Carica entrambe le liste al caricamento della pagina
+        document.addEventListener('DOMContentLoaded', function() {
+            loadActiveCoupons();
+            loadRedeemedCoupons();
+        });
+
+        // Funzione universale per feedback bottoni
+        function setButtonState(button, state, duration = 2000) {
+            // Rimuovi tutti gli stati precedenti
+            button.classList.remove('loading', 'success', 'error');
+            
+            if (state === 'loading') {
+                button.classList.add('loading');
+                button.disabled = true;
+            } else if (state === 'success') {
+                button.classList.add('success');
+                setTimeout(() => {
+                    button.classList.remove('success');
+                    button.disabled = false;
+                }, duration);
+            } else if (state === 'error') {
+                button.classList.add('error');
+                setTimeout(() => {
+                    button.classList.remove('error');
+                    button.disabled = false;
+                }, duration);
+            }
+        }
+
+        // Funzione wrapper per loadActiveCoupons con feedback
+        async function loadActiveCouponsWithFeedback(button) {
+            setButtonState(button, 'loading');
+            
+            try {
+                await loadActiveCoupons();
+                setButtonState(button, 'success');
+            } catch (error) {
+                console.error('Errore durante il caricamento coupon attivi:', error);
+                setButtonState(button, 'error');
+            }
+        }
+
+        // Funzione wrapper per loadRedeemedCoupons con feedback
+        async function loadRedeemedCouponsWithFeedback(button) {
+            setButtonState(button, 'loading');
+            
+            try {
+                await loadRedeemedCoupons();
+                setButtonState(button, 'success');
+            } catch (error) {
+                console.error('Errore durante il caricamento coupon bruciati:', error);
+                setButtonState(button, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+
+

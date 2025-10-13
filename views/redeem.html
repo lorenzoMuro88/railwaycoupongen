@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Riscatta Coupon - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+    <main class="container">
+        <div class="text-center mb-2">
+            <h1>Riscatta Coupon</h1>
+            <p style="color: var(--text-medium); font-size: 1.1rem;">
+                Verifica i dettagli del tuo coupon
+            </p>
+        </div>
+        
+        <div id="content" class="card" style="max-width: 600px; margin: 0 auto; text-align: center;">
+            <div class="loading-spinner" style="margin: 0 auto;"></div>
+            <p style="margin-top: 1rem; color: var(--text-medium);">Caricamento dettagli coupon...</p>
+        </div>
+        
+        <div class="text-center mt-2">
+            <a href="/store" class="secondary" style="text-decoration: none; display: inline-block;">
+                Vai alla Cassa
+            </a>
+        </div>
+    </main>
+    
+    <style>
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border-light);
+            border-radius: 50%;
+            border-top-color: var(--accent-green);
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .coupon-details {
+            text-align: left;
+        }
+        
+        .coupon-details h3 {
+            color: var(--primary-green);
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .detail-item {
+            background: var(--light-green);
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .detail-label {
+            font-size: 0.9rem;
+            color: var(--text-medium);
+            margin-bottom: 0.5rem;
+        }
+        
+        .detail-value {
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        
+        @media (max-width: 600px) {
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    
+    <script>
+        (async function(){
+            const code = location.pathname.split('/').pop();
+            const el = document.getElementById('content');
+            
+            try {
+                const r = await fetch(`/api/coupons/${encodeURIComponent(code)}`);
+                if(!r.ok){ 
+                    el.innerHTML = `
+                        <div style="text-align: center;">
+                            <div style="font-size: 3rem; margin-bottom: 1rem;">✗</div>
+                            <h3 style="color: #e74c3c; margin-bottom: 1rem;">Coupon non trovato</h3>
+                            <p style="color: var(--text-medium);">Verifica che il codice sia corretto e riprova.</p>
+                        </div>
+                    `;
+                    return; 
+                }
+                const data = await r.json();
+                const discountText = data.discountType === 'percent' ? `${data.discountValue}%` : 
+                                    data.discountType === 'fixed' ? `&euro;${data.discountValue}` : data.discountValue;
+                const statusClass = data.status === 'active' ? 'status-active' : 'status-redeemed';
+                const statusText = data.status === 'active' ? 'ATTIVO' : 'BRUCIATO';
+                
+                el.innerHTML = `
+                    <div class="coupon-details">
+                        <h3>Dettagli Coupon</h3>
+                        <div class="detail-grid">
+                            <div class="detail-item">
+                                <div class="detail-label">Codice</div>
+                                <div class="detail-value"><code>${data.code}</code></div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Stato</div>
+                                <div class="detail-value"><span class="${statusClass}">${statusText}</span></div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Sconto</div>
+                                <div class="detail-value">${discountText}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Campagna</div>
+                                <div class="detail-value">${data.campaignName ? `<span class="campaign-badge">${data.campaignName}</span>` : '-'}</div>
+                            </div>
+                        </div>
+                        ${data.status === 'active' ? 
+                            '<div class="success"><strong>Questo coupon è valido e può essere utilizzato!</strong></div>' : 
+                            '<div style="background: #fdf2f2; color: #e74c3c; padding: 1rem; border-radius: 8px; border-left: 4px solid #e74c3c;"><strong>Questo coupon è già stato utilizzato</strong></div>'
+                        }
+                    </div>
+                `;
+            } catch(error) {
+                el.innerHTML = `
+                    <div style="text-align: center;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">!</div>
+                        <h3 style="color: #e74c3c; margin-bottom: 1rem;">Errore di connessione</h3>
+                        <p style="color: var(--text-medium);">Riprova tra qualche secondo.</p>
+                    </div>
+                `;
+            }
+        })();
+    </script>
+</body>
+</html>
+
+

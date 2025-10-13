@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analytics - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .navbar { background: var(--gradient-primary); padding: 1rem 0; margin-bottom: 2rem; box-shadow: var(--shadow-medium); }
+        .navbar-container { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 0 2rem; }
+        .navbar-brand { color: var(--white); font-size: 1.8rem; font-weight: 300; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; letter-spacing: -0.02em; }
+        .navbar-brand:hover { color: var(--light-green); }
+        .navbar-nav { display: flex; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
+        .nav-link { color: var(--white); text-decoration: none; padding: 0.75rem 1.25rem; border-radius: 8px; transition: all 0.3s ease; font-weight: 400; display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; }
+        .nav-link:hover { background: rgba(255,255,255,0.15); color: var(--light-green); }
+        .nav-link.active { background: var(--gold-accent); color: var(--text-dark); font-weight: 500; }
+
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+        .kpi { background: var(--white); border: 1px solid var(--border-light); border-radius: 12px; padding: 1rem; text-align: center; }
+        .kpi .value { font-size: 1.6rem; font-weight: 700; color: var(--primary-green); }
+        .kpi .label { color: var(--text-medium); font-size: 0.9rem; }
+
+        .card { background: var(--white); border: 1px solid var(--border-light); border-radius: 12px; padding: 1rem; box-shadow: 0 2px 10px var(--shadow-light); }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem; border-bottom: 1px solid var(--border-light); text-align: left; }
+        th { background: var(--gradient-primary); color: var(--white); text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.85rem; }
+
+        .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-top: 2rem; }
+        .chart-container { background: var(--white); border: 1px solid var(--border-light); border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 10px var(--shadow-light); }
+        .chart-container h3 { margin-top: 0; color: var(--primary-green); font-size: 1.1rem; text-align: center; }
+        .chart-wrapper { position: relative; height: 300px; }
+
+        @media (max-width: 992px) { 
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .charts-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 560px) { .kpi-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/admin" class="navbar-brand">CouponGen Admin</a>
+            <ul class="navbar-nav">
+                <li class="nav-item"><a href="/admin" class="nav-link">Dashboard</a></li>
+                <li class="nav-item"><a href="/formsetup" class="nav-link">Form Setup</a></li>
+                <li class="nav-item"><a href="/db-utenti" class="nav-link">DB Utenti</a></li>
+                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
+                <li class="nav-item"><a href="/form-design" class="nav-link">Personalizzazione</a></li>
+                <li class="nav-item"><a href="/analytics" class="nav-link active">Analytics</a></li>
+                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="page-header" style="text-align: center; margin-bottom: 2rem;">
+            <h1>Analytics</h1>
+            <p style="color: var(--text-medium);">Panoramica delle performance e della marginalità</p>
+        </div>
+
+        <section class="card" style="margin-bottom: 1.5rem;">
+            <h2 style="margin-top:0;color:var(--primary-green);">Filtri</h2>
+            <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
+                <div>
+                    <label for="campaignFilter" style="display:block; color:var(--text-medium); font-size:0.9rem;">Campagna</label>
+                    <select id="campaignFilter" style="min-width:220px; padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;"></select>
+                </div>
+                <div>
+                    <label for="statusFilter" style="display:block; color:var(--text-medium); font-size:0.9rem;">Stato</label>
+                    <select id="statusFilter" style="min-width:150px; padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;">
+                        <option value="">Tutti</option>
+                        <option value="active">Solo Attivi</option>
+                        <option value="redeemed">Solo Bruciati</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="startDate" style="display:block; color:var(--text-medium); font-size:0.9rem;">Dal</label>
+                    <input type="date" id="startDate" style="padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;" />
+                </div>
+                <div>
+                    <label for="endDate" style="display:block; color:var(--text-medium); font-size:0.9rem;">Al</label>
+                    <input type="date" id="endDate" style="padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;" />
+                </div>
+                <button id="applyFilters" class="primary">APPLICA</button>
+                <button id="clearFilters" class="secondary">PULISCI</button>
+                <button id="exportData" class="secondary">ESPORTA CSV</button>
+            </div>
+        </section>
+
+        <section class="card" style="margin-bottom: 1.5rem;">
+            <h2 style="margin-top:0;color:var(--primary-green);">KPI Generali</h2>
+            <div class="kpi-grid" id="kpiGrid">
+                <div class="kpi"><div class="value" id="kpiCampaigns">-</div><div class="label">Campagne</div></div>
+                <div class="kpi"><div class="value" id="kpiIssued">-</div><div class="label">Coupon emessi</div></div>
+                <div class="kpi"><div class="value" id="kpiRedeemed">-</div><div class="label">Coupon bruciati</div></div>
+                <div class="kpi"><div class="value" id="kpiRate">-</div><div class="label">Redemption rate</div></div>
+            </div>
+            <div class="kpi-grid" style="margin-top:1rem;">
+                <div class="kpi"><div class="value" id="kpiEstDiscountIssued">-</div><div class="label">Sconto stimato (emessi)</div></div>
+                <div class="kpi"><div class="value" id="kpiEstDiscountRedeemed">-</div><div class="label">Sconto stimato (bruciati)</div></div>
+                <div class="kpi"><div class="value" id="kpiGrossMargin">-</div><div class="label">Margine lordo stimato</div></div>
+                <div class="kpi"><div class="value" id="kpiNetMargin">-</div><div class="label">Margine netto stimato</div></div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2 style="margin-top:0;color:var(--primary-green);">Visualizzazioni</h2>
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <h3>Redemption Rate</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="redemptionChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>Confronto Campagne - Coupon Emessi</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="campaignsChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>Margini per Campagna</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="marginsChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>Sconti vs Margini</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="discountsVsMarginsChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container" style="grid-column: 1 / -1;">
+                    <h3>Andamento Temporale - Redemption e Margini</h3>
+                    <div style="display:flex; gap:1rem; margin-bottom:1rem; justify-content:center;">
+                        <label>
+                            <input type="radio" name="temporalGroup" value="day"> Giornaliero
+                        </label>
+                        <label>
+                            <input type="radio" name="temporalGroup" value="week" checked> Settimanale
+                        </label>
+                    </div>
+                    <div class="chart-wrapper" style="height:400px;">
+                        <canvas id="temporalChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2 style="margin-top:0;color:var(--primary-green);">Dettaglio per Campagna</h2>
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Campagna</th>
+                            <th>Emessi</th>
+                            <th>Bruciati</th>
+                            <th>Redemption</th>
+                            <th>Sconto stimato (emessi)</th>
+                            <th>Sconto stimato (bruciati)</th>
+                            <th>Margine lordo stimato</th>
+                            <th>Margine netto stimato</th>
+                        </tr>
+                    </thead>
+                    <tbody id="campaignTable"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">CouponGen</footer>
+
+    <script>
+        function euro(v){ return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v||0); }
+        function pct(v){ return (v*100).toFixed(1)+'%'; }
+
+        let summaryData = null;
+        let campaignsData = null;
+        let campaignsList = [];
+        let temporalChartInstance = null;
+        let redemptionChartInstance = null;
+        let campaignsChartInstance = null;
+        let marginsChartInstance = null;
+        let discountsVsMarginsChartInstance = null;
+
+        function themeColors(){
+            return {
+                primary: getCss('--primary-green') || '#1f8a70',
+                secondary: getCss('--light-green') || '#21bf73',
+                info: '#17a2b8',
+                warning: '#ffc107',
+                danger: '#dc3545',
+                purple: '#6f42c1',
+                blue: '#007bff',
+                blueDark: '#0056b3',
+                green: '#28a745',
+                greenDark: '#1e7e34',
+                border: getCss('--border-light') || '#e5e7eb'
+            };
+        }
+
+        function getCss(varName){
+            return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+        }
+
+        function qsParams(){
+            const start = document.getElementById('startDate').value || '';
+            const end = document.getElementById('endDate').value || '';
+            const campaignId = document.getElementById('campaignFilter').value || '';
+            const status = document.getElementById('statusFilter').value || '';
+            const params = new URLSearchParams();
+            if (campaignId) params.set('campaignId', campaignId);
+            if (start) params.set('start', start);
+            if (end) params.set('end', end);
+            if (status) params.set('status', status);
+            return params.toString();
+        }
+
+        async function loadSummary(){
+            const r = await fetch('/api/admin/analytics/summary' + (qsParams()? ('?' + qsParams()) : ''));
+            if(!r.ok) return;
+            summaryData = await r.json();
+            document.getElementById('kpiCampaigns').textContent = summaryData.totalCampaigns;
+            document.getElementById('kpiIssued').textContent = summaryData.totalCouponsIssued;
+            document.getElementById('kpiRedeemed').textContent = summaryData.totalCouponsRedeemed;
+            document.getElementById('kpiRate').textContent = pct(summaryData.redemptionRate||0);
+            document.getElementById('kpiEstDiscountIssued').textContent = euro(summaryData.estimatedDiscountIssued);
+            document.getElementById('kpiEstDiscountRedeemed').textContent = euro(summaryData.estimatedDiscountRedeemed);
+            document.getElementById('kpiGrossMargin').textContent = euro(summaryData.estimatedGrossMarginOnRedeemed);
+            document.getElementById('kpiNetMargin').textContent = euro(summaryData.estimatedNetMarginAfterDiscount);
+        }
+
+        async function loadPerCampaign(){
+            const r = await fetch('/api/admin/analytics/campaigns' + (qsParams()? ('?' + qsParams()) : ''));
+            if(!r.ok) return;
+            campaignsData = await r.json();
+            const tbody = document.getElementById('campaignTable');
+            tbody.innerHTML = campaignsData.map(c => `
+                <tr>
+                    <td>${c.name}</td>
+                    <td>${c.issued}</td>
+                    <td>${c.redeemed}</td>
+                    <td>${pct(c.redemptionRate||0)}</td>
+                    <td>${euro(c.estDiscountIssued)}</td>
+                    <td>${euro(c.estDiscountRedeemed)}</td>
+                    <td>${euro(c.estGrossMarginRedeemed)}</td>
+                    <td>${euro(c.estNetMarginAfterDiscount)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function createRedemptionChart() {
+            if (!summaryData) return;
+            
+            // Destroy existing chart if it exists
+            if (redemptionChartInstance) {
+                redemptionChartInstance.destroy();
+                redemptionChartInstance = null;
+            }
+            
+            const ctx = document.getElementById('redemptionChart').getContext('2d');
+            const colors = themeColors();
+            redemptionChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Bruciati', 'Non bruciati'],
+                    datasets: [{
+                        data: [summaryData.totalCouponsRedeemed, summaryData.totalCouponsIssued - summaryData.totalCouponsRedeemed],
+                        backgroundColor: [colors.green, colors.warning],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        function createCampaignsChart() {
+            if (!campaignsData || campaignsData.length === 0) return;
+            
+            // Destroy existing chart if it exists
+            if (campaignsChartInstance) {
+                campaignsChartInstance.destroy();
+                campaignsChartInstance = null;
+            }
+            
+            const ctx = document.getElementById('campaignsChart').getContext('2d');
+            const colors = themeColors();
+            campaignsChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: campaignsData.map(c => c.name.length > 15 ? c.name.substring(0, 15) + '...' : c.name),
+                    datasets: [{
+                        label: 'Emessi',
+                        data: campaignsData.map(c => c.issued),
+                        backgroundColor: colors.blue,
+                        borderColor: colors.blueDark,
+                        borderWidth: 1
+                    }, {
+                        label: 'Bruciati',
+                        data: campaignsData.map(c => c.redeemed),
+                        backgroundColor: colors.green,
+                        borderColor: colors.greenDark,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        function createMarginsChart() {
+            if (!campaignsData || campaignsData.length === 0) return;
+            
+            // Destroy existing chart if it exists
+            if (marginsChartInstance) {
+                marginsChartInstance.destroy();
+                marginsChartInstance = null;
+            }
+            
+            const ctx = document.getElementById('marginsChart').getContext('2d');
+            const colors = themeColors();
+            marginsChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: campaignsData.map(c => c.name.length > 15 ? c.name.substring(0, 15) + '...' : c.name),
+                    datasets: [{
+                        label: 'Margine Lordo',
+                        data: campaignsData.map(c => c.estGrossMarginRedeemed),
+                        backgroundColor: colors.info,
+                        borderColor: '#138496',
+                        borderWidth: 1
+                    }, {
+                        label: 'Margine Netto',
+                        data: campaignsData.map(c => c.estNetMarginAfterDiscount),
+                        backgroundColor: colors.purple,
+                        borderColor: '#5a32a3',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return euro(value);
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        function createDiscountsVsMarginsChart() {
+            if (!campaignsData || campaignsData.length === 0) return;
+            
+            // Destroy existing chart if it exists
+            if (discountsVsMarginsChartInstance) {
+                discountsVsMarginsChartInstance.destroy();
+                discountsVsMarginsChartInstance = null;
+            }
+            
+            const ctx = document.getElementById('discountsVsMarginsChart').getContext('2d');
+            const colors = themeColors();
+            discountsVsMarginsChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: campaignsData.map(c => c.name.length > 15 ? c.name.substring(0, 15) + '...' : c.name),
+                    datasets: [{
+                        label: 'Sconti Applicati',
+                        data: campaignsData.map(c => c.estDiscountRedeemed),
+                        backgroundColor: colors.danger,
+                        borderColor: '#c82333',
+                        borderWidth: 1
+                    }, {
+                        label: 'Margine Netto',
+                        data: campaignsData.map(c => c.estNetMarginAfterDiscount),
+                        backgroundColor: colors.green,
+                        borderColor: colors.greenDark,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return euro(value);
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadAllData() {
+            await loadSummary();
+            await loadPerCampaign();
+            
+            // Create charts after data is loaded
+            setTimeout(() => {
+                createRedemptionChart();
+                createCampaignsChart();
+                createMarginsChart();
+                createDiscountsVsMarginsChart();
+                createTemporalChart();
+            }, 100);
+        }
+
+        async function loadCampaignOptions(){
+            const r = await fetch('/api/admin/campaigns');
+            if(!r.ok) return;
+            campaignsList = await r.json();
+            const sel = document.getElementById('campaignFilter');
+            sel.innerHTML = '<option value="">Tutte</option>' + campaignsList.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        }
+
+        function clearAndReload(){
+            // Destroy all chart instances
+            if (temporalChartInstance) {
+                temporalChartInstance.destroy();
+                temporalChartInstance = null;
+            }
+            if (redemptionChartInstance) {
+                redemptionChartInstance.destroy();
+                redemptionChartInstance = null;
+            }
+            if (campaignsChartInstance) {
+                campaignsChartInstance.destroy();
+                campaignsChartInstance = null;
+            }
+            if (marginsChartInstance) {
+                marginsChartInstance.destroy();
+                marginsChartInstance = null;
+            }
+            if (discountsVsMarginsChartInstance) {
+                discountsVsMarginsChartInstance.destroy();
+                discountsVsMarginsChartInstance = null;
+            }
+            
+            // Load data and recreate all charts
+            loadAllData();
+        }
+
+        function createTemporalChart() {
+            // Destroy existing chart if it exists
+            if (temporalChartInstance) {
+                temporalChartInstance.destroy();
+                temporalChartInstance = null;
+            }
+            
+            const ctx = document.getElementById('temporalChart').getContext('2d');
+            const colors = themeColors();
+            const groupBy = document.querySelector('input[name="temporalGroup"]:checked').value;
+            
+            console.log('Creating temporal chart with groupBy:', groupBy);
+            const url = '/api/admin/analytics/temporal' + (qsParams()? ('?' + qsParams() + '&groupBy=' + groupBy) : '?groupBy=' + groupBy);
+            console.log('Fetching URL:', url);
+            
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.length === 0) return;
+                    
+                    temporalChartInstance = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.map(d => d.period),
+                            datasets: [{
+                                label: 'Coupon Emessi',
+                                data: data.map(d => d.issued),
+                                borderColor: colors.blue,
+                                backgroundColor: colors.blue + '20',
+                                tension: 0.4,
+                                yAxisID: 'y'
+                            }, {
+                                label: 'Coupon Bruciati',
+                                data: data.map(d => d.redeemed),
+                                borderColor: colors.green,
+                                backgroundColor: colors.green + '20',
+                                tension: 0.4,
+                                yAxisID: 'y'
+                            }, {
+                                label: 'Sconti Applicati (€)',
+                                data: data.map(d => d.discount_applied || 0),
+                                borderColor: colors.danger,
+                                backgroundColor: colors.danger + '20',
+                                tension: 0.4,
+                                yAxisID: 'y1'
+                            }, {
+                                label: 'Margine Lordo (€)',
+                                data: data.map(d => d.gross_margin || 0),
+                                borderColor: colors.info,
+                                backgroundColor: colors.info + '20',
+                                tension: 0.4,
+                                yAxisID: 'y1'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                            scales: {
+                                x: {
+                                    display: true,
+                                    title: {
+                                        display: true,
+                                        text: groupBy === 'week' ? 'Settimana' : 'Data'
+                                    }
+                                },
+                                y: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'left',
+                                    title: {
+                                        display: true,
+                                        text: 'Numero Coupon'
+                                    }
+                                },
+                                y1: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'right',
+                                    title: {
+                                        display: true,
+                                        text: 'Valore (€)'
+                                    },
+                                    grid: {
+                                        drawOnChartArea: false,
+                                    },
+                                    ticks: {
+                                        callback: function(value) {
+                                            return euro(value);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+        }
+
+        function exportToCSV() {
+            const params = qsParams();
+            const url = '/api/admin/analytics/export' + (params ? ('?' + params) : '');
+            window.open(url, '_blank');
+        }
+
+        document.getElementById('applyFilters').addEventListener('click', clearAndReload);
+        document.getElementById('clearFilters').addEventListener('click', () => {
+            document.getElementById('campaignFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            clearAndReload();
+        });
+        document.getElementById('exportData').addEventListener('click', exportToCSV);
+        
+        // Temporal chart group change
+        document.querySelectorAll('input[name="temporalGroup"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                console.log('Temporal group changed to:', e.target.value);
+                createTemporalChart();
+            });
+        });
+
+        loadCampaignOptions().then(loadAllData);
+    </script>
+</body>
+</html>
+
+

@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CouponGen - Richiedi il tuo coupon</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <main class="container">
+        <div class="text-center mb-2">
+            <h1>CouponGen</h1>
+            <p style="color: var(--text-medium); font-size: 1.2rem; margin-bottom: 2rem;">
+                Richiedi il tuo coupon personalizzato e ricevilo via email con QR code
+            </p>
+        </div>
+        
+        <form method="post" action="/submit" class="card" style="max-width: 450px; margin: 0 auto; padding: 2rem;">
+            <input type="hidden" id="campaign_id" name="campaign_id" value="" />
+            <div class="form-group">
+                <label for="email">
+                    Email *
+                    <input 
+                        type="email" 
+                        id="email"
+                        name="email" 
+                        required 
+                        placeholder="es. mario.rossi@email.com"
+                        autocomplete="email"
+                    />
+                </label>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="firstName">
+                        Nome
+                        <input 
+                            type="text" 
+                            id="firstName"
+                            name="firstName" 
+                            placeholder="Mario"
+                            autocomplete="given-name"
+                        />
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="lastName">
+                        Cognome
+                        <input 
+                            type="text" 
+                            id="lastName"
+                            name="lastName" 
+                            placeholder="Rossi"
+                            autocomplete="family-name"
+                        />
+                    </label>
+                </div>
+                
+                <div class="form-group" id="phoneGroup" style="display: none;">
+                    <label for="phone">
+                        Numero di Telefono
+                        <input 
+                            type="tel" 
+                            id="phone"
+                            name="phone" 
+                            placeholder="+39 123 456 7890"
+                            autocomplete="tel"
+                        />
+                    </label>
+                </div>
+                
+                <div class="form-group" id="addressGroup" style="display: none;">
+                    <label for="address">
+                        Indirizzo
+                        <input 
+                            type="text" 
+                            id="address"
+                            name="address" 
+                            placeholder="Via Roma 123, Milano"
+                            autocomplete="address-line1"
+                        />
+                    </label>
+                </div>
+                
+                <div class="form-group" id="allergiesGroup" style="display: none;">
+                    <label for="allergies">
+                        Allergie
+                        <textarea 
+                            id="allergies"
+                            name="allergies" 
+                            rows="3" 
+                            placeholder="Descrivi eventuali allergie..."
+                        ></textarea>
+                    </label>
+                </div>
+            </div>
+            
+            <button type="submit" class="primary" style="width: 100%; margin-top: 1.5rem;">
+                Genera Coupon
+            </button>
+            
+            <div class="text-center" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-light);">
+                <p style="color: var(--text-light); font-size: 0.9rem;">
+                    Il tuo coupon verrà inviato via email con un QR code per il riscatto
+                </p>
+            </div>
+        </form>
+    </main>
+    
+    <style>
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .form-group input {
+            width: 100%;
+            box-sizing: border-box;
+            max-width: 100%;
+        }
+        
+        .form-row .form-group input {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        @media (max-width: 600px) {
+            .form-row {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+            }
+        }
+        
+        input:focus {
+        }
+        
+        button:active {
+        }
+        
+        .campaign-info {
+            background: var(--light-green);
+            border: 2px solid var(--accent-green);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        
+        .campaign-info h3 {
+            color: var(--primary-green);
+            margin: 0 0 0.5rem 0;
+            font-size: 1.1rem;
+        }
+        
+        .campaign-info p {
+            color: var(--text-medium);
+            margin: 0;
+            font-size: 0.9rem;
+        }
+        
+        .error-message {
+            background: #ffebee;
+            border: 2px solid #f44336;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            color: #d32f2f;
+        }
+    </style>
+    
+    <script>
+        // Get campaign parameter from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const campaignId = urlParams.get('campaign');
+        
+        // Load campaign info if campaign parameter is present
+        if (campaignId) {
+            loadCampaignInfo(campaignId);
+        } else {
+            showNoCampaignMessage();
+            // Apply custom styling even without campaign
+            applyCustomization();
+        }
+        
+        // Add form validation
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                if (!validateForm()) {
+                    e.preventDefault();
+                }
+            });
+        }
+        
+        async function loadCampaignInfo(campaignId) {
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}`);
+                
+                if (!response.ok) {
+                    showError('Questo coupon non esiste o è scaduto');
+                    return;
+                }
+                
+                const campaign = await response.json();
+                displayCampaignInfo(campaign);
+                
+            } catch (error) {
+                console.error('Errore:', error);
+                showError('Questo coupon non esiste o è scaduto');
+            }
+            
+            // Apply custom styling regardless of campaign
+            applyCustomization();
+        }
+        
+        function displayCampaignInfo(campaign) {
+            const form = document.querySelector('form');
+            const campaignInfo = document.createElement('div');
+            campaignInfo.className = 'campaign-info';
+            
+            const discountText = campaign.discount_type === 'percent' ? 
+                `${campaign.discount_value}% di sconto` : 
+                campaign.discount_value;
+            
+            campaignInfo.innerHTML = `
+                <h3>${campaign.name}</h3>
+                <p>${discountText}</p>
+                ${campaign.description ? `<p style="margin-top: 0.5rem; font-style: italic;">${campaign.description}</p>` : ''}
+            `;
+            
+            form.insertBefore(campaignInfo, form.firstChild);
+            
+            // Set the campaign_id in the hidden field (using campaign_code)
+            document.getElementById('campaign_id').value = campaign.campaign_code;
+            
+            // Configure form fields based on campaign configuration
+            configureFormFields(campaign.form_config);
+            
+            // Apply custom styling
+            applyCustomization();
+        }
+        
+        function configureFormFields(formConfig) {
+            // Hide/show fields and set required attribute based on configuration
+            const emailField = document.querySelector('input[name="email"]');
+            const firstNameField = document.querySelector('input[name="firstName"]');
+            const lastNameField = document.querySelector('input[name="lastName"]');
+            const phoneField = document.querySelector('input[name="phone"]');
+            const addressField = document.querySelector('input[name="address"]');
+            const allergiesField = document.querySelector('textarea[name="allergies"]');
+
+            // Email is always visible and required
+            if (emailField) {
+                const emailGroup = emailField.closest('.form-group');
+                emailGroup.style.display = 'block';
+                emailField.required = true;
+            }
+
+            // First name
+            if (firstNameField && formConfig.firstName) {
+                const firstNameGroup = firstNameField.closest('.form-group');
+                if (formConfig.firstName.visible) {
+                    firstNameGroup.style.display = 'block';
+                    firstNameField.required = formConfig.firstName.required;
+                } else {
+                    firstNameGroup.style.display = 'none';
+                    firstNameField.required = false;
+                }
+            }
+
+            // Last name
+            if (lastNameField && formConfig.lastName) {
+                const lastNameGroup = lastNameField.closest('.form-group');
+                if (formConfig.lastName.visible) {
+                    lastNameGroup.style.display = 'block';
+                    lastNameField.required = formConfig.lastName.required;
+                } else {
+                    lastNameGroup.style.display = 'none';
+                    lastNameField.required = false;
+                }
+            }
+
+            // Phone
+            if (phoneField && formConfig.phone) {
+                const phoneGroup = phoneField.closest('.form-group');
+                if (formConfig.phone.visible) {
+                    phoneGroup.style.display = 'block';
+                    phoneField.required = formConfig.phone.required;
+                } else {
+                    phoneGroup.style.display = 'none';
+                    phoneField.required = false;
+                }
+            }
+
+            // Address
+            if (addressField && formConfig.address) {
+                const addressGroup = addressField.closest('.form-group');
+                if (formConfig.address.visible) {
+                    addressGroup.style.display = 'block';
+                    addressField.required = formConfig.address.required;
+                } else {
+                    addressGroup.style.display = 'none';
+                    addressField.required = false;
+                }
+            }
+
+            // Allergies
+            if (allergiesField && formConfig.allergies) {
+                const allergiesGroup = allergiesField.closest('.form-group');
+                if (formConfig.allergies.visible) {
+                    allergiesGroup.style.display = 'block';
+                    allergiesField.required = formConfig.allergies.required;
+                } else {
+                    allergiesGroup.style.display = 'none';
+                    allergiesField.required = false;
+                }
+            }
+
+            // Configure custom fields
+            configureCustomFields(formConfig.customFields || []);
+        }
+
+        function configureCustomFields(customFields) {
+            // Remove existing custom fields
+            const existingCustomFields = document.querySelectorAll('.custom-field');
+            existingCustomFields.forEach(field => field.remove());
+
+            // Add new custom fields
+            const form = document.querySelector('form');
+            const submitButton = document.querySelector('button[type="submit"]');
+            
+            customFields.forEach(field => {
+                if (field.visible) {
+                    const fieldGroup = document.createElement('div');
+                    fieldGroup.className = 'form-group custom-field';
+                    
+                    const label = document.createElement('label');
+                    label.setAttribute('for', field.id);
+                    label.innerHTML = `${field.name}${field.required ? ' *' : ''}`;
+                    
+                    let input;
+                    if (field.type === 'number') {
+                        input = document.createElement('input');
+                        input.type = 'number';
+                        input.placeholder = 'Inserisci un numero';
+                    } else {
+                        input = document.createElement('input');
+                        input.type = 'text';
+                        input.placeholder = `Inserisci ${field.name.toLowerCase()}`;
+                    }
+                    
+                    input.id = field.id;
+                    input.name = field.id;
+                    input.required = field.required;
+                    
+                    label.appendChild(input);
+                    fieldGroup.appendChild(label);
+                    
+                    // Insert before submit button
+                    form.insertBefore(fieldGroup, submitButton);
+                }
+            });
+        }
+        
+        function showNoCampaignMessage() {
+            const form = document.querySelector('form');
+            
+            // Hide the entire form
+            form.style.display = 'none';
+            
+            // Create error message container
+            const errorContainer = document.createElement('div');
+            errorContainer.className = 'card';
+            errorContainer.style.maxWidth = '450px';
+            errorContainer.style.margin = '0 auto';
+            errorContainer.style.padding = '2rem';
+            errorContainer.style.textAlign = 'center';
+            
+            errorContainer.innerHTML = `
+                <div class="error-message">
+                    <h3>Questo coupon non esiste o è scaduto</h3>
+                </div>
+            `;
+            
+            // Insert error message where the form was
+            form.parentNode.insertBefore(errorContainer, form);
+        }
+        
+        function validateForm() {
+            const email = document.querySelector('input[name="email"]').value.trim();
+            const firstNameField = document.querySelector('input[name="firstName"]');
+            const lastNameField = document.querySelector('input[name="lastName"]');
+            const phoneField = document.querySelector('input[name="phone"]');
+            const addressField = document.querySelector('input[name="address"]');
+            const allergiesField = document.querySelector('textarea[name="allergies"]');
+
+            // Email is always required
+            if (!email) {
+                showError('L\'indirizzo email è obbligatorio');
+                return false;
+            }
+
+            if (!isValidEmail(email)) {
+                showError('Inserisci un indirizzo email valido');
+                return false;
+            }
+
+            // Check required fields only
+            if (firstNameField && firstNameField.required && !firstNameField.value.trim()) {
+                showError('Il nome è obbligatorio');
+                return false;
+            }
+
+            if (lastNameField && lastNameField.required && !lastNameField.value.trim()) {
+                showError('Il cognome è obbligatorio');
+                return false;
+            }
+
+            if (phoneField && phoneField.required && !phoneField.value.trim()) {
+                showError('Il numero di telefono è obbligatorio');
+                return false;
+            }
+
+            if (addressField && addressField.required && !addressField.value.trim()) {
+                showError('L\'indirizzo è obbligatorio');
+                return false;
+            }
+
+            if (allergiesField && allergiesField.required && !allergiesField.value.trim()) {
+                showError('Le informazioni sulle allergie sono obbligatorie');
+                return false;
+            }
+
+            // Check custom fields
+            const customFields = document.querySelectorAll('.custom-field input, .custom-field textarea');
+            for (const field of customFields) {
+                if (field.required && !field.value.trim()) {
+                    const fieldName = field.closest('label').textContent.replace(' *', '').trim();
+                    showError(`Il campo "${fieldName}" è obbligatorio`);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        
+        function isValidEmail(email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return emailRegex.test(email);
+        }
+        
+        function showError(message) {
+            const form = document.querySelector('form');
+            
+            // Hide the entire form
+            form.style.display = 'none';
+            
+            // Create error message container
+            const errorContainer = document.createElement('div');
+            errorContainer.className = 'card';
+            errorContainer.style.maxWidth = '450px';
+            errorContainer.style.margin = '0 auto';
+            errorContainer.style.padding = '2rem';
+            errorContainer.style.textAlign = 'center';
+            
+            errorContainer.innerHTML = `
+                <div class="error-message">
+                    <h3>${message}</h3>
+                </div>
+            `;
+            
+            // Insert error message where the form was
+            form.parentNode.insertBefore(errorContainer, form);
+        }
+
+        // Applica configurazioni personalizzate
+        async function applyCustomization() {
+            try {
+                const response = await fetch('/api/form-customization');
+                const config = await response.json();
+                
+                if (config && Object.keys(config).length > 0) {
+                    applyFormCustomization(config);
+                }
+            } catch (error) {
+                console.error('Errore caricamento configurazione:', error);
+            }
+        }
+
+        function applyFormCustomization(config) {
+            // Applica colori
+            if (config.primaryColor) {
+                document.documentElement.style.setProperty('--primary-green', config.primaryColor);
+            }
+            if (config.accentColor) {
+                document.documentElement.style.setProperty('--accent-green', config.accentColor);
+            }
+            if (config.backgroundColor) {
+                document.documentElement.style.setProperty('--cream', config.backgroundColor);
+            }
+            if (config.textColor) {
+                document.documentElement.style.setProperty('--text-dark', config.textColor);
+            }
+
+            // Applica tipografia
+            if (config.fontFamily) {
+                document.body.style.fontFamily = config.fontFamily;
+            }
+
+            // Applica contenuto
+            if (config.formTitle) {
+                const title = document.querySelector('h1');
+                if (title) title.textContent = config.formTitle;
+            }
+            
+            if (config.formSubtitle) {
+                const subtitle = document.querySelector('p');
+                if (subtitle) subtitle.textContent = config.formSubtitle;
+            }
+
+            if (config.buttonText) {
+                const button = document.querySelector('button[type="submit"]');
+                if (button) button.textContent = config.buttonText;
+            }
+
+            if (config.emailPlaceholder) {
+                const emailInput = document.getElementById('email');
+                if (emailInput) emailInput.placeholder = config.emailPlaceholder;
+            }
+
+            // Applica stili al form
+            const form = document.querySelector('form');
+            if (form) {
+                if (config.formWidth) {
+                    form.style.maxWidth = config.formWidth + 'px';
+                }
+                
+                if (config.borderRadius) {
+                    form.style.borderRadius = config.borderRadius + 'px';
+                }
+                
+                if (config.shadowEnabled) {
+                    form.style.boxShadow = '0 8px 32px rgba(0,0,0,0.1)';
+                }
+            }
+
+            // Applica stili agli input
+            const inputs = document.querySelectorAll('input');
+            inputs.forEach(input => {
+                if (config.borderRadius) {
+                    input.style.borderRadius = config.borderRadius + 'px';
+                }
+                if (config.textSize) {
+                    input.style.fontSize = config.textSize + 'px';
+                }
+            });
+
+            // Applica stili al bottone
+            const submitButton = document.querySelector('button[type="submit"]');
+            if (submitButton) {
+                if (config.borderRadius) {
+                    submitButton.style.borderRadius = config.borderRadius + 'px';
+                }
+                if (config.textSize) {
+                    submitButton.style.fontSize = config.textSize + 'px';
+                }
+                if (config.fontWeight) {
+                    submitButton.style.fontWeight = config.fontWeight;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+
+

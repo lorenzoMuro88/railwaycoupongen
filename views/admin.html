@@ -1,0 +1,1984 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin - Coupon attivi</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <style>
+        /* Navigation Bar */
+        .navbar {
+            background: var(--gradient-primary);
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-medium);
+        }
+        
+        .navbar-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 2rem;
+        }
+        
+        .navbar-brand {
+            color: var(--white);
+            font-size: 1.8rem;
+            font-weight: 300;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .navbar-brand:hover {
+            color: var(--light-green);
+        }
+        
+        .navbar-nav {
+            display: flex;
+            gap: 0.5rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .nav-item {
+            margin: 0;
+        }
+        
+        .nav-link {
+            color: var(--white);
+            text-decoration: none;
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-weight: 400;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.95rem;
+        }
+        
+        .nav-link:hover {
+            background: rgba(255,255,255,0.15);
+            color: var(--light-green);
+        }
+        
+        .nav-link.active {
+            background: var(--gold-accent);
+            color: var(--text-dark);
+            font-weight: 500;
+        }
+        
+        .nav-link.active:hover {
+            background: #f4d03f;
+            color: var(--text-dark);
+        }
+        
+        .navbar-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        
+        /* Mobile Navigation */
+        @media (max-width: 768px) {
+            .navbar-container {
+                flex-direction: column;
+                gap: 1rem;
+                padding: 0 1rem;
+            }
+            
+            .navbar-nav {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            
+            .nav-link {
+                padding: 0.5rem 1rem;
+                font-size: 0.9rem;
+            }
+        }
+        
+        .admin-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .admin-header h1 {
+            color: var(--primary-green);
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .admin-header p {
+            color: var(--text-medium);
+            font-size: 1.1rem;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+        
+        .controls label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            min-width: 120px;
+        }
+        
+        .controls input, .controls select {
+            padding: 0.8rem;
+            border: 2px solid var(--border-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .refresh-btn {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            box-shadow: 0 4px 15px rgba(45, 90, 61, 0.3);
+        }
+        
+        .redeemed-section, .campaigns-section {
+            margin-top: 2rem;
+            background: var(--light-green);
+            padding: 2rem;
+            border-radius: 16px;
+            border: 2px solid var(--accent-green);
+        }
+        
+        .campaigns-section h2 {
+            margin-top: 0;
+            color: var(--primary-green);
+        }
+        
+        .campaigns-section h3 {
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--earth-brown);
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .form-row label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        /* Dropdown Styles - Identical to DB Utenti */
+        .dropdown-container {
+            position: relative;
+        }
+        
+        .dropdown-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            height: 50px;
+            font-weight: 500;
+            color: var(--text-dark);
+            box-sizing: border-box;
+        }
+
+        .dropdown-trigger:hover {
+            border-color: var(--dark-green);
+            background: var(--light-green);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .dropdown-arrow {
+            color: var(--text-medium);
+            transition: transform 0.3s ease;
+        }
+        
+        .dropdown-trigger.open .dropdown-arrow {
+            transform: rotate(180deg);
+        }
+        
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            z-index: 1000;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        .dropdown-menu.show {
+            display: block;
+        }
+        
+        .dropdown-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
+            color: var(--white);
+            border-radius: 10px 10px 0 0;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        
+        .dropdown-options {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .dropdown-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .dropdown-option:hover {
+            background: var(--light-green);
+            transform: translateX(4px);
+        }
+        
+        .dropdown-option:last-child {
+            border-bottom: none;
+        }
+        
+        .dropdown-option.selected {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+        
+        .dropdown-option.selected:hover {
+            background: var(--dark-green);
+        }
+        
+        /* Products Selection Styles */
+        .products-selection {
+            width: 100%;
+        }
+        
+        .selected-products-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        .selected-product-tag {
+            background: var(--primary-green);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .remove-product-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        
+        .remove-product-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Products Modal Styles */
+        .products-modal-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border: 2px solid var(--primary-green);
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            height: 50px;
+            font-weight: 500;
+            color: var(--text-dark);
+            box-sizing: border-box;
+        }
+
+        .products-modal-trigger:hover {
+            border-color: var(--dark-green);
+            background: var(--light-green);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .modal-arrow {
+            font-size: 1.2rem;
+        }
+
+        .products-modal-options {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            background: var(--white);
+        }
+
+        .product-modal-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-light);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .product-modal-option:hover {
+            background: var(--light-green);
+        }
+
+        .product-modal-option.selected {
+            background: var(--primary-green);
+            color: white;
+        }
+
+        .product-modal-option:last-child {
+            border-bottom: none;
+        }
+
+        .product-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .product-name {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .product-details {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .product-selection-indicator {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        /* Pagination Styles */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding: 1rem;
+        }
+
+        .pagination button {
+            padding: 0.5rem 1rem;
+            border: 2px solid var(--primary-green);
+            background: var(--white);
+            color: var(--primary-green);
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            min-width: 40px;
+        }
+
+        .pagination button:hover {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+
+        .pagination button.active {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination button:disabled:hover {
+            background: var(--white);
+            color: var(--primary-green);
+        }
+
+        .pagination-info {
+            color: var(--text-medium);
+            font-size: 0.9rem;
+            margin: 0 1rem;
+        }
+
+        .redeemed-controls {
+            margin-bottom: 1.5rem;
+        }
+        
+        #discountValue {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        
+        .campaign-form {
+            background: var(--white);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        .campaign-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        .campaign-count {
+            background: var(--primary-green);
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: normal;
+            margin-left: 0.5rem;
+        }
+        
+        .burn-btn {
+            background: var(--accent-red);
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(231, 76, 60, 0.2);
+        }
+        
+        .burn-btn:hover {
+            background: #c0392b;
+            box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
+        }
+        
+        .burn-btn:active {
+            box-shadow: 0 2px 4px rgba(231, 76, 60, 0.2);
+        }
+        
+        .activate-btn {
+            background: var(--accent-green);
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .activate-btn:hover {
+            background: var(--primary-green);
+        }
+        
+        .deactivate-btn {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+        
+        .deactivate-btn:hover {
+            background: linear-gradient(135deg, #e67e22, #d35400);
+        }
+        
+        .delete-btn {
+            background: #e74c3c;
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .delete-btn:hover {
+            background: #c0392b;
+        }
+        
+        .link-btn {
+            background: var(--primary-green);
+            color: var(--white);
+            border: none;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .link-btn:hover {
+            background: var(--accent-green);
+        }
+        
+        
+        .summary-stats {
+            background: var(--white);
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            text-align: center;
+            font-weight: 600;
+            color: var(--primary-green);
+        }
+        
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+        .campaign-actions {
+            flex-direction: column;
+        }
+    }
+
+    /* Stili per allineamento e altezza uniforme del filtro */
+    .controls {
+        display: flex;
+        align-items: end;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .controls label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        min-width: 80px;
+    }
+
+    .controls input,
+    .controls button {
+        height: 40px;
+        padding: 0 0.75rem;
+        border: 2px solid var(--border-light);
+        border-radius: 8px;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        box-sizing: border-box;
+    }
+
+    /* Forza il bottone CARICA alla stessa altezza degli input/select */
+    .controls .refresh-btn {
+        height: 40px !important;
+        min-height: 40px !important;
+        line-height: 40px !important;
+        padding: 0 1.25rem !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        align-self: flex-end;
+        margin-top: 0;
+    }
+
+    .controls input:focus,
+    .controls select:focus {
+        outline: none;
+        border-color: var(--accent-green);
+        box-shadow: 0 0 0 2px rgba(74, 124, 89, 0.2);
+    }
+
+    /* Freccette animate solo per i campi numerici */
+    .controls input[type="number"] {
+        position: relative;
+        padding-right: 35px;
+    }
+
+    .controls input[type="number"]:hover {
+        box-shadow: 0 4px 12px rgba(45, 90, 61, 0.2);
+    }
+
+    .controls input[type="number"]:hover::after {
+        content: '↕';
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--primary-green);
+        font-size: 1.2rem;
+        font-weight: bold;
+        animation: bounce 0.6s ease-in-out infinite alternate;
+        pointer-events: none;
+    }
+
+    /* Animazione bounce per le freccette */
+    @keyframes bounce {
+        0% { transform: translateY(-50%) translateY(0); }
+        100% { transform: translateY(-50%) translateY(-3px); }
+    }
+
+    /* Dropdown senza freccette animate e altezza identica agli input */
+    .controls select {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        height: 40px !important;
+        min-height: 40px !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        padding-left: 0.75rem !important;
+        padding-right: 2.5rem !important;
+        border: 2px solid var(--border-light) !important;
+        border-radius: 8px !important;
+        font-size: 0.9rem;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right 0.75rem center;
+        background-size: 16px;
+        box-sizing: border-box;
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    .controls select:hover {
+        box-shadow: 0 4px 12px rgba(45, 90, 61, 0.2);
+    }
+        
+        .site-footer { 
+            text-align: center; 
+            padding: 1rem; 
+            color: var(--text-light); 
+            font-size: 0.85rem; 
+            border-top: 1px solid var(--border-light);
+            margin-top: 2rem;
+        }
+    </style>
+    </head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/admin" class="navbar-brand">
+                CouponGen Admin
+            </a>
+            
+            <ul class="navbar-nav">
+                <li class="nav-item"><a href="/admin" class="nav-link active">Dashboard</a></li>
+                <li class="nav-item"><a href="/formsetup" class="nav-link">Form Setup</a></li>
+                <li class="nav-item"><a href="/db-utenti" class="nav-link">DB Utenti</a></li>
+                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
+                <li class="nav-item"><a href="/form-design" class="nav-link">Personalizzazione</a></li>
+                <li class="nav-item"><a href="/analytics" class="nav-link">Analytics</a></li>
+                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
+            </ul>
+            
+            <div class="navbar-actions">
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="admin-header">
+            <h1>Area Admin</h1>
+            <p>Gestisci campagne e monitora i coupon</p>
+        </div>
+        
+        <!-- Campaign Management Section -->
+        <div class="campaigns-section">
+            <h2>Gestione Campagne</h2>
+            <div class="campaign-form">
+                <h3>Crea Nuova Campagna</h3>
+                <form id="campaignForm" onsubmit="createCampaign(event)">
+                    <div class="form-row">
+                        <label>Nome campagna
+                            <input type="text" id="campaignName" required placeholder="es. Sconto Estate 2024" />
+                        </label>
+                        <label>Descrizione
+                            <input type="text" id="campaignDescription" placeholder="es. Promozione estiva per nuovi clienti" />
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label>Tipo sconto
+                            <div class="dropdown-container">
+                                <div class="dropdown-trigger" onclick="toggleDiscountTypeDropdown()">
+                                    <span id="discountTypeText">Percentuale</span>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                <div id="discountTypeDropdown" class="dropdown-menu">
+                                    <div class="dropdown-header">
+                                        <span>Seleziona tipo sconto</span>
+                                    </div>
+                                    <div class="dropdown-options">
+                                        <div class="dropdown-option selected" data-value="percent" onclick="selectDiscountType('percent', 'Percentuale')">
+                                            Percentuale
+                                        </div>
+                                        <div class="dropdown-option" data-value="fixed" onclick="selectDiscountType('fixed', 'Sconto fisso')">
+                                            Sconto fisso
+                                        </div>
+                                        <div class="dropdown-option" data-value="text" onclick="selectDiscountType('text', 'Testo libero')">
+                                            Testo libero
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </label>
+                        <label id="discountLabel">Valore sconto
+                            <input type="text" id="discountValue" required placeholder="es. 10" />
+                            <input type="hidden" id="discountType" value="percent" />
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label>Prodotti associati (opzionale)
+                            <div class="products-selection">
+                                <div class="products-modal-trigger" onclick="openProductsModal()">
+                                    <span id="selectedProductsText">Nessun prodotto selezionato</span>
+                                    <span class="modal-arrow">📋</span>
+                                </div>
+                                <div id="selectedProductsList" class="selected-products-list" style="margin-top: 0.5rem;"></div>
+                            </div>
+                        </label>
+                    </div>
+                    <button type="submit" class="primary">Crea Campagna</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3>Campagne Esistenti <span id="activeCampaignsCount" class="campaign-count"></span></h3>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="refresh-btn" onclick="loadCampaignsWithFeedback(this)">
+                            <span class="btn-text">Aggiorna</span>
+                        </button>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Codice</th>
+                            <th>Descrizione</th>
+                            <th>Tipo</th>
+                            <th>Valore</th>
+                            <th>Stato</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="campaignsTable"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Advanced Search Section -->
+        <div class="search-section">
+            <h2>Ricerca Avanzata</h2>
+            <div style="background: var(--white); border: 2px solid var(--border-light); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+                <h3 style="color: var(--accent-green); margin-bottom: 1rem;">Cerca Coupon</h3>
+                <div style="display: flex; gap: 1rem; align-items: end; margin-bottom: 1rem;">
+                    <div style="flex: 1;">
+                        <label for="adminSearchQuery" style="margin-bottom: 0.5rem; display: block; font-weight: 600; color: var(--text-dark);">
+                            Codice (parziale) o Cognome
+                        </label>
+                        <input 
+                            type="text" 
+                            id="adminSearchQuery" 
+                            placeholder="Es: ABC123 o Rossi"
+                            style="width: 100%;"
+                            oninput="searchAdminCoupons(this.value)"
+                        />
+                    </div>
+                    <button type="button" onclick="clearAdminSearch()" style="background: var(--text-light); color: var(--white); border: none; padding: 1rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+                        Pulisci
+                    </button>
+                </div>
+                <div id="adminSearchResults"></div>
+            </div>
+        </div>
+        
+        <h2>Elenco Coupon</h2>
+        <div class="controls">
+            <label>Stato
+                <select id="status">
+                    <option value="" selected>(tutti)</option>
+                    <option value="active">active</option>
+                    <option value="redeemed">redeemed</option>
+                    <option value="cancelled">cancelled</option>
+                    <option value="expired">expired</option>
+                </select>
+            </label>
+            <label>Limite
+                <input type="number" id="limit" value="20" min="5" max="100" />
+            </label>
+            <label>Pagina
+                <input type="number" id="page" value="1" min="1" />
+            </label>
+            <label>Ordine
+                <select id="order">
+                    <option value="desc" selected>Nuovi prima</option>
+                    <option value="asc">Vecchi prima</option>
+                </select>
+            </label>
+            <button id="loadBtn" class="refresh-btn" onclick="loadWithFeedback(this)">
+                <span class="btn-text">Carica</span>
+            </button>
+        </div>
+        <div id="summary"></div>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Codice</th>
+                        <th>Stato</th>
+                        <th>Sconto</th>
+                        <th>Campagna</th>
+                        <th>Email</th>
+                        <th>Emesso</th>
+                        <th>Azioni</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+        <div id="pagination" class="pagination"></div>
+        
+        <div class="redeemed-section">
+            <h2>Coupon Bruciati (solo visualizzazione)</h2>
+            <div class="redeemed-controls">
+                <div class="controls">
+                    <label>Limite
+                        <input type="number" id="redeemedLimit" value="20" min="5" max="100" />
+                    </label>
+                    <label>Pagina
+                        <input type="number" id="redeemedPage" value="1" min="1" />
+                    </label>
+                    <button class="refresh-btn" onclick="loadRedeemedOnlyWithFeedback(this)">
+                        <span class="btn-text">Aggiorna lista bruciati</span>
+                    </button>
+                </div>
+                <div id="redeemedSummary" class="summary-stats"></div>
+            </div>
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Codice</th>
+                            <th>Sconto</th>
+                            <th>Campagna</th>
+                            <th>Email</th>
+                            <th>Emesso</th>
+                            <th>Bruciato</th>
+                        </tr>
+                    </thead>
+                    <tbody id="redeemedTbody"></tbody>
+                </table>
+            </div>
+            <div id="redeemedPagination" class="pagination"></div>
+        </div>
+    </main>
+
+    <footer class="site-footer">CouponGen</footer>
+
+    <!-- Products Selection Modal -->
+    <div id="productsModal" class="modal-overlay" style="display: none;">
+        <div class="modal" style="max-width: 600px; max-height: 80vh;">
+            <div class="modal-header">
+                <h3 class="modal-title">Seleziona Prodotti</h3>
+                <button class="modal-close" onclick="closeProductsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="products-modal-content">
+                    <p style="margin-bottom: 1rem; color: var(--text-medium);">
+                        Seleziona i prodotti da associare a questa campagna (selezione multipla):
+                    </p>
+                    <div id="productsModalOptions" class="products-modal-options">
+                        <div style="text-align: center; padding: 2rem; color: var(--text-medium);">
+                            Caricamento prodotti...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modal-btn modal-btn-secondary" onclick="closeProductsModal()">Annulla</button>
+                <button type="button" class="modal-btn modal-btn-primary" onclick="confirmProductsSelection()">Conferma Selezione</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Modal System
+        function showModal(options) {
+            const { title, message, type = 'info', showCancel = false, onConfirm, onCancel } = options;
+            
+            const modalHtml = `
+                <div class="modal-overlay" id="modalOverlay">
+                    <div class="modal ${type}">
+                        <div class="modal-header">
+                            <h3 class="modal-title">${title}</h3>
+                            <button class="modal-close" onclick="closeModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="modal-icon ${type === 'info' ? 'info' : type}">${getModalIcon(type)}</div>
+                            <p>${message}</p>
+                        </div>
+                        <div class="modal-footer">
+                            ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
+                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">OK</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('modalOverlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal with animation
+            setTimeout(() => {
+                document.getElementById('modalOverlay').classList.add('show');
+            }, 10);
+            
+            // Store callbacks
+            window.modalCallbacks = { onConfirm, onCancel };
+        }
+        
+        function getModalIcon(type) {
+            switch(type) {
+                case 'success': return '✓';
+                case 'error': return '✗';
+                case 'warning': return '!';
+                default: return 'i';
+            }
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('modalOverlay');
+            if (modal) {
+                modal.classList.remove('show');
+                setTimeout(() => {
+                    modal.remove();
+                }, 300);
+            }
+            if (window.modalCallbacks?.onCancel) {
+                window.modalCallbacks.onCancel();
+            }
+        }
+        
+        function confirmModal() {
+            if (window.modalCallbacks?.onConfirm) {
+                window.modalCallbacks.onConfirm();
+            }
+            closeModal();
+        }
+        
+        // Close modal on overlay click
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeModal();
+            }
+        });
+        
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+        
+        // Global variable to track current discount type
+        let currentDiscountType = 'percent';
+        
+        // Global variables for products
+        let allProducts = [];
+        let selectedProducts = [];
+        
+        // Initialize dropdown on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set initial selected state
+            document.querySelector(`#discountTypeDropdown .dropdown-option[data-value="percent"]`).classList.add('selected');
+            // Set initial hidden input value
+            document.getElementById('discountType').value = 'percent';
+            // Load products for selection
+            loadProductsForSelection();
+        });
+        
+        function toggleDiscountTypeDropdown() {
+            const dropdown = document.getElementById('discountTypeDropdown');
+            const trigger = document.querySelector('.dropdown-trigger');
+            
+            dropdown.classList.toggle('show');
+            trigger.classList.toggle('open');
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function closeDropdown(e) {
+                if (!e.target.closest('.dropdown-container')) {
+                    dropdown.classList.remove('show');
+                    trigger.classList.remove('open');
+                    document.removeEventListener('click', closeDropdown);
+                }
+            });
+        }
+        
+        function selectDiscountType(value, text) {
+            currentDiscountType = value;
+            document.getElementById('discountTypeText').textContent = text;
+            
+            // Set the hidden input value
+            document.getElementById('discountType').value = value;
+            
+            // Update selected state
+            document.querySelectorAll('#discountTypeDropdown .dropdown-option').forEach(option => {
+                option.classList.remove('selected');
+            });
+            document.querySelector(`#discountTypeDropdown .dropdown-option[data-value="${value}"]`).classList.add('selected');
+            
+            // Close dropdown
+            document.getElementById('discountTypeDropdown').classList.remove('show');
+            document.querySelector('.dropdown-trigger').classList.remove('open');
+            
+            // Update discount input based on type
+            toggleDiscountInput();
+        }
+        
+        // Products selection functions
+        async function loadProductsForSelection() {
+            console.log('Loading products for selection...');
+            try {
+                const response = await fetch('/api/admin/products');
+                if (!response.ok) {
+                    console.error('Failed to load products:', response.status);
+                    return;
+                }
+                allProducts = await response.json();
+                console.log('Products loaded:', allProducts.length, 'products');
+                // Products will be populated when modal opens
+            } catch (error) {
+                console.error('Error loading products:', error);
+                // Error will be shown when modal opens
+            }
+        }
+        
+        function populateProductsModal() {
+            console.log('Populating products modal...');
+            const optionsContainer = document.getElementById('productsModalOptions');
+            
+            if (!optionsContainer) {
+                console.error('productsModalOptions container not found');
+                return;
+            }
+            
+            if (!allProducts || allProducts.length === 0) {
+                console.log('No products available');
+                optionsContainer.innerHTML = 
+                    '<div style="text-align: center; padding: 2rem; color: var(--text-medium);">Nessun prodotto disponibile. Carica prima alcuni prodotti dalla sezione "Prodotti".</div>';
+                return;
+            }
+            
+            console.log('Creating modal options for', allProducts.length, 'products');
+            const htmlContent = allProducts.map(product => {
+                const isSelected = selectedProducts.find(p => p.id === product.id);
+                return `
+                    <div class="product-modal-option ${isSelected ? 'selected' : ''}" 
+                         data-product-id="${product.id}" 
+                         onclick="toggleProductSelection(${product.id}, '${product.name}')">
+                        <div class="product-info">
+                            <div class="product-name">${product.name}</div>
+                            <div class="product-details">
+                                €${product.value.toFixed(2)}${product.sku ? ` • SKU: ${product.sku}` : ''}
+                            </div>
+                        </div>
+                        <div class="product-selection-indicator">
+                            ${isSelected ? '✓' : '○'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            optionsContainer.innerHTML = htmlContent;
+            console.log('Modal populated successfully');
+        }
+        
+        function openProductsModal() {
+            console.log('Opening products modal...');
+            const modal = document.getElementById('productsModal');
+            if (!modal) {
+                console.error('Products modal not found');
+                return;
+            }
+            
+            // Populate modal with current product selection
+            populateProductsModal();
+            
+            // Show modal
+            modal.style.display = 'flex';
+            
+            // Add animation
+            setTimeout(() => {
+                modal.classList.add('show');
+            }, 10);
+        }
+        
+        function closeProductsModal() {
+            console.log('Closing products modal...');
+            const modal = document.getElementById('productsModal');
+            if (!modal) return;
+            
+            modal.classList.remove('show');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 300);
+        }
+        
+        function confirmProductsSelection() {
+            console.log('Confirming products selection...');
+            updateSelectedProductsDisplay();
+            closeProductsModal();
+        }
+        
+        function toggleProductSelection(productId, productName) {
+            const product = allProducts.find(p => p.id === productId);
+            if (!product) return;
+            
+            const isSelected = selectedProducts.find(p => p.id === productId);
+            
+            if (isSelected) {
+                // Remove product
+                selectedProducts = selectedProducts.filter(p => p.id !== productId);
+            } else {
+                // Add product
+                selectedProducts.push(product);
+            }
+            
+            // Update the modal display immediately
+            populateProductsModal();
+            
+            console.log('Product selection toggled:', productName, 'Selected products:', selectedProducts.length);
+        }
+        
+        function updateSelectedProductsDisplay() {
+            const container = document.getElementById('selectedProductsList');
+            const textElement = document.getElementById('selectedProductsText');
+            
+            if (selectedProducts.length === 0) {
+                container.innerHTML = '';
+                textElement.textContent = 'Nessun prodotto selezionato';
+            } else {
+                textElement.textContent = `${selectedProducts.length} prodotto/i selezionato/i`;
+                container.innerHTML = selectedProducts.map(product => `
+                    <div class="selected-product-tag">
+                        <span>${product.name}</span>
+                        <button type="button" class="remove-product-btn" onclick="removeProduct(${product.id})">&times;</button>
+                    </div>
+                `).join('');
+            }
+        }
+        
+        function updateProductsDropdown() {
+            const options = document.querySelectorAll('#productsOptions .dropdown-option[data-product-id]');
+            options.forEach(option => {
+                const productId = parseInt(option.dataset.productId);
+                const isSelected = selectedProducts.find(p => p.id === productId);
+                const indicator = option.querySelector('.selection-indicator');
+                
+                if (isSelected) {
+                    option.classList.add('selected');
+                    if (indicator) {
+                        indicator.textContent = '[✓]';
+                        indicator.style.color = 'var(--primary-green)';
+                    }
+                } else {
+                    option.classList.remove('selected');
+                    if (indicator) {
+                        indicator.textContent = '[ ]';
+                        indicator.style.color = 'var(--text-medium)';
+                    }
+                }
+            });
+        }
+        
+        function removeProduct(productId) {
+            selectedProducts = selectedProducts.filter(p => p.id !== productId);
+            updateSelectedProductsDisplay();
+        }
+        
+        function toggleDiscountInput(){
+            const label = document.getElementById('discountLabel');
+            let input = document.getElementById('discountValue');
+            
+            if (!label) {
+                return;
+            }
+            
+            // Ensure input exists
+            if (!input) {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.id = 'discountValue';
+                input.required = true;
+                input.style.display = 'block';
+                input.style.visibility = 'visible';
+                input.style.opacity = '1';
+                input.style.width = '100%';
+                input.style.height = 'auto';
+                input.style.minHeight = '40px';
+                label.appendChild(input);
+            }
+            
+            const type = currentDiscountType;
+            if(type === 'percent'){
+                // Update label text without removing the input
+                const labelText = label.firstChild;
+                if (labelText && labelText.nodeType === Node.TEXT_NODE) {
+                    labelText.textContent = 'Percentuale sconto ';
+                } else {
+                    label.insertBefore(document.createTextNode('Percentuale sconto '), input);
+                }
+                input.placeholder = 'es. 10';
+            } else if(type === 'fixed'){
+                // Update label text without removing the input
+                const labelText = label.firstChild;
+                if (labelText && labelText.nodeType === Node.TEXT_NODE) {
+                    labelText.textContent = 'Valore sconto fisso ';
+                } else {
+                    label.insertBefore(document.createTextNode('Valore sconto fisso '), input);
+                }
+                input.placeholder = 'es. 10';
+            } else {
+                // Update label text without removing the input
+                const labelText = label.firstChild;
+                if (labelText && labelText.nodeType === Node.TEXT_NODE) {
+                    labelText.textContent = 'Testo sconto ';
+                } else {
+                    label.insertBefore(document.createTextNode('Testo sconto '), input);
+                }
+                input.placeholder = 'es. dolce in omaggio';
+            }
+        }
+        
+        async function burnCoupon(code) {
+            try {
+                const response = await fetch(`/api/coupons/${code}/redeem`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    showModal({
+                        title: 'Errore',
+                        message: error.error || 'Errore durante il bruciamento del coupon',
+                        type: 'error'
+                    });
+                    return;
+                }
+                
+                const result = await response.json();
+                showModal({
+                    title: 'Successo',
+                    message: `Coupon ${code} bruciato con successo!`,
+                    type: 'success'
+                });
+                
+                // Ricarica la lista per aggiornare lo stato
+                load();
+                loadRedeemedOnly();
+                
+            } catch (error) {
+                console.error('Errore:', error);
+                showModal({
+                    title: 'Errore',
+                    message: 'Errore di connessione durante il bruciamento del coupon',
+                    type: 'error'
+                });
+            }
+        }
+        
+        function generateFormLink(campaignId, campaignName, campaignCode) {
+            if (!campaignCode || campaignCode === 'undefined') {
+                showModal({
+                    title: 'Errore',
+                    message: 'Codice campagna non disponibile. Ricarica la pagina e riprova.',
+                    type: 'error',
+                    showCancel: false
+                });
+                return;
+            }
+            
+            const baseUrl = window.location.origin;
+            const formUrl = `${baseUrl}/?campaign=${campaignCode}`;
+            
+            // Create modal to show the link
+            showModal({
+                title: `Link Form per "${campaignName}"`,
+                message: `
+                    <div style="text-align: left;">
+                        <p><strong>URL del form:</strong></p>
+                        <div style="background: var(--light-green); padding: 1rem; border-radius: 8px; margin: 1rem 0; word-break: break-all;">
+                            <code style="color: var(--primary-green); font-size: 0.9rem;">${formUrl}</code>
+                        </div>
+                        <p style="font-size: 0.9rem; color: var(--text-medium);">
+                            Condividi questo link per permettere agli utenti di richiedere coupon specifici per questa campagna.
+                        </p>
+                        <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 1rem;">
+                            <strong>Codice campagna:</strong> <code>${campaignCode}</code>
+                        </p>
+                    </div>
+                `,
+                type: 'info',
+                showCancel: false,
+                onConfirm: () => {
+                    // Copy to clipboard
+                    navigator.clipboard.writeText(formUrl).then(() => {
+                        showModal({
+                            title: 'Successo',
+                            message: 'Link copiato negli appunti!',
+                            type: 'success',
+                            showCancel: false
+                        });
+                    }).catch(() => {
+                        showModal({
+                            title: 'Errore',
+                            message: 'Impossibile copiare il link. Copialo manualmente.',
+                            type: 'error',
+                            showCancel: false
+                        });
+                    });
+                }
+            });
+        }
+        
+        async function createCampaign(e){
+            e.preventDefault();
+            
+            const name = document.getElementById('campaignName').value;
+            const description = document.getElementById('campaignDescription').value;
+            const discountType = currentDiscountType;
+            
+            // Ensure the input is visible and accessible
+            const discountValueElement = document.getElementById('discountValue');
+            if (!discountValueElement) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Campo valore sconto non trovato. Ricarica la pagina e riprova.',
+                    type: 'error'
+                });
+                return;
+            }
+            
+            const discountValue = discountValueElement.value;
+            
+            // Validate required fields
+            if (!name || !discountValue) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Nome campagna e valore sconto sono obbligatori.',
+                    type: 'error'
+                });
+                return;
+            }
+            
+            try {
+                const r = await fetch('/api/admin/campaigns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, discount_type: discountType, discount_value: discountValue })
+                });
+                if(!r.ok){
+                    const error = await r.json();
+                    showModal({
+                        title: 'Errore',
+                        message: error.error || 'Si è verificato un errore durante la creazione della campagna.',
+                        type: 'error'
+                    });
+                    return;
+                }
+                
+                const campaign = await r.json();
+                
+                // Associate products if any are selected
+                if (selectedProducts.length > 0) {
+                    const productIds = selectedProducts.map(p => p.id);
+                    const productResponse = await fetch(`/api/admin/campaigns/${campaign.id}/products`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ product_ids: productIds })
+                    });
+                    
+                    if (!productResponse.ok) {
+                        console.warn('Campaign created but failed to associate products');
+                    }
+                }
+                
+                showModal({
+                    title: 'Successo',
+                    message: 'La campagna è stata creata con successo!',
+                    type: 'success',
+                    onConfirm: () => {
+                        document.getElementById('campaignForm').reset();
+                        selectedProducts = [];
+                        updateSelectedProductsDisplay();
+                        loadCampaigns();
+                    }
+                });
+            } catch(e) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Si è verificato un errore durante la creazione della campagna.',
+                    type: 'error'
+                });
+            }
+        }
+        
+        async function loadCampaigns(){
+            try {
+                const r = await fetch('/api/admin/campaigns');
+                const tbody = document.getElementById('campaignsTable');
+                if(!r.ok){
+                    tbody.innerHTML = '<tr><td colspan="6">Errore nel caricamento</td></tr>';
+                    return;
+                }
+                const campaigns = await r.json();
+                if(campaigns.length === 0){
+                    tbody.innerHTML = '<tr><td colspan="7">Nessuna campagna</td></tr>';
+                    return;
+                }
+                // Count active campaigns
+                const activeCount = campaigns.filter(camp => camp.is_active).length;
+                const countElement = document.getElementById('activeCampaignsCount');
+                if (countElement) {
+                    countElement.textContent = `(${activeCount} attive)`;
+                }
+                
+                tbody.innerHTML = campaigns.map(camp => `
+                    <tr>
+                        <td><strong>${camp.name}</strong></td>
+                        <td><code style="background: var(--light-green); padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.8rem;">${camp.campaign_code || 'N/A'}</code></td>
+                        <td>${camp.description || '-'}</td>
+                        <td>${camp.discount_type === 'percent' ? 'Percentuale' : 'Testo'}</td>
+                        <td><strong>${camp.discount_value}</strong></td>
+                        <td>${camp.is_active ? '<span class="status-active">ATTIVA</span>' : '<span style="color: var(--text-light);">Inattiva</span>'}</td>
+                        <td>
+                            <div class="campaign-actions">
+                                ${camp.is_active ? 
+                                    `<button class="deactivate-btn" onclick="deactivateCampaign(${camp.id})">Disattiva</button>` : 
+                                    `<button class="activate-btn" onclick="activateCampaign(${camp.id})">Attiva</button>`
+                                }
+                                <button class="link-btn" onclick="generateFormLink(${camp.id}, '${camp.name}', '${camp.campaign_code || ''}')" title="Genera link form">Link</button>
+                                <button class="delete-btn" onclick="deleteCampaign(${camp.id})">Elimina</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch(e) {
+                document.getElementById('campaignsTable').innerHTML = '<tr><td colspan="7">Errore nel caricamento</td></tr>';
+            }
+        }
+        
+        async function activateCampaign(id){
+            try {
+                const r = await fetch(`/api/admin/campaigns/${id}/activate`, { method: 'PUT' });
+                if(!r.ok) throw new Error();
+                showModal({
+                    title: 'Successo',
+                    message: 'La campagna è stata attivata con successo! Ora puoi avere più campagne attive contemporaneamente.',
+                    type: 'success',
+                    onConfirm: () => {
+                        loadCampaigns();
+                    }
+                });
+            } catch(e) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Si è verificato un errore durante l\'attivazione della campagna.',
+                    type: 'error'
+                });
+            }
+        }
+        
+        async function deactivateCampaign(id){
+            showModal({
+                title: 'Conferma disattivazione',
+                message: 'Sei sicuro di voler disattivare questa campagna? I nuovi coupon non saranno più associati a questa campagna. Le altre campagne attive continueranno a funzionare normalmente.',
+                type: 'warning',
+                showCancel: true,
+                onConfirm: async () => {
+                    try {
+                        const r = await fetch(`/api/admin/campaigns/${id}/deactivate`, { method: 'PUT' });
+                        if(!r.ok) throw new Error();
+                        showModal({
+                            title: 'Successo',
+                            message: 'La campagna è stata disattivata con successo!',
+                            type: 'success',
+                            onConfirm: () => {
+                                loadCampaigns();
+                            }
+                        });
+                    } catch(e) {
+                        showModal({
+                            title: 'Errore',
+                            message: 'Si è verificato un errore durante la disattivazione della campagna.',
+                            type: 'error'
+                        });
+                    }
+                }
+            });
+        }
+        
+        async function deleteCampaign(id){
+            showModal({
+                title: 'Conferma eliminazione',
+                message: 'Sei sicuro di voler eliminare questa campagna? Questa azione non può essere annullata.',
+                type: 'warning',
+                showCancel: true,
+                onConfirm: async () => {
+                    try {
+                        const r = await fetch(`/api/admin/campaigns/${id}`, { method: 'DELETE' });
+                        if(!r.ok) throw new Error();
+                        showModal({
+                            title: 'Successo',
+                            message: 'La campagna è stata eliminata con successo!',
+                            type: 'success',
+                            onConfirm: () => {
+                                loadCampaigns();
+                            }
+                        });
+                    } catch(e) {
+                        showModal({
+                            title: 'Errore',
+                            message: 'Si è verificato un errore durante l\'eliminazione della campagna.',
+                            type: 'error'
+                        });
+                    }
+                }
+            });
+        }
+        
+        async function load(){
+            const status = document.getElementById('status').value;
+            const limit = document.getElementById('limit').value || 20;
+            const page = document.getElementById('page').value || 1;
+            const order = document.getElementById('order').value;
+            const offset = (page - 1) * limit;
+            
+            const params = new URLSearchParams({ limit, offset, order });
+            if(status) params.set('status', status);
+            
+            const r = await fetch(`/api/admin/coupons?${params.toString()}`);
+            const tbody = document.getElementById('tbody');
+            const summary = document.getElementById('summary');
+            const pagination = document.getElementById('pagination');
+            
+            if(!r.ok){
+                tbody.innerHTML = '<tr><td colspan="7">Errore nel caricamento</td></tr>';
+                summary.textContent = '';
+                return;
+            }
+            
+            const data = await r.json();
+            summary.textContent = `Totale: ${data.total}`;
+            
+            if(data.items.length === 0){
+                tbody.innerHTML = '<tr><td colspan="7">Nessun coupon trovato</td></tr>';
+                pagination.innerHTML = '';
+                return;
+            }
+            
+            tbody.innerHTML = data.items.map(it=>{
+                const discountText = it.discountType === 'percent' ? `${it.discountValue}%` : 
+                                    it.discountType === 'fixed' ? `&euro;${it.discountValue}` : it.discountValue;
+                const statusClass = it.status === 'active' ? 'status-active' : 'status-redeemed';
+                const statusText = it.status === 'active' ? 'ATTIVO' : 'BRUCIATO';
+                const burnButton = it.status === 'active' ? 
+                    `<button class="burn-btn" onclick="burnCoupon('${it.code}')" title="Brucia coupon">Brucia</button>` : 
+                    '<span style="color: var(--text-light); font-size: 0.9em;">Già bruciato</span>';
+                
+                return `<tr>
+                    <td><code>${it.code}</code></td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td><strong>${discountText}</strong></td>
+                    <td>${it.campaignName ? `<span class="campaign-badge">${it.campaignName}</span>` : '-'}</td>
+                    <td>${it.userEmail}</td>
+                    <td>${it.issuedAt ? new Date(it.issuedAt).toLocaleDateString('it-IT') : ''}</td>
+                    <td>${burnButton}</td>
+                </tr>`;
+            }).join('');
+            
+            // Update pagination
+            updatePagination(data.total, limit, page);
+        }
+        async function loadRedeemedOnly(){
+            try {
+                const limit = document.getElementById('redeemedLimit').value || 20;
+                const page = document.getElementById('redeemedPage').value || 1;
+                const offset = (page - 1) * limit;
+                
+                const r = await fetch(`/api/admin/coupons?status=redeemed&limit=${limit}&offset=${offset}&order=desc`);
+                const tbody = document.getElementById('redeemedTbody');
+                const summary = document.getElementById('redeemedSummary');
+                const pagination = document.getElementById('redeemedPagination');
+                
+                if(!r.ok){
+                    tbody.innerHTML = '<tr><td colspan="6">Errore nel caricamento</td></tr>';
+                    return;
+                }
+                
+                const data = await r.json();
+                
+                // Update summary
+                if (summary) {
+                    summary.textContent = `Totale: ${data.total} coupon bruciati`;
+                }
+                
+                if(data.items.length === 0){
+                    tbody.innerHTML = '<tr><td colspan="6">Nessun coupon bruciato</td></tr>';
+                    pagination.innerHTML = '';
+                    return;
+                }
+                
+                tbody.innerHTML = data.items.map(it=>{
+                    const discountText = it.discountType === 'percent' ? `${it.discountValue}%` : 
+                                    it.discountType === 'fixed' ? `&euro;${it.discountValue}` : it.discountValue;
+                    return `<tr>
+                        <td><code>${it.code}</code></td>
+                        <td>${discountText}</td>
+                        <td>${it.campaignName || '-'}</td>
+                        <td>${it.userEmail}</td>
+                        <td>${it.issuedAt ? new Date(it.issuedAt).toLocaleDateString('it-IT') : ''}</td>
+                        <td>${it.redeemedAt ? new Date(it.redeemedAt).toLocaleDateString('it-IT') : ''}</td>
+                    </tr>`;
+                }).join('');
+                
+                // Update pagination
+                updateRedeemedPagination(data.total, limit, page);
+                
+            } catch(e) {
+                document.getElementById('redeemedTbody').innerHTML = '<tr><td colspan="6">Errore nel caricamento</td></tr>';
+            }
+        }
+        
+        function updateRedeemedPagination(total, limit, currentPage) {
+            const pagination = document.getElementById('redeemedPagination');
+            const totalPages = Math.ceil(total / limit);
+            
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+            
+            let paginationHtml = '';
+            
+            // Previous button
+            paginationHtml += `<button ${currentPage <= 1 ? 'disabled' : ''} onclick="goToRedeemedPage(${currentPage - 1})">‹</button>`;
+            
+            // Page numbers
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+            
+            if (startPage > 1) {
+                paginationHtml += `<button onclick="goToRedeemedPage(1)">1</button>`;
+                if (startPage > 2) {
+                    paginationHtml += `<span class="pagination-info">...</span>`;
+                }
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                paginationHtml += `<button class="${i === currentPage ? 'active' : ''}" onclick="goToRedeemedPage(${i})">${i}</button>`;
+            }
+            
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    paginationHtml += `<span class="pagination-info">...</span>`;
+                }
+                paginationHtml += `<button onclick="goToRedeemedPage(${totalPages})">${totalPages}</button>`;
+            }
+            
+            // Next button
+            paginationHtml += `<button ${currentPage >= totalPages ? 'disabled' : ''} onclick="goToRedeemedPage(${currentPage + 1})">›</button>`;
+            
+            pagination.innerHTML = paginationHtml;
+        }
+        
+        function goToRedeemedPage(page) {
+            document.getElementById('redeemedPage').value = page;
+            loadRedeemedOnly();
+        }
+        
+        function updatePagination(total, limit, currentPage) {
+            const pagination = document.getElementById('pagination');
+            const totalPages = Math.ceil(total / limit);
+            
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+            
+            let paginationHtml = '';
+            
+            // Previous button
+            paginationHtml += `<button ${currentPage <= 1 ? 'disabled' : ''} onclick="goToPage(${currentPage - 1})">‹</button>`;
+            
+            // Page numbers
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+            
+            if (startPage > 1) {
+                paginationHtml += `<button onclick="goToPage(1)">1</button>`;
+                if (startPage > 2) {
+                    paginationHtml += `<span class="pagination-info">...</span>`;
+                }
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                paginationHtml += `<button class="${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+            
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    paginationHtml += `<span class="pagination-info">...</span>`;
+                }
+                paginationHtml += `<button onclick="goToPage(${totalPages})">${totalPages}</button>`;
+            }
+            
+            // Next button
+            paginationHtml += `<button ${currentPage >= totalPages ? 'disabled' : ''} onclick="goToPage(${currentPage + 1})">›</button>`;
+            
+            pagination.innerHTML = paginationHtml;
+        }
+        
+        function goToPage(page) {
+            document.getElementById('page').value = page;
+            load();
+        }
+        
+        // Funzioni per ricerca avanzata admin
+        let adminSearchTimeout;
+        
+        async function searchAdminCoupons(query) {
+            if (query.length < 2) {
+                document.getElementById('adminSearchResults').innerHTML = '';
+                return;
+            }
+            
+            clearTimeout(adminSearchTimeout);
+            adminSearchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/admin/coupons/search?q=${encodeURIComponent(query)}`);
+                    const coupons = await response.json();
+                    displayAdminSearchResults(coupons);
+                } catch (error) {
+                    console.error('Errore nella ricerca:', error);
+                    document.getElementById('adminSearchResults').innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-light);">Errore nella ricerca</div>';
+                }
+            }, 300);
+        }
+        
+        function displayAdminSearchResults(coupons) {
+            const resultsDiv = document.getElementById('adminSearchResults');
+            
+            if (coupons.length === 0) {
+                resultsDiv.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-light);">Nessun coupon trovato</div>';
+                return;
+            }
+            
+            const resultsHtml = `
+                <div style="background: var(--light-green); border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+                    <h4 style="color: var(--primary-green); margin-bottom: 1rem;">Risultati Ricerca (${coupons.length})</h4>
+                    <div>
+                        <table style="width: 100%; border-collapse: collapse; background: var(--white); border-radius: 8px; overflow: hidden;">
+                            <thead>
+                                <tr style="background: var(--primary-green); color: var(--white);">
+                                    <th style="padding: 0.8rem; text-align: left;">ID</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Codice</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Cliente</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Email</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Sconto</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Campagna</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Stato</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Emesso</th>
+                                    <th style="padding: 0.8rem; text-align: left;">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${coupons.map(coupon => {
+                                    const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : coupon.discountValue;
+                                    const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
+                                    const statusBadge = coupon.status === 'active' ? 
+                                        '<span class="status-active">ATTIVO</span>' : 
+                                        '<span class="status-redeemed">BRUCIATO</span>';
+                                    const burnButton = coupon.status === 'active' ? 
+                                        `<button class="burn-btn" onclick="burnCoupon('${coupon.code}')" title="Brucia coupon">Brucia</button>` : 
+                                        '<span style="color: var(--text-light); font-size: 0.9em;">Già bruciato</span>';
+                                    
+                                    return `
+                                    <tr style="border-bottom: 1px solid var(--border-light);">
+                                        <td style="padding: 0.8rem; font-size: 0.9rem;">${coupon.id}</td>
+                                        <td style="padding: 0.8rem;"><code>${coupon.code}</code></td>
+                                        <td style="padding: 0.8rem;">${clientName}</td>
+                                        <td style="padding: 0.8rem;">${coupon.email}</td>
+                                        <td style="padding: 0.8rem;"><strong>${discountText}</strong></td>
+                                        <td style="padding: 0.8rem;">${coupon.campaignName ? `<span class="campaign-badge">${coupon.campaignName}</span>` : '-'}</td>
+                                        <td style="padding: 0.8rem;">${statusBadge}</td>
+                                        <td style="padding: 0.8rem; font-size: 0.9rem;">${coupon.issuedAt ? new Date(coupon.issuedAt).toLocaleDateString('it-IT') : '-'}</td>
+                                        <td style="padding: 0.8rem;">${burnButton}</td>
+                                    </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.innerHTML = resultsHtml;
+        }
+        
+        function clearAdminSearch() {
+            document.getElementById('adminSearchQuery').value = '';
+            document.getElementById('adminSearchResults').innerHTML = '';
+        }
+        
+        // Event listener rimosso - ora usa loadWithFeedback
+        load();
+        loadRedeemedOnly();
+        loadCampaigns();
+        
+        // Initialize discount input based on current selection
+        setTimeout(() => {
+            toggleDiscountInput();
+        }, 100);
+        
+        // Products are already loaded in DOMContentLoaded
+
+        // Funzione universale per feedback bottoni
+        function setButtonState(button, state, duration = 2000) {
+            // Rimuovi tutti gli stati precedenti
+            button.classList.remove('loading', 'success', 'error');
+            
+            if (state === 'loading') {
+                button.classList.add('loading');
+                button.disabled = true;
+            } else if (state === 'success') {
+                button.classList.add('success');
+                setTimeout(() => {
+                    button.classList.remove('success');
+                    button.disabled = false;
+                }, duration);
+            } else if (state === 'error') {
+                button.classList.add('error');
+                setTimeout(() => {
+                    button.classList.remove('error');
+                    button.disabled = false;
+                }, duration);
+            }
+        }
+
+        // Funzione wrapper per loadCampaigns con feedback
+        async function loadCampaignsWithFeedback(button) {
+            setButtonState(button, 'loading');
+            
+            try {
+                await loadCampaigns();
+                setButtonState(button, 'success');
+            } catch (error) {
+                console.error('Errore durante il caricamento campagne:', error);
+                setButtonState(button, 'error');
+            }
+        }
+
+        // Funzione wrapper per loadRedeemedOnly con feedback
+        async function loadRedeemedOnlyWithFeedback(button) {
+            setButtonState(button, 'loading');
+            
+            try {
+                await loadRedeemedOnly();
+                setButtonState(button, 'success');
+            } catch (error) {
+                console.error('Errore durante il caricamento coupon bruciati:', error);
+                setButtonState(button, 'error');
+            }
+        }
+
+        // Funzione wrapper per load con feedback
+        async function loadWithFeedback(button) {
+            setButtonState(button, 'loading');
+            
+            try {
+                await load();
+                setButtonState(button, 'success');
+            } catch (error) {
+                console.error('Errore durante il caricamento coupon:', error);
+                setButtonState(button, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+
+
