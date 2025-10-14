@@ -19,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 app.use('/static', express.static(path.join(__dirname, 'static')));
 
 // Session configuration
@@ -376,7 +376,7 @@ function buildTransport() {
             async sendMail(message) {
                 // Build Mailgun message
                 const data = {
-                    from: message.from || (process.env.MAILGUN_FROM || 'CouponGen <no-reply@example.com>'),
+                    from: message.from || (process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.vibemarketingstudio.it>'),
                     to: message.to,
                     subject: message.subject || 'Il tuo coupon',
                     html: message.html,
@@ -538,7 +538,7 @@ app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
         const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
         const html = `<p>Test Mailgun integrazione da CouponGen.</p>`;
         const message = {
-            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@example.com>',
+            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.vibemarketingstudio.it>',
             to,
             subject: 'Test Email - CouponGen',
             html
@@ -615,6 +615,34 @@ app.post('/api/admin/form-customization', requireAdmin, async (req, res) => {
     } catch (error) {
         console.error('Errore salvataggio configurazione form:', error);
         res.status(500).json({ success: false, message: 'Errore durante il salvataggio della configurazione' });
+    }
+});
+
+// Simple image upload endpoint for admin (base64 data URL)
+// Saves under static/uploads and returns a public URL
+app.post('/api/admin/upload-image', requireAdmin, async (req, res) => {
+    try {
+        const { dataUrl } = req.body || {};
+        if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+            return res.status(400).json({ error: 'dataUrl mancante o non valido' });
+        }
+        const match = dataUrl.match(/^data:(.*?);base64,(.*)$/);
+        if (!match) return res.status(400).json({ error: 'Formato dataUrl non valido' });
+        const mime = match[1];
+        const base64 = match[2];
+        const ext = mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
+        const buffer = Buffer.from(base64, 'base64');
+        // Ensure uploads dir exists
+        const uploadsDir = path.join(__dirname, 'static', 'uploads');
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+        const filename = `header-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const filePath = path.join(uploadsDir, filename);
+        fs.writeFileSync(filePath, buffer);
+        const publicUrl = `/static/uploads/${filename}`;
+        res.json({ url: publicUrl });
+    } catch (e) {
+        console.error('Upload image error:', e);
+        res.status(500).json({ error: 'Errore durante il caricamento immagine' });
     }
 });
 
@@ -728,8 +756,9 @@ app.post('/submit', async (req, res) => {
             couponCode, userId, campaignId, discountType, discountValue, 'active'
         );
 
+        // Redemption URL per staff cassa; il QR deve puntare a questa pagina
         const redemptionUrl = `${req.protocol}://${req.get('host')}/redeem/${couponCode}`;
-        const qrDataUrl = await QRCode.toDataURL(couponCode, { width: 300, margin: 2 });
+        const qrDataUrl = await QRCode.toDataURL(redemptionUrl, { width: 300, margin: 2 });
 
         const discountText = discountType === 'percent' ? `uno sconto del ${discountValue}%` : 
                             discountType === 'fixed' ? `uno sconto di &euro;${discountValue}` : discountValue;
@@ -746,7 +775,7 @@ app.post('/submit', async (req, res) => {
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
             <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
             <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="cid:couponqr" alt="QR Code" /></p>
+            <p><img src="cid:couponqr.png" alt="QR Code" /></p>
             <p>Grazie!</p>`;
         }
 
@@ -758,13 +787,13 @@ app.post('/submit', async (req, res) => {
             .replaceAll('{{redemptionUrl}}', redemptionUrl);
 
         const message = {
-            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@example.com>',
+            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.vibemarketingstudio.it>',
             to: email,
             subject: templateSubject,
             html,
             attachments: [
-                {   // inline QR
-                    filename: 'coupon.png',
+                {   // inline QR (Mailgun risolve per filename)
+                    filename: 'couponqr.png',
                     cid: 'couponqr',
                     content: Buffer.from(qrDataUrl.split(',')[1], 'base64'),
                     contentType: 'image/png'

@@ -127,13 +127,44 @@
                                 <div class="detail-label">Campagna</div>
                                 <div class="detail-value">${data.campaignName ? `<span class="campaign-badge">${data.campaignName}</span>` : '-'}</div>
                             </div>
+                            <div class="detail-item" style="grid-column: span 2; text-align:left;">
+                                <div class="detail-label">Descrizione campagna</div>
+                                <div class="detail-value" style="font-weight:400;">${data.campaignDescription || '-'}</div>
+                            </div>
                         </div>
                         ${data.status === 'active' ? 
-                            '<div class="success"><strong>Questo coupon è valido e può essere utilizzato!</strong></div>' : 
+                            `<div class="success" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+                                <strong>Questo coupon è valido e può essere utilizzato!</strong>
+                                <button id="burnBtn" class="btn" style="background: var(--accent-red); border:none;">Brucia ora</button>
+                             </div>` : 
                             '<div style="background: #fdf2f2; color: #e74c3c; padding: 1rem; border-radius: 8px; border-left: 4px solid #e74c3c;"><strong>Questo coupon è già stato utilizzato</strong></div>'
                         }
                     </div>
                 `;
+
+                // Bind burn button if active
+                const burnBtn = document.getElementById('burnBtn');
+                if (burnBtn) {
+                    burnBtn.addEventListener('click', async () => {
+                        const ok = window.confirm('Confermi di bruciare questo coupon? L\'operazione è irreversibile.');
+                        if (!ok) return;
+                        burnBtn.disabled = true;
+                        try {
+                            const resp = await fetch(`/api/coupons/${encodeURIComponent(data.code)}/redeem`, { method: 'POST', headers: { 'Content-Type': 'application/json' }});
+                            if (!resp.ok) throw new Error();
+                            const res = await resp.json();
+                            if (res.ok) {
+                                location.reload();
+                            } else {
+                                alert('Errore nel bruciare il coupon');
+                                burnBtn.disabled = false;
+                            }
+                        } catch (e) {
+                            alert('Errore di rete');
+                            burnBtn.disabled = false;
+                        }
+                    });
+                }
             } catch(error) {
                 el.innerHTML = `
                     <div style="text-align: center;">

@@ -9,7 +9,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
+<body style="margin:0;">
+    <!-- Full-bleed header image -->
+    <div id="publicHeader" style="display:none; width:100vw; margin-left:calc(50% - 50vw); height:38vh; min-height:220px; overflow:hidden; position:relative; box-shadow: 0 8px 20px rgba(0,0,0,.15); background-size: cover; background-position: 50% 50%; background-repeat:no-repeat;">
+        <img id="publicHeaderImg" src="" alt="Header" style="width:100%; height:100%; object-fit:cover; object-position:center; display:block;"/>
+        <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.25) 0%, rgba(0,0,0,0) 50%); pointer-events:none;"></div>
+    </div>
+
     <main class="container">
         <div class="text-center mb-2">
             <h1>CouponGen</h1>
@@ -110,6 +116,7 @@
             </div>
         </form>
     </main>
+    <footer class="site-footer"></footer>
     
     <style>
         .form-group {
@@ -529,6 +536,46 @@
                 if (subtitle) subtitle.textContent = config.formSubtitle;
             }
 
+            // Nuovi contenuti pagina (se presenti)
+            if (config.pageTitle) {
+                const title = document.querySelector('h1');
+                if (title) title.textContent = config.pageTitle;
+            }
+            if (config.pageSubtitle) {
+                const subtitle = document.querySelector('.text-center.mb-2 p');
+                if (subtitle) subtitle.textContent = config.pageSubtitle;
+            }
+
+            if (config.headerImageUrl) {
+                const wrap = document.getElementById('publicHeader');
+                const img = document.getElementById('publicHeaderImg');
+                if (img && wrap) {
+                    img.src = config.headerImageUrl;
+                    const applyFocal = () => {
+                        const fxNum = (typeof config.headerFocalX === 'number') ? config.headerFocalX : parseFloat(config.headerFocalX);
+                        const fyNum = (typeof config.headerFocalY === 'number') ? config.headerFocalY : parseFloat(config.headerFocalY);
+                        const fx = !isNaN(fxNum) ? Math.round(fxNum * 100) : 50;
+                        const fy = !isNaN(fyNum) ? Math.round(fyNum * 100) : 50;
+                        // Always use background strategy and always show header
+                        wrap.style.backgroundImage = `url('${config.headerImageUrl}')`;
+                        wrap.style.backgroundPosition = fx + '% ' + fy + '%';
+                        img.style.display = 'none';
+                        // Fallback to <img> mode if background not applied
+                        const comp = getComputedStyle(wrap);
+                        if (comp.backgroundImage === 'none') {
+                            // fallback to <img> mode
+                            img.style.display = 'block';
+                            wrap.style.backgroundImage = '';
+                            img.style.setProperty('object-position', fx + '% ' + fy + '%', 'important');
+                        }
+                    };
+                    img.addEventListener('load', applyFocal, { once: true });
+                    // apply immediately too (in case of cache)
+                    applyFocal();
+                    wrap.style.display = 'block';
+                }
+            }
+
             if (config.buttonText) {
                 const button = document.querySelector('button[type="submit"]');
                 if (button) button.textContent = config.buttonText;
@@ -539,17 +586,16 @@
                 if (emailInput) emailInput.placeholder = config.emailPlaceholder;
             }
 
-            // Applica stili al form
+            // Applica stili al form (coordinati con header): usa maxWidth solo sul contenuto, non sul wrapper full-bleed
             const form = document.querySelector('form');
             if (form) {
                 if (config.formWidth) {
                     form.style.maxWidth = config.formWidth + 'px';
+                    form.style.margin = '0 auto';
                 }
-                
                 if (config.borderRadius) {
                     form.style.borderRadius = config.borderRadius + 'px';
                 }
-                
                 if (config.shadowEnabled) {
                     form.style.boxShadow = '0 8px 32px rgba(0,0,0,0.1)';
                 }

@@ -585,6 +585,37 @@
             <p>Personalizza l'aspetto estetico del form di generazione coupon per adattarlo al tuo brand</p>
         </div>
 
+        <!-- Header preview with upload -->
+        <div class="card" style="margin-bottom:1.5rem;">
+            <h3 style="color: var(--primary-green);">Header del form</h3>
+            <p style="color: var(--text-medium); margin-top:.25rem;">Carica un'immagine di intestazione (facoltativa). Formati supportati: JPG, PNG, WEBP.</p>
+            <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap; margin-top:1rem;">
+                <input type="file" id="headerUpload" accept="image/*">
+                <button class="btn" type="button" onclick="uploadHeaderImage()">Carica</button>
+                <button id="saveHeaderBtn" class="btn btn-secondary" type="button" onclick="saveHeaderConfig()" disabled>Salva configurazione</button>
+                <span id="headerUploadStatus" style="color: var(--text-medium);"></span>
+            </div>
+            <div id="headerPreview" style="margin-top:1rem; border:1px dashed var(--border-light); border-radius:12px; background:#fafafa; overflow:hidden; height:260px; position:relative;">
+                <img id="headerImage" src="" alt="Header" style="width:100%; height:100%; display:none; object-fit:cover; object-position:center;"/>
+                <div id="headerPlaceholder" style="color: var(--text-light);">Nessuna immagine caricata</div>
+            </div>
+
+            <div id="focalControls" style="display:block; margin-top: .75rem;">
+                <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+                    <label style="display:flex; align-items:center; gap:.5rem;">
+                        Focal X
+                        <input type="range" id="focalX" min="0" max="100" value="50" oninput="updateFocalPreview()">
+                        <span id="focalXVal" style="width:2rem; text-align:right; color: var(--text-medium);">50%</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:.5rem;">
+                        Focal Y
+                        <input type="range" id="focalY" min="0" max="100" value="50" oninput="updateFocalPreview()">
+                        <span id="focalYVal" style="width:2rem; text-align:right; color: var(--text-medium);">50%</span>
+                    </label>
+                </div>
+                <p style="color: var(--text-light); margin-top:.25rem;">Regola il punto d'interesse dell'immagine per l'inquadratura nelle varie risoluzioni.</p>
+            </div>
+        </div>
         
 
         
@@ -744,6 +775,16 @@
                 <div class="section-content">
                 
                 <div class="form-group">
+                    <label>Titolo Pagina (H1)</label>
+                    <input type="text" id="pageTitle" value="CouponGen" placeholder="Titolo pagina (H1)">
+                </div>
+
+                <div class="form-group">
+                    <label>Sottotitolo Pagina</label>
+                    <input type="text" id="pageSubtitle" value="Richiedi il tuo coupon personalizzato e ricevilo via email con QR code" placeholder="Sottotitolo pagina">
+                </div>
+
+                <div class="form-group">
                     <label>Titolo Form</label>
                     <input type="text" id="formTitle" value="Genera il Tuo Coupon" placeholder="Inserisci il titolo del form">
                 </div>
@@ -767,8 +808,13 @@
             </div>
 
             <div class="preview-main">
-                <h2 class="preview-title">Anteprima Form</h2>
+                <h2 class="preview-title">Anteprima Home</h2>
                 <div class="form-preview" id="formPreview">
+                    <div style="text-align:center; margin-bottom:.5rem;">
+                        <h3 id="previewPageH1" style="margin:.25rem 0; color: var(--primary-green);">CouponGen</h3>
+                        <p id="previewPageSubtitle" style="margin:0; color: var(--text-medium); font-size:.95rem;">Richiedi il tuo coupon personalizzato e ricevilo via email con QR code</p>
+                    </div>
+                    <div id="previewHeader" style="width:100%; height:200px; border-radius:12px; background:#e7f0e7; background-size:cover; background-position:50% 50%; margin-bottom:1rem; overflow:hidden;"></div>
                     <div class="preview-header">
                         <h3 class="preview-title-text" id="previewTitle">Genera il Tuo Coupon</h3>
                         <p class="preview-subtitle" id="previewSubtitle">Compila il form per ricevere il tuo coupon personalizzato</p>
@@ -787,6 +833,8 @@
             <button class="btn btn-secondary" onclick="resetToDefault()">Ripristina Default</button>
             <button class="btn btn-primary" onclick="saveConfiguration()">Salva Configurazione</button>
         </div>
+
+        <footer class="site-footer">CouponGen</footer>
 
         
     </div>
@@ -935,12 +983,20 @@
             }
 
             // Aggiorna testi in tempo reale
+            const pageH1 = document.getElementById('pageTitle')?.value || 'CouponGen';
+            const pageSub = document.getElementById('pageSubtitle')?.value || 'Richiedi il tuo coupon personalizzato e ricevilo via email con QR code';
             const formTitle = document.getElementById('formTitle')?.value || 'Genera il Tuo Coupon';
             const formSubtitle = document.getElementById('formSubtitle')?.value || 'Compila il form per ricevere il tuo coupon personalizzato';
             const buttonText = document.getElementById('buttonText')?.value || 'Genera Coupon';
             const emailPlaceholder = document.getElementById('emailPlaceholder')?.value || 'La tua email';
 
-            // Aggiorna titolo del preview
+            // Aggiorna titolo pagina
+            const h1 = document.getElementById('previewPageH1');
+            if (h1) h1.textContent = pageH1;
+            const h1s = document.getElementById('previewPageSubtitle');
+            if (h1s) h1s.textContent = pageSub;
+
+            // Aggiorna titolo del preview form
             if (title) {
                 title.textContent = formTitle;
             }
@@ -1062,6 +1118,23 @@
             }
             
             updatePreview();
+            // Aggiorna header preview se abbiamo header salvato pubblicamente
+            try {
+                fetch('/api/form-customization').then(r=>r.json()).then(pubCfg=>{
+                    const headerUrl = pubCfg.headerImageUrl || config.headerImageUrl;
+                    const headerX = (typeof pubCfg.headerFocalX === 'number') ? pubCfg.headerFocalX : config.headerFocalX;
+                    const headerY = (typeof pubCfg.headerFocalY === 'number') ? pubCfg.headerFocalY : config.headerFocalY;
+                    if (headerUrl){
+                        const hdr = document.getElementById('previewHeader');
+                        if (hdr){
+                            hdr.style.backgroundImage = `url('${headerUrl}')`;
+                            if (typeof headerX === 'number' && typeof headerY === 'number'){
+                                hdr.style.backgroundPosition = Math.round(headerX*100)+'% '+Math.round(headerY*100)+'%';
+                            }
+                        }
+                    }
+                }).catch(()=>{});
+            } catch(e) {}
         }
 
         async function saveConfiguration() {
@@ -1086,6 +1159,8 @@
                 elementSpacing: document.getElementById('elementSpacing')?.value || '16',
                 borderRadius: document.getElementById('borderRadius')?.value || '12',
                 shadowEnabled: document.getElementById('shadowToggle')?.classList.contains('active') || false,
+                pageTitle: document.getElementById('pageTitle')?.value || 'CouponGen',
+                pageSubtitle: document.getElementById('pageSubtitle')?.value || 'Richiedi il tuo coupon personalizzato e ricevilo via email con QR code',
                 formTitle: document.getElementById('formTitle')?.value || 'Genera il Tuo Coupon',
                 formSubtitle: document.getElementById('formSubtitle')?.value || 'Compila il form per ricevere il tuo coupon personalizzato',
                 buttonText: document.getElementById('buttonText')?.value || 'Genera Coupon',
@@ -1109,12 +1184,20 @@
                     ]);
                 };
                 
+                // Unione non distruttiva con eventuale configurazione esistente lato pubblico
+                let existing = {};
+                try {
+                    const cur = await fetch('/api/form-customization');
+                    if (cur.ok) existing = await cur.json();
+                } catch(e) {}
+                const safePayload = { ...existing, ...config }; // NON include header*
+
                 const response = await fetchWithTimeout('/api/form-customization', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(config)
+                    body: JSON.stringify(safePayload)
                 }, 15000); // 15 secondi di timeout
                 
                 console.log('Risposta ricevuta:', response.status, response.statusText);
@@ -1190,8 +1273,10 @@
                             <h3 class="modal-title">${title}</h3>
                             <button class="modal-close" onclick="closeModal()">&times;</button>
                         </div>
-                        <div class="modal-body">
-                            <div class="modal-icon ${type}">${getModalIcon(type)}</div>
+                        <div class="modal-body" style="display:flex;align-items:center;gap:1rem;">
+                            <div class="modal-icon ${type}" style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:999px;background:var(--primary-green);color:#fff;">
+                                ${getModalIcon(type)}
+                            </div>
                             <p>${message}</p>
                         </div>
                         <div class="modal-footer">
@@ -1221,12 +1306,13 @@
         }
         
         function getModalIcon(type) {
-            switch(type) {
-                case 'success': return 'OK';
-                case 'error': return 'ERR';
-                case 'warning': return '!';
-                default: return 'i';
-            }
+            const icons = {
+                success: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M7 12.5l3 3 7-7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                error: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                warning: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 7v7M12 17.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                info: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 10v7M12 7.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>'
+            };
+            return icons[type] || icons.info;
         }
         
         function closeModal() {
@@ -1293,7 +1379,116 @@
                     }
                 })
                 .catch(error => console.error('Error loading navigation:', error));
+            // Load current customization to show header preview
+            loadCurrentCustomization();
         });
+
+        let _headerDirty = false;
+        function updateSaveButton(){
+            const btn = document.getElementById('saveHeaderBtn');
+            if (!btn) return;
+            if (_headerDirty){
+                btn.disabled = false;
+                btn.classList.remove('btn-secondary');
+                btn.style.background = 'var(--gradient-primary)';
+                btn.style.color = 'var(--white)';
+            } else {
+                btn.disabled = true;
+                btn.classList.add('btn-secondary');
+                btn.style.background = '#e2e8f0';
+                btn.style.color = 'var(--text-dark)';
+            }
+        }
+        function markDirty(){
+            _headerDirty = true;
+            updateSaveButton();
+        }
+
+        async function uploadHeaderImage(){
+            const input = document.getElementById('headerUpload');
+            const status = document.getElementById('headerUploadStatus');
+            if (!input.files || !input.files[0]) { status.textContent = 'Seleziona un file.'; return; }
+            const file = input.files[0];
+            const reader = new FileReader();
+            reader.onload = async () => {
+                try {
+                    status.textContent = 'Caricamento...';
+                    const r = await fetch('/api/admin/upload-image', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ dataUrl: reader.result }) });
+                    if(!r.ok) throw new Error();
+                    const j = await r.json();
+                    const img = document.getElementById('headerImage');
+                    const ph = document.getElementById('headerPlaceholder');
+                    img.src = j.url; img.style.display = 'block'; ph.style.display = 'none';
+                    status.textContent = 'Immagine caricata.';
+                    markDirty();
+                    // Merge and salva nella configurazione admin
+                    let currentCfg = {};
+                    try {
+                        const cur = await fetch('/api/admin/form-customization');
+                        if (cur.ok) currentCfg = await cur.json();
+                    } catch(e) {}
+                    currentCfg.headerImageUrl = j.url;
+                    await fetch('/api/admin/form-customization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
+                } catch(e){ status.textContent = 'Errore nel caricamento.'; }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function loadCurrentCustomization(){
+            try{
+                const r = await fetch('/api/admin/form-customization');
+                if(!r.ok) return;
+                const cfg = await r.json();
+                if (cfg.headerImageUrl){
+                    const img = document.getElementById('headerImage');
+                    const ph = document.getElementById('headerPlaceholder');
+                    img.src = cfg.headerImageUrl; img.style.display = 'block'; ph.style.display = 'none';
+                    // Apply focal if present
+                    if (typeof cfg.headerFocalX === 'number' && typeof cfg.headerFocalY === 'number') {
+                        document.getElementById('focalX').value = Math.round(cfg.headerFocalX*100);
+                        document.getElementById('focalY').value = Math.round(cfg.headerFocalY*100);
+                        updateFocalPreview();
+                    }
+                    document.getElementById('focalControls').style.display = 'block';
+                    _headerDirty = false; updateSaveButton();
+                }
+            }catch(e){ console.warn('Impossibile caricare configurazione corrente'); }
+        }
+
+        async function saveHeaderConfig(){
+            const status = document.getElementById('headerUploadStatus');
+            try{
+                let currentCfg = {};
+                const cur = await fetch('/api/admin/form-customization');
+                if (cur.ok) currentCfg = await cur.json();
+                // se c'è un'immagine in preview, usa quella
+                const img = document.getElementById('headerImage');
+                if (img && img.src) currentCfg.headerImageUrl = img.src;
+                // salva il focal point normalizzato (0..1)
+                const fx = Number(document.getElementById('focalX').value)/100;
+                const fy = Number(document.getElementById('focalY').value)/100;
+                currentCfg.headerFocalX = isNaN(fx)?0.5:fx;
+                currentCfg.headerFocalY = isNaN(fy)?0.5:fy;
+                // salva nella configurazione admin e anche pubblica per garantire la lettura dalla home
+                await fetch('/api/admin/form-customization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
+                await fetch('/api/form-customization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
+                status.textContent = 'Configurazione salvata.';
+                _headerDirty = false;
+                updateSaveButton();
+            }catch(e){ status.textContent = 'Errore nel salvataggio configurazione.'; }
+        }
+
+        function updateFocalPreview(){
+            const fx = document.getElementById('focalX').value;
+            const fy = document.getElementById('focalY').value;
+            document.getElementById('focalXVal').textContent = fx + '%';
+            document.getElementById('focalYVal').textContent = fy + '%';
+            const img = document.getElementById('headerImage');
+            if (img && img.style) {
+                img.style.objectPosition = `${fx}% ${fy}%`;
+            }
+            markDirty();
+        }
     </script>
 </body>
 </html>

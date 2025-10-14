@@ -79,6 +79,15 @@
             justify-content: center;
         }
 
+/* Small inline icons for top navbar */
+.nav-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .nav-link:hover {
     background: rgba(255,255,255,0.15);
     color: var(--light-green);

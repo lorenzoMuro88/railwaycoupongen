@@ -166,6 +166,13 @@
                             </div>
                         </div>
                         <div class="form-group">
+                            <label>Testo meccanica</label>
+                            <textarea id="mechanicsText" class="text-block">Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.</textarea>
+                            <div class="controls-actions" style="justify-content:flex-start; gap:.35rem; margin-top:.35rem;">
+                                <button id="saveMechanics" type="button" class="btn btn-secondary" style="padding:.35rem .7rem; text-transform:none;" disabled onclick="saveSection('mechanics')">Salva</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
                             <label>Testo footer</label>
                             <textarea id="footerText" class="text-block">Grazie per averci scelto</textarea>
                             <div class="controls-actions" style="justify-content:flex-start; gap:.35rem; margin-top:.35rem;">
@@ -223,8 +230,12 @@
             const text = document.getElementById('textColor').value || '#2c3e50';
              const btnBg = document.getElementById('buttonColor').value || primary;
              const btnText = document.getElementById('buttonTextColor').value || '#ffffff';
-            const greeting = (window.sunEditors?.greeting?.getContents() || document.getElementById('greeting').value || 'Ciao');
+            // Get greeting as plain inline text (avoid block tags that cause line breaks)
+            const rawGreeting = (window.sunEditors?.greeting?.getContents() || document.getElementById('greeting').value || 'Ciao');
+            const tmpDiv = document.createElement('div'); tmpDiv.innerHTML = rawGreeting;
+            const greeting = (tmpDiv.textContent || tmpDiv.innerText || 'Ciao').replace(/\s+/g, ' ').trim();
             const introText = (window.sunEditors?.intro?.getContents() || document.getElementById('introText').value || 'Ecco il tuo coupon personale');
+            const mechanicsText = (document.getElementById('mechanicsText').value || 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.');
             const footerText = (window.sunEditors?.footer?.getContents() || document.getElementById('footerText').value || 'Grazie per averci scelto');
 
             // Email HTML responsive semplice, con tabelle e stili inline
@@ -249,9 +260,9 @@
             </tr>
             <tr>
               <td style="padding:24px;">
-                <p style="margin:0 0 12px 0;font-size:16px;">${greeting} {{firstName}} {{lastName}}</p>
+                <p style="margin:0 0 12px 0;font-size:16px;white-space:normal;">${greeting} {{firstName}} {{lastName}}</p>
                 <p style="margin:0 0 12px 0;font-size:16px;">${introText} <strong>{{code}}</strong> che vale {{discountText}}.</p>
-                <p style="margin:0 0 16px 0;font-size:16px;">Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.</p>
+                <p style="margin:0 0 16px 0;font-size:16px;">${mechanicsText}</p>
 
                 <div style="text-align:center;margin:16px 0;">
                   <img src="cid:couponqr" alt="QR Code" style="width:180px;height:180px;display:inline-block;border:6px solid ${accent};border-radius:12px;" />
@@ -320,9 +331,10 @@
             else document.getElementById('introText').value = 'Ecco il tuo coupon personale';
             if (window.sunEditors?.footer) window.sunEditors.footer.setContents('Grazie per averci scelto');
             else document.getElementById('footerText').value = 'Grazie per averci scelto';
+            document.getElementById('mechanicsText').value = 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.';
 
             // disabilita i piccoli salva
-            ['saveGreeting','saveIntro','saveFooter'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = true; });
+            ['saveGreeting','saveIntro','saveFooter','saveMechanics'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = true; });
             buildAndPreview();
         }
 
@@ -359,11 +371,19 @@
                     editor.onKeyUp = enable;
                 }
             });
+
+            // Abilita il Salva del testo meccanica (textarea normale)
+            const mech = document.getElementById('mechanicsText');
+            const mechBtn = document.getElementById('saveMechanics');
+            if (mech && mechBtn) {
+                const enableMech = () => { mechBtn.disabled = false; buildAndPreview(); };
+                ['input','change','keyup'].forEach(ev => mech.addEventListener(ev, enableMech));
+            }
         }
 
         function saveSection(section){
             buildAndPreview();
-            const map = { greeting: 'saveGreeting', intro: 'saveIntro', footer: 'saveFooter' };
+            const map = { greeting: 'saveGreeting', intro: 'saveIntro', footer: 'saveFooter', mechanics: 'saveMechanics' };
             const btnId = map[section];
             const btn = document.getElementById(btnId);
             if (btn) btn.disabled = true;
@@ -371,7 +391,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             loadTemplate();
-            ['emailSubject','brandName','logoUrl','primaryColor','accentColor','backgroundColor','textColor','buttonColor','buttonTextColor','greeting','buttonLabel']
+            ['emailSubject','brandName','logoUrl','primaryColor','accentColor','backgroundColor','textColor','buttonColor','buttonTextColor','greeting','buttonLabel','mechanicsText']
                 .forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', buildAndPreview); });
             initEditors();
         });

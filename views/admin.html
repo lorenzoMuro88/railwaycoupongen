@@ -863,9 +863,13 @@
                             <h3 class="modal-title">${title}</h3>
                             <button class="modal-close" onclick="closeModal()">&times;</button>
                         </div>
-                        <div class="modal-body">
-                            <div class="modal-icon ${type === 'info' ? 'info' : type}">${getModalIcon(type)}</div>
-                            <p>${message}</p>
+                        <div class="modal-body" style="padding: 1rem 1.25rem;">
+                            ${type === 'info' 
+                                ? `<div style=\"font-size:1rem; color: var(--text-dark);\">${message}</div>`
+                                : `<div style=\"display:flex;align-items:center;gap:.9rem;\">
+                                        <div class=\"modal-icon ${type}\" style=\"display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:999px;background:var(--primary-green);color:#fff;box-shadow:0 3px 8px rgba(45,90,61,.15);\">${getModalIcon(type)}</div>
+                                        <div style=\"font-size:1rem; color: var(--text-dark);\">${message}</div>
+                                   </div>`}
                         </div>
                         <div class="modal-footer">
                             ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
@@ -894,12 +898,14 @@
         }
         
         function getModalIcon(type) {
-            switch(type) {
-                case 'success': return 'OK';
-                case 'error': return 'ERR';
-                case 'warning': return '!';
-                default: return 'i';
-            }
+            // Return minimal inline SVG icons for better visual coherence
+            const icons = {
+                success: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M7 12.5l3 3 7-7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                error: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                warning: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 7v7M12 17.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                info: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 10v7M12 7.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>'
+            };
+            return icons[type] || icons.info;
         }
         
         function closeModal() {

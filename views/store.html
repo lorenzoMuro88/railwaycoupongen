@@ -139,6 +139,35 @@
             background: var(--accent-green);
             box-shadow: 0 4px 12px rgba(45, 90, 61, 0.3);
         }
+
+        /* Pagination (same look&feel as admin) */
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem;
+            padding: 1rem 0;
+        }
+        .pagination button {
+            background: #f2f6f2;
+            border: 1px solid var(--border-light);
+            color: var(--text-dark);
+            padding: 0.5rem 0.9rem;
+            min-width: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all .2s ease;
+        }
+        .pagination button:hover { background: #e7f0e7; }
+        .pagination button.active {
+            background: var(--primary-green);
+            color: #fff;
+            border-color: var(--primary-green);
+            box-shadow: 0 2px 8px rgba(45,90,61,.2);
+        }
+        .pagination button:disabled { opacity: .5; cursor: not-allowed; }
+        .pagination button:disabled:hover { background: #f2f6f2; }
+        .pagination-info { color: var(--text-light); padding: 0 .25rem; }
     </style>
 </head>
 <body>
@@ -206,6 +235,7 @@
                     </thead>
                     <tbody id="activeCouponsTable"></tbody>
                 </table>
+                <div id="activePagination" class="pagination"></div>
             </div>
         </div>
         
@@ -232,6 +262,7 @@
                     </thead>
                     <tbody id="redeemedCouponsTable"></tbody>
                 </table>
+                <div id="redeemedPagination" class="pagination"></div>
             </div>
         </div>
     </main>
@@ -247,8 +278,10 @@
                             <h3 class="modal-title">${title}</h3>
                             <button class="modal-close" onclick="closeModal()">&times;</button>
                         </div>
-                        <div class="modal-body">
-                            <div class="modal-icon ${type}">${getModalIcon(type)}</div>
+                        <div class="modal-body" style="display:flex;align-items:center;gap:1rem;">
+                            <div class="modal-icon ${type}" style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:999px;background:var(--primary-green);color:#fff;">
+                                ${getModalIcon(type)}
+                            </div>
                             <p>${message}</p>
                         </div>
                         <div class="modal-footer">
@@ -278,12 +311,13 @@
         }
         
         function getModalIcon(type) {
-            switch(type) {
-                case 'success': return 'OK';
-                case 'error': return 'ERR';
-                case 'warning': return '!';
-                default: return 'i';
-            }
+            const icons = {
+                success: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M7 12.5l3 3 7-7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                error: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                warning: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 7v7M12 17.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                info: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 10v7M12 7.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>'
+            };
+            return icons[type] || icons.info;
         }
         
         function closeModal() {
@@ -344,7 +378,8 @@
             });
         }
         
-        async function loadActiveCoupons(){
+        let activePage = 1; const activePageSize = 10;
+        async function loadActiveCoupons(page = activePage){
             try {
                 const r = await fetch('/api/store/coupons/active');
                 const tbody = document.getElementById('activeCouponsTable');
@@ -362,7 +397,12 @@
                     tbody.innerHTML = '<tr><td colspan="7" class="no-data">Nessun coupon attivo</td></tr>';
                     return;
                 }
-                tbody.innerHTML = coupons.map(coupon => {
+                const totalPages = Math.max(1, Math.ceil(coupons.length / activePageSize));
+                activePage = Math.min(Math.max(1, page), totalPages);
+                const start = (activePage - 1) * activePageSize;
+                const pageItems = coupons.slice(start, start + activePageSize);
+
+                tbody.innerHTML = pageItems.map(coupon => {
                     const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : 
                                         coupon.discountType === 'fixed' ? `&euro;${coupon.discountValue}` : coupon.discountValue;
                     const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
@@ -377,13 +417,17 @@
                         <td><button class="burn-btn" onclick="redeem('${coupon.code}')">Brucia</button></td>
                     </tr>`;
                 }).join('');
+
+                // Render pagination
+                renderPagination('activePagination', activePage, totalPages, (p)=>loadActiveCoupons(p));
             } catch(e) {
                 document.getElementById('activeCouponsTable').innerHTML = '<tr><td colspan="7" class="no-data">Errore nel caricamento</td></tr>';
                 document.getElementById('activeCount').textContent = '0';
             }
         }
         
-        async function loadRedeemedCoupons(){
+        let redeemedPage = 1; const redeemedPageSize = 10;
+        async function loadRedeemedCoupons(page = redeemedPage){
             try {
                 const r = await fetch('/api/store/coupons/redeemed');
                 const tbody = document.getElementById('redeemedCouponsTable');
@@ -401,7 +445,12 @@
                     tbody.innerHTML = '<tr><td colspan="7" class="no-data">Nessun coupon bruciato</td></tr>';
                     return;
                 }
-                tbody.innerHTML = coupons.map(coupon => {
+                const totalPages = Math.max(1, Math.ceil(coupons.length / redeemedPageSize));
+                redeemedPage = Math.min(Math.max(1, page), totalPages);
+                const start = (redeemedPage - 1) * redeemedPageSize;
+                const pageItems = coupons.slice(start, start + redeemedPageSize);
+
+                tbody.innerHTML = pageItems.map(coupon => {
                     const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : 
                                         coupon.discountType === 'fixed' ? `&euro;${coupon.discountValue}` : coupon.discountValue;
                     const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
@@ -416,10 +465,29 @@
                         <td>${new Date(coupon.redeemedAt).toLocaleDateString('it-IT')}</td>
                     </tr>`;
                 }).join('');
+
+                // Render pagination
+                renderPagination('redeemedPagination', redeemedPage, totalPages, (p)=>loadRedeemedCoupons(p));
             } catch(e) {
                 document.getElementById('redeemedCouponsTable').innerHTML = '<tr><td colspan="7" class="no-data">Errore nel caricamento</td></tr>';
                 document.getElementById('redeemedCount').textContent = '0';
             }
+        }
+
+        function renderPagination(containerId, currentPage, totalPages, onGo){
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+            let html = '';
+            html += `<button ${currentPage<=1?'disabled':''} onclick="(${onGo})(${currentPage-1})">‹</button>`;
+            if (currentPage > 2){ html += `<button onclick="(${onGo})(1)">1</button><span class=\"pagination-info\">…</span>`; }
+            for(let i=Math.max(1,currentPage-1); i<=Math.min(totalPages,currentPage+1); i++){
+                html += `<button class="${i===currentPage?'active':''}" onclick="(${onGo})(${i})">${i}</button>`;
+            }
+            if (currentPage < totalPages-1){ html += `<span class=\"pagination-info\">…</span><button onclick="(${onGo})(${totalPages})">${totalPages}</button>`; }
+            html += `<button ${currentPage>=totalPages?'disabled':''} onclick="(${onGo})(${currentPage+1})">›</button>`;
+            container.className = 'pagination';
+            container.innerHTML = html;
         }
         
         // Funzioni per ricerca avanzata
