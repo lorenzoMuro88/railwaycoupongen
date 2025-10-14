@@ -717,3 +717,48 @@ code {
 }
 
 
+/* Unified site footer */
+.site-footer {
+  text-align: center;
+  padding: 1rem;
+  color: var(--text-light);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border-light);
+  margin-top: 2rem;
+}
+
+/* Unified pagination (aligned with Store UI) */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: 1rem 0;
+}
+
+.pagination button {
+  background: #f2f6f2;
+  border: 1px solid var(--border-light);
+  color: var(--text-dark);
+  padding: 0.5rem 0.9rem;
+  min-width: 40px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+
+.pagination button:hover { background: #e7f0e7; }
+
+.pagination button.active {
+  background: var(--primary-green);
+  color: #fff;
+  border-color: var(--primary-green);
+  box-shadow: 0 2px 8px rgba(45,90,61,.2);
+}
+
+.pagination button:disabled { opacity: .5; cursor: not-allowed; }
+.pagination button:disabled:hover { background: #f2f6f2; }
+
+.pagination-info { color: var(--text-light); padding: 0 .25rem; }
+
+
