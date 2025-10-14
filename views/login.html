@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--cream);
+            padding: 2rem 1rem;
+        }
+        
+        .login-card {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 40px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+            max-width: 450px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .login-header {
+            margin-bottom: 2.5rem;
+        }
+        
+        .login-header h1 {
+            color: var(--primary-green);
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .login-header p {
+            color: var(--text-medium);
+            font-size: 1.1rem;
+            margin: 0;
+        }
+        
+        .user-type-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid var(--border-light);
+        }
+        
+        .user-type-option {
+            padding: 1rem;
+            background: var(--white);
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            color: var(--text-medium);
+            position: relative;
+        }
+        
+        .user-type-option:hover {
+            background: var(--light-green);
+            color: var(--primary-green);
+        }
+        
+        .user-type-option.active {
+            background: var(--gradient-primary);
+            color: var(--white);
+        }
+        
+        .user-type-option.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gold-accent);
+        }
+        
+        .login-form {
+            display: grid;
+            gap: 1.5rem;
+        }
+        
+        .form-group {
+            text-align: left;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 1rem 1.2rem;
+            border: 2px solid var(--border-light);
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: var(--white);
+            color: var(--text-dark);
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent-green);
+            box-shadow: 0 0 0 3px rgba(74, 124, 89, 0.1);
+        }
+        
+        .login-button {
+            width: 100%;
+            padding: 1rem 2rem;
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 1rem;
+        }
+        
+        .login-button:hover {
+            box-shadow: 0 6px 20px rgba(45, 90, 61, 0.4);
+            transform: translateY(-2px);
+        }
+        
+        .login-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .error-message {
+            background: #fdf2f2;
+            border: 2px solid #e74c3c;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            color: #e74c3c;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--white);
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 0.5rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .user-type-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+        
+        .user-type-label {
+            font-size: 0.9rem;
+        }
+        
+        .back-to-home {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border-light);
+        }
+        
+        .back-to-home a {
+            color: var(--text-medium);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }
+        
+        .back-to-home a:hover {
+            color: var(--primary-green);
+        }
+        
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 2rem 1.5rem;
+                margin: 1rem;
+            }
+            
+            .user-type-selector {
+                grid-template-columns: 1fr;
+            }
+            
+            .login-header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h1>CouponGen</h1>
+                <p>Accedi al tuo account</p>
+            </div>
+            
+            <div class="user-type-selector">
+                <button type="button" class="user-type-option active" data-type="admin" onclick="selectUserType('admin')">
+                    <span class="user-type-icon">A</span>
+                    <span class="user-type-label">Admin</span>
+                </button>
+                <button type="button" class="user-type-option" data-type="store" onclick="selectUserType('store')">
+                    <span class="user-type-icon">S</span>
+                    <span class="user-type-label">Store</span>
+                </button>
+            </div>
+            
+            <div class="error-message" id="errorMessage"></div>
+            
+            <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input 
+                        type="text" 
+                        id="username" 
+                        name="username" 
+                        required 
+                        placeholder="Inserisci il tuo username"
+                        autocomplete="username"
+                    />
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password" 
+                        required 
+                        placeholder="Inserisci la tua password"
+                        autocomplete="current-password"
+                    />
+                </div>
+                
+                <input type="hidden" id="userType" name="userType" value="admin" />
+                
+                <button type="submit" class="login-button" id="loginButton">
+                    <span id="buttonText">Accedi</span>
+                </button>
+            </form>
+            
+            <div class="back-to-home">
+                <a href="/">← Torna alla home</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let selectedUserType = 'admin';
+        let isSubmitting = false;
+        
+        function selectUserType(type) {
+            selectedUserType = type;
+            
+            // Update UI
+            document.querySelectorAll('.user-type-option').forEach(option => {
+                option.classList.remove('active');
+            });
+            document.querySelector(`[data-type="${type}"]`).classList.add('active');
+            document.getElementById('userType').value = type;
+            
+            // Clear any error messages
+            hideError();
+        }
+        
+        async function handleLogin(event) {
+            event.preventDefault();
+            
+            if (isSubmitting) return;
+            
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const userType = selectedUserType;
+            
+            if (!username || !password) {
+                showError('Inserisci username e password');
+                return;
+            }
+            
+            isSubmitting = true;
+            setButtonLoading(true);
+            hideError();
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username,
+                        password,
+                        userType
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // Login successful
+                    if (result.redirect) {
+                        window.location.href = result.redirect;
+                    } else {
+                        // Default redirects based on user type
+                        if (userType === 'admin') {
+                            window.location.href = '/admin';
+                        } else {
+                            window.location.href = '/store';
+                        }
+                    }
+                } else {
+                    // Login failed
+                    showError(result.error || 'Credenziali non valide');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showError('Errore di connessione. Riprova più tardi.');
+            } finally {
+                isSubmitting = false;
+                setButtonLoading(false);
+            }
+        }
+        
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.classList.add('show');
+        }
+        
+        function hideError() {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.classList.remove('show');
+        }
+        
+        function setButtonLoading(loading) {
+            const button = document.getElementById('loginButton');
+            const buttonText = document.getElementById('buttonText');
+            
+            if (loading) {
+                button.disabled = true;
+                buttonText.innerHTML = '<span class="loading-spinner"></span>Accesso in corso...';
+            } else {
+                button.disabled = false;
+                buttonText.textContent = 'Accedi';
+            }
+        }
+        
+        // Handle Enter key in form
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' && !isSubmitting) {
+                const form = document.getElementById('loginForm');
+                if (form) {
+                    form.dispatchEvent(new Event('submit'));
+                }
+            }
+        });
+        
+        // Auto-focus on username field
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('username').focus();
+        });
+    </script>
+</body>
+</html>

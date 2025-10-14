@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Analytics - CouponGen</title>
     <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/navigation.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .navbar { background: var(--gradient-primary); padding: 1rem 0; margin-bottom: 2rem; box-shadow: var(--shadow-medium); }
@@ -39,20 +40,8 @@
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="/admin" class="navbar-brand">CouponGen Admin</a>
-            <ul class="navbar-nav">
-                <li class="nav-item"><a href="/admin" class="nav-link">Dashboard</a></li>
-                <li class="nav-item"><a href="/formsetup" class="nav-link">Form Setup</a></li>
-                <li class="nav-item"><a href="/db-utenti" class="nav-link">DB Utenti</a></li>
-                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
-                <li class="nav-item"><a href="/form-design" class="nav-link">Personalizzazione</a></li>
-                <li class="nav-item"><a href="/analytics" class="nav-link active">Analytics</a></li>
-                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
-            </ul>
-        </div>
-    </nav>
+    <script src="/static/navigation.js"></script>
+    <div id="navigation-container"></div>
 
     <main class="container">
         <div class="page-header" style="text-align: center; margin-bottom: 2rem;">
@@ -609,6 +598,21 @@
         });
 
         loadCampaignOptions().then(loadAllData);
+        
+        // Load navigation
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/static/navigation.html')
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('navigation-container').innerHTML = html;
+                    // Set active link for current page
+                    const activeLink = document.querySelector('.nav-link[href="/analytics"]');
+                    if (activeLink) {
+                        activeLink.classList.add('active');
+                    }
+                })
+                .catch(error => console.error('Error loading navigation:', error));
+        });
     </script>
 </body>
 </html>

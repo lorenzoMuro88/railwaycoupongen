@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const basicAuth = require('express-basic-auth');
+const session = require('express-session');
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const QRCode = require('qrcode');
@@ -20,6 +21,18 @@ const PORT = process.env.PORT || 3000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/static', express.static(path.join(__dirname, 'static')));
+
+// Session configuration
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'coupon-gen-secret-key-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
 
 // Ensure data directory exists
 const DATA_DIR = path.join(__dirname, 'data');
@@ -268,6 +281,40 @@ async function getDb() {
             `);
         }
         
+        // Check if auth_users table exists
+        const authUsersTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'");
+        if (authUsersTable.length === 0) {
+            console.log('Creating auth_users table...');
+            await db.exec(`
+                CREATE TABLE auth_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    user_type TEXT NOT NULL CHECK (user_type IN ('admin', 'store')),
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_login DATETIME
+                );
+            `);
+            
+            // Create default admin user if no users exist
+            const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+            const defaultStorePassword = process.env.STORE_PASSWORD || 'store123';
+            
+            // Simple password hashing (in production, use bcrypt)
+            const adminHash = Buffer.from(defaultAdminPassword).toString('base64');
+            const storeHash = Buffer.from(defaultStorePassword).toString('base64');
+            
+            await db.run(`
+                INSERT INTO auth_users (username, password_hash, user_type) 
+                VALUES ('admin', ?, 'admin'), ('store', ?, 'store')
+            `, adminHash, storeHash);
+            
+            console.log('Default users created:');
+            console.log('- Admin: username=admin, password=' + defaultAdminPassword);
+            console.log('- Store: username=store, password=' + defaultStorePassword);
+        }
+        
         // Check if products table exists
         const productsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='products'");
         if (productsTable.length === 0) {
@@ -379,8 +426,114 @@ function buildTransport() {
 
 const transporter = buildTransport();
 
+// Authentication middleware
+function requireAuth(req, res, next) {
+    if (req.session && req.session.user) {
+        return next();
+    } else {
+        return res.redirect('/login');
+    }
+}
+
+function requireAdmin(req, res, next) {
+    if (req.session && req.session.user && req.session.user.userType === 'admin') {
+        return next();
+    } else {
+        return res.status(403).send('Accesso negato. Richiesto ruolo Admin.');
+    }
+}
+
+function requireStore(req, res, next) {
+    if (req.session && req.session.user && req.session.user.userType === 'store') {
+        return next();
+    } else {
+        return res.status(403).send('Accesso negato. Richiesto ruolo Store.');
+    }
+}
+
+// Simple password verification (in production, use bcrypt)
+function verifyPassword(password, hash) {
+    return Buffer.from(password).toString('base64') === hash;
+}
+
+// Login API endpoint
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password, userType } = req.body;
+        
+        if (!username || !password || !userType) {
+            return res.status(400).json({ error: 'Username, password e tipo utente sono richiesti' });
+        }
+        
+        const dbConn = await getDb();
+        const user = await dbConn.get(
+            'SELECT * FROM auth_users WHERE username = ? AND user_type = ? AND is_active = 1',
+            username, userType
+        );
+        
+        if (!user || !verifyPassword(password, user.password_hash)) {
+            return res.status(401).json({ error: 'Credenziali non valide' });
+        }
+        
+        // Update last login
+        await dbConn.run(
+            'UPDATE auth_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?',
+            user.id
+        );
+        
+        // Create session
+        req.session.user = {
+            id: user.id,
+            username: user.username,
+            userType: user.user_type
+        };
+        
+        // Determine redirect URL
+        let redirectUrl = '/';
+        if (userType === 'admin') {
+            redirectUrl = '/admin';
+        } else if (userType === 'store') {
+            redirectUrl = '/store';
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Login effettuato con successo',
+            redirect: redirectUrl
+        });
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// Logout API endpoint
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            console.error('Logout error:', err);
+            return res.status(500).json({ error: 'Errore durante il logout' });
+        }
+        res.json({ success: true, message: 'Logout effettuato con successo' });
+    });
+});
+
+// Login page
+app.get('/login', (req, res) => {
+    // If already logged in, redirect to appropriate page
+    if (req.session && req.session.user) {
+        if (req.session.user.userType === 'admin') {
+            return res.redirect('/admin');
+        } else if (req.session.user.userType === 'store') {
+            return res.redirect('/store');
+        }
+    }
+    res.sendFile(path.join(__dirname, 'views', 'login.html'));
+});
+
 // Test email endpoint (admin protected)
-app.get('/api/admin/test-email', async (req, res) => {
+app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
     try {
         const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
         const html = `<p>Test Mailgun integrazione da CouponGen.</p>`;
@@ -399,7 +552,7 @@ app.get('/api/admin/test-email', async (req, res) => {
 });
 
 // API per configurazione personalizzazione form
-app.get('/api/admin/form-customization', async (req, res) => {
+app.get('/api/admin/form-customization', requireAdmin, async (req, res) => {
     try {
         const config = await db.get('SELECT * FROM form_customization WHERE id = 1');
         if (config) {
@@ -414,7 +567,7 @@ app.get('/api/admin/form-customization', async (req, res) => {
 });
 
 // Email template APIs (admin)
-app.get('/api/admin/email-template', async (req, res) => {
+app.get('/api/admin/email-template', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const row = await dbConn.get('SELECT subject, html, updated_at FROM email_template WHERE id = 1');
@@ -428,7 +581,7 @@ app.get('/api/admin/email-template', async (req, res) => {
     }
 });
 
-app.post('/api/admin/email-template', async (req, res) => {
+app.post('/api/admin/email-template', requireAdmin, async (req, res) => {
     try {
         const { subject, html } = req.body || {};
         if (!subject || !html) {
@@ -448,7 +601,7 @@ app.post('/api/admin/email-template', async (req, res) => {
     }
 });
 
-app.post('/api/admin/form-customization', async (req, res) => {
+app.post('/api/admin/form-customization', requireAdmin, async (req, res) => {
     try {
         const configData = JSON.stringify(req.body);
         
@@ -638,40 +791,13 @@ app.post('/submit', async (req, res) => {
     }
 });
 
-// Store: basic-auth protected redeem interface
-const storeAuthUsers = {};
-if (process.env.STORE_USER && process.env.STORE_PASS) {
-    storeAuthUsers[process.env.STORE_USER] = process.env.STORE_PASS;
-} else {
-    // Credenziali di default per il test
-    storeAuthUsers['admin'] = 'admin123';
-    console.log('Usando credenziali di default: admin/admin123');
-}
+// Store area - protected by session authentication
+app.use('/store', requireAuth);
+app.use('/api/store', requireStore);
 
-app.use('/store', basicAuth({
-    users: storeAuthUsers,
-    challenge: true,
-    unauthorizedResponse: () => 'Autenticazione richiesta'
-}));
-
-app.use('/api/store', basicAuth({
-    users: storeAuthUsers,
-    challenge: true,
-    unauthorizedResponse: () => 'Autenticazione richiesta'
-}));
-
-// Admin area (same credentials as store)
-app.use('/admin', basicAuth({
-    users: storeAuthUsers,
-    challenge: true,
-    unauthorizedResponse: () => 'Autenticazione richiesta'
-}));
-
-app.use('/api/admin', basicAuth({
-    users: storeAuthUsers,
-    challenge: true,
-    unauthorizedResponse: () => 'Autenticazione richiesta'
-}));
+// Admin area - protected by session authentication  
+app.use('/admin', requireAuth);
+app.use('/api/admin', requireAdmin);
 
 app.get('/store', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'store.html'));
@@ -1395,16 +1521,16 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'admin.html'));
 });
 
-app.get('/formsetup', (req, res) => {
+app.get('/formsetup', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'formsetup.html'));
 });
 
-app.get('/custom-fields', (req, res) => {
+app.get('/custom-fields', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'custom-fields.html'));
 });
 
 // New canonical route for aesthetic personalization
-app.get('/form-design', (req, res) => {
+app.get('/form-design', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'form-setup.html'));
 });
 
@@ -1414,20 +1540,20 @@ app.get('/admin/form-setup', (req, res) => res.redirect('/form-design'));
 app.get('/form-setup', (req, res) => res.redirect('/form-design'));
 app.get('/views/form-setup.html', (req, res) => res.redirect('/form-design'));
 
-app.get('/admin/email-template', (req, res) => {
+app.get('/admin/email-template', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
 });
 
-app.get('/db-utenti', (req, res) => {
+app.get('/db-utenti', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'db-utenti.html'));
 });
 
-app.get('/prodotti', (req, res) => {
+app.get('/prodotti', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'prodotti.html'));
 });
 
 // Analytics page
-app.get('/analytics', (req, res) => {
+app.get('/analytics', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'analytics.html'));
 });
 
@@ -1664,11 +1790,7 @@ app.get('/api/admin/analytics/export', async (req, res) => {
 });
 
 // Protected redemption page (QR link opens this for cashier)
-app.use('/redeem', basicAuth({
-    users: storeAuthUsers,
-    challenge: true,
-    unauthorizedResponse: () => 'Autenticazione richiesta per accedere ai dettagli coupon'
-}));
+app.use('/redeem', requireAuth);
 
 app.get('/redeem/:code', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'redeem.html'));

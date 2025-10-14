@@ -118,15 +118,44 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
+        .logout-btn {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 2px 8px rgba(45, 90, 61, 0.2);
+        }
+        
+        .logout-btn:hover {
+            background: var(--accent-green);
+            box-shadow: 0 4px 12px rgba(45, 90, 61, 0.3);
+        }
     </style>
 </head>
 <body>
     <main class="container">
         <div class="text-center mb-2">
-            <h1>Area Cassa</h1>
-            <p style="color: var(--text-medium); font-size: 1.1rem;">
-                Verifica e gestisci i coupon dei clienti
-            </p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <div></div>
+                <div>
+                    <h1>Area Cassa</h1>
+                    <p style="color: var(--text-medium); font-size: 1.1rem;">
+                        Verifica e gestisci i coupon dei clienti
+                    </p>
+                </div>
+                <button class="logout-btn" onclick="logout()" title="Logout">
+                    <span>U</span> Logout
+                </button>
+            </div>
         </div>
         
         <div class="search-section">
@@ -250,8 +279,8 @@
         
         function getModalIcon(type) {
             switch(type) {
-                case 'success': return '✓';
-                case 'error': return '✗';
+                case 'success': return 'OK';
+                case 'error': return 'ERR';
                 case 'warning': return '!';
                 default: return 'i';
             }
@@ -330,7 +359,7 @@
                 countEl.textContent = coupons.length;
                 
                 if(coupons.length === 0){
-                    tbody.innerHTML = '<tr><td colspan="7" class="no-data">📭 Nessun coupon attivo</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="no-data">Nessun coupon attivo</td></tr>';
                     return;
                 }
                 tbody.innerHTML = coupons.map(coupon => {
@@ -557,6 +586,30 @@
             } catch (error) {
                 console.error('Errore durante il caricamento coupon bruciati:', error);
                 setButtonState(button, 'error');
+            }
+        }
+        
+        // Logout function
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
+                    console.error('Logout failed');
+                    // Force redirect anyway
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                // Force redirect anyway
+                window.location.href = '/login';
             }
         }
     </script>

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Personalizzazione Form - CouponGen</title>
     <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/navigation.css" />
     <style>
         :root {
             --primary-green: #2d5a3d;
@@ -575,20 +576,8 @@
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="/admin" class="navbar-brand">CouponGen Admin</a>
-            <ul class="navbar-nav">
-                <li class="nav-item"><a href="/admin" class="nav-link">Dashboard</a></li>
-                <li class="nav-item"><a href="/formsetup" class="nav-link">Form Setup</a></li>
-                <li class="nav-item"><a href="/db-utenti" class="nav-link">DB Utenti</a></li>
-                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
-                <li class="nav-item"><a href="/form-design" class="nav-link active">Personalizzazione</a></li>
-                <li class="nav-item"><a href="/analytics" class="nav-link">Analytics</a></li>
-                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
-            </ul>
-        </div>
-    </nav>
+    <script src="/static/navigation.js"></script>
+    <div id="navigation-container"></div>
 
     <div class="container">
         <div class="page-header">
@@ -1233,8 +1222,8 @@
         
         function getModalIcon(type) {
             switch(type) {
-                case 'success': return '✓';
-                case 'error': return '✗';
+                case 'success': return 'OK';
+                case 'error': return 'ERR';
                 case 'warning': return '!';
                 default: return 'i';
             }
@@ -1290,6 +1279,21 @@
                 content.classList.add('show');
             }
         }
+        
+        // Load navigation
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/static/navigation.html')
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('navigation-container').innerHTML = html;
+                    // Set active link for current page
+                    const activeLink = document.querySelector('.nav-link[href="/form-design"]');
+                    if (activeLink) {
+                        activeLink.classList.add('active');
+                    }
+                })
+                .catch(error => console.error('Error loading navigation:', error));
+        });
     </script>
 </body>
 </html>

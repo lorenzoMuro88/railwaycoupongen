@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Configurazione Form - CouponGen</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/navigation.css">
     <style>
         /* Navigation Bar */
         .navbar {
@@ -279,21 +280,9 @@
     </style>
 </head>
 <body>
+    <script src="/static/navigation.js"></script>
     <!-- Navigation Bar -->
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="/admin" class="navbar-brand">CouponGen Admin</a>
-            <ul class="navbar-nav">
-                <li class="nav-item"><a href="/admin" class="nav-link">Dashboard</a></li>
-                <li class="nav-item"><a href="/formsetup" class="nav-link active">Form Setup</a></li>
-                <li class="nav-item"><a href="/db-utenti" class="nav-link">DB Utenti</a></li>
-                <li class="nav-item"><a href="/prodotti" class="nav-link">Prodotti</a></li>
-                <li class="nav-item"><a href="/admin/form-setup" class="nav-link">Personalizzazione</a></li>
-                <li class="nav-item"><a href="/analytics" class="nav-link">Analytics</a></li>
-                <li class="nav-item"><a href="/store" class="nav-link">Store</a></li>
-            </ul>
-        </div>
-    </nav>
+    <div id="navigation-container"></div>
 
     <div class="container">
         <header>
@@ -655,6 +644,21 @@
                 if (onConfirm) onConfirm();
             };
         }
+        
+        // Load navigation
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/static/navigation.html')
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('navigation-container').innerHTML = html;
+                    // Set active link for current page
+                    const activeLink = document.querySelector('.nav-link[href="/formsetup"]');
+                    if (activeLink) {
+                        activeLink.classList.add('active');
+                    }
+                })
+                .catch(error => console.error('Error loading navigation:', error));
+        });
     </script>
 </body>
 </html>
