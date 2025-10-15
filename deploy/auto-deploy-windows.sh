@@ -243,30 +243,57 @@ echo '✅ Codice aggiornato'
 
 if [[ '$NO_RESTART' == 'false' ]]; then
     echo '🔄 Riavvio applicazione $ENVIRONMENT...'
+    echo '  - Arresto container esistenti...'
     docker compose $COMPOSE_FILE down
+    
+    echo '  - Rimozione immagini non utilizzate...'
+    docker system prune -f
+    
+    echo '  - Ricostruzione e avvio container...'
     docker compose $COMPOSE_FILE up -d --build
     echo '✅ Applicazione riavviata'
     
     echo '⏳ Attesa avvio applicazione...'
-    sleep 10
+    sleep 15
     
-    echo '🔍 Verifica health check...'
-    if curl -f http://localhost:$PORT/healthz > /dev/null 2>&1; then
-        echo '✅ Health check OK'
+    echo '🔍 Verifica stato container...'
+    docker compose $COMPOSE_FILE ps
+    
+    echo '🔍 Verifica health check (tentativo 1/3)...'
+    for i in {1..3}; do
+        if curl -f http://localhost:$PORT/healthz > /dev/null 2>&1; then
+            echo \"✅ Health check OK (tentativo \$i)\"
+            break
+        else
+            echo \"⏳ Health check fallito (tentativo \$i), attesa 5 secondi...\"
+            if [ \$i -lt 3 ]; then
+                sleep 5
+            else
+                echo \"❌ Health check fallito dopo 3 tentativi\"
+                echo \"📋 Log applicazione:\"
+                docker compose $COMPOSE_FILE logs --tail=30 app
+                exit 1
+            fi
+        fi
+    done
+    
+    echo '🧪 Test endpoint login...'
+    if curl -f -X POST http://localhost:$PORT/api/login \\
+        -H 'Content-Type: application/json' \\
+        -d '{\"username\":\"admin\",\"password\":\"admin123\",\"userType\":\"superadmin\"}' \\
+        > /dev/null 2>&1; then
+        echo '✅ Login endpoint funzionante'
     else
-        echo '❌ Health check fallito'
-        echo '📋 Log applicazione:'
-        docker compose $COMPOSE_FILE logs --tail=20 app
-        exit 1
+        echo '⚠️  Login endpoint test fallito (controlla i log)'
     fi
 else
     echo '⏭️  Salto riavvio applicazione (--no-restart)'
 fi
 
-echo '📊 Stato container:'
+echo '📊 Stato finale container:'
 docker compose $COMPOSE_FILE ps
 
-echo '🎉 Deploy completato con successo!'
+echo '🎉 Deploy e riavvio completati con successo!'
 "
 
 # Esegui comandi SSH

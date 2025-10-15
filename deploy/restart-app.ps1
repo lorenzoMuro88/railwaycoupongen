@@ -1,13 +1,12 @@
-# CouponGen Quick Deploy Script - PowerShell Version
-# Script semplificato per deploy rapido in produzione
+# CouponGen Restart Application Script - PowerShell Version
+# Script dedicato per riavviare l'applicazione in produzione
 
 param(
-    [string]$CommitMessage = "",
     [string]$Server = "167.172.42.248",
     [string]$User = "root",
     [string]$Password = "hPmCLn7dk6YfjXV",
-    [string]$Branch = "feature/migration-cloud-multitenant-prerelease",
-    [string]$AppPath = "/opt/coupongen"
+    [string]$AppPath = "/opt/coupongen",
+    [string]$Environment = "production"
 )
 
 # Colori per output
@@ -53,78 +52,58 @@ function Invoke-SSHCommand {
     }
 }
 
+# Determina configurazione ambiente
+$ComposeFile = if ($Environment -eq "staging") { "-f docker-compose.staging.yml" } else { "" }
+$Port = if ($Environment -eq "staging") { "3001" } else { "3000" }
+
 # Main execution
-Write-ColorLog "🚀 Quick Deploy CouponGen" "Info"
+Write-ColorLog "🔄 Riavvio applicazione CouponGen" "Info"
+Write-ColorLog "Ambiente: $Environment" "Info"
 Write-ColorLog "Server: $Server" "Info"
-Write-ColorLog "Branch: $Branch" "Info"
+Write-ColorLog "User: $User" "Info"
+Write-ColorLog "Porta: $Port" "Info"
 
-# Chiedi messaggio di commit se non fornito
-if ([string]::IsNullOrEmpty($CommitMessage)) {
-    $CommitMessage = Read-Host "Messaggio di commit"
-    if ([string]::IsNullOrEmpty($CommitMessage)) {
-        $CommitMessage = "Quick deploy - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    }
-}
-
-Write-ColorLog "Commit: $CommitMessage" "Info"
-
-# STEP 1: Commit e push
-Write-ColorLog "📝 Commit e push modifiche..." "Info"
-try {
-    git add .
-    git commit -m $CommitMessage
-} catch {
-    Write-ColorLog "Nessuna modifica da committare" "Info"
-}
-
-git push origin $Branch
-
-# STEP 2: Deploy sul server
-Write-ColorLog "🔗 Deploy sul server..." "Info"
-
-$sshCommands = @"
+# Comandi SSH per riavvio
+$restartCommands = @"
 set -e
 cd $AppPath
-echo "📥 Aggiornamento codice..."
-git fetch origin
-git reset --hard origin/$Branch
 
-echo "🔄 Riavvio applicazione..."
+echo "🔄 Riavvio applicazione $Environment..."
 echo "  - Arresto container esistenti..."
-docker compose down
+docker compose $ComposeFile down
 
 echo "  - Rimozione immagini non utilizzate..."
 docker system prune -f
 
 echo "  - Ricostruzione e avvio container..."
-docker compose up -d --build
+docker compose $ComposeFile up -d --build
 
 echo "⏳ Attesa avvio applicazione..."
 sleep 15
 
 echo "🔍 Verifica stato container..."
-docker compose ps
+docker compose $ComposeFile ps
 
 echo "🔍 Verifica health check (tentativo 1/3)..."
 for i in {1..3}; do
-    if curl -f http://localhost:3000/healthz > /dev/null 2>&1; then
-        echo "✅ Health check OK (tentativo $i)"
+    if curl -f http://localhost:$Port/healthz > /dev/null 2>&1; then
+        echo "✅ Health check OK (tentativo \$i)"
         break
     else
-        echo "⏳ Health check fallito (tentativo $i), attesa 5 secondi..."
-        if [ $i -lt 3 ]; then
+        echo "⏳ Health check fallito (tentativo \$i), attesa 5 secondi..."
+        if [ \$i -lt 3 ]; then
             sleep 5
         else
             echo "❌ Health check fallito dopo 3 tentativi"
             echo "📋 Log applicazione:"
-            docker compose logs --tail=30 app
+            docker compose $ComposeFile logs --tail=30 app
             exit 1
         fi
     fi
 done
 
 echo "🧪 Test endpoint login..."
-if curl -f -X POST http://localhost:3000/api/login \
+if curl -f -X POST http://localhost:$Port/api/login \
     -H "Content-Type: application/json" \
     -d '{"username":"admin","password":"admin123","userType":"superadmin"}' \
     > /dev/null 2>&1; then
@@ -134,16 +113,28 @@ else
 fi
 
 echo "📊 Stato finale container:"
-docker compose ps
+docker compose $ComposeFile ps
 
-echo "🎉 Deploy e riavvio completati con successo!"
+echo "🎉 Riavvio completato con successo!"
 "@
 
 try {
-    Invoke-SSHCommand -Command $sshCommands -Server $Server -User $User -Password $Password
-    Write-ColorLog "✅ Deploy completato con successo!" "Success"
-    Write-ColorLog "🌐 Applicazione: https://platform.coupongen.it" "Info"
+    Write-ColorLog "Esecuzione riavvio sul server..." "Info"
+    Invoke-SSHCommand -Command $restartCommands -Server $Server -User $User -Password $Password
+    Write-ColorLog "✅ Riavvio completato con successo!" "Success"
+    Write-ColorLog "🌐 Applicazione disponibile su: https://platform.coupongen.it" "Info"
+    
+    if ($Environment -eq "staging") {
+        Write-ColorLog "🧪 Staging disponibile su: https://staging.coupongen.it" "Info"
+    }
+    
+    Write-Host ""
+    Write-ColorLog "📋 Comandi utili per il monitoraggio:" "Info"
+    Write-Host "  ssh $User@$Server 'cd $AppPath && docker compose $ComposeFile logs -f app'"
+    Write-Host "  ssh $User@$Server 'cd $AppPath && docker compose $ComposeFile ps'"
+    Write-Host "  curl https://platform.coupongen.it/healthz"
+    
 } catch {
-    Write-ColorLog "❌ Deploy fallito: $($_.Exception.Message)" "Error"
+    Write-ColorLog "❌ Riavvio fallito: $($_.Exception.Message)" "Error"
     exit 1
 }

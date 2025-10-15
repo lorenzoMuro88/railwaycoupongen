@@ -76,30 +76,58 @@ log_info "🔗 Deploy sul server..."
 ssh_with_password "
 set -e
 cd $APP_PATH
-echo "📥 Aggiornamento codice..."
+echo '📥 Aggiornamento codice...'
 git fetch origin
 git reset --hard origin/$BRANCH
 
-echo "🔄 Riavvio applicazione..."
+echo '🔄 Riavvio applicazione...'
+echo '  - Arresto container esistenti...'
 docker compose down
+
+echo '  - Rimozione immagini non utilizzate...'
+docker system prune -f
+
+echo '  - Ricostruzione e avvio container...'
 docker compose up -d --build
 
-echo "⏳ Attesa avvio..."
-sleep 10
+echo '⏳ Attesa avvio applicazione...'
+sleep 15
 
-echo "🔍 Verifica health check..."
-if curl -f http://localhost:3000/healthz > /dev/null 2>&1; then
-    echo "✅ Health check OK"
-else
-    echo "❌ Health check fallito"
-    docker compose logs --tail=20 app
-    exit 1
-fi
-
-echo "📊 Stato container:"
+echo '🔍 Verifica stato container...'
 docker compose ps
 
-echo "🎉 Deploy completato!"
+echo '🔍 Verifica health check (tentativo 1/3)...'
+for i in {1..3}; do
+    if curl -f http://localhost:3000/healthz > /dev/null 2>&1; then
+        echo \"✅ Health check OK (tentativo \$i)\"
+        break
+    else
+        echo \"⏳ Health check fallito (tentativo \$i), attesa 5 secondi...\"
+        if [ \$i -lt 3 ]; then
+            sleep 5
+        else
+            echo \"❌ Health check fallito dopo 3 tentativi\"
+            echo \"📋 Log applicazione:\"
+            docker compose logs --tail=30 app
+            exit 1
+        fi
+    fi
+done
+
+echo '🧪 Test endpoint login...'
+if curl -f -X POST http://localhost:3000/api/login \\
+    -H 'Content-Type: application/json' \\
+    -d '{\"username\":\"admin\",\"password\":\"admin123\",\"userType\":\"superadmin\"}' \\
+    > /dev/null 2>&1; then
+    echo '✅ Login endpoint funzionante'
+else
+    echo '⚠️  Login endpoint test fallito (controlla i log)'
+fi
+
+echo '📊 Stato finale container:'
+docker compose ps
+
+echo '🎉 Deploy e riavvio completati con successo!'
 "
 
 log_success "✅ Deploy completato con successo!"

@@ -8,6 +8,8 @@ Questo documento spiega come utilizzare gli script di deploy automatizzati per C
 - `auto-deploy-windows.sh` - Script completo ottimizzato per Windows
 - `quick-deploy.sh` - Script semplificato per deploy rapidi
 - `quick-deploy.ps1` - Script PowerShell per Windows
+- `restart-app.sh` - Script dedicato per riavvio applicazione (Bash)
+- `restart-app.ps1` - Script dedicato per riavvio applicazione (PowerShell)
 - `deploy-config.sh` - Configurazione con credenziali (NON COMMITTARE)
 - `deploy-config.example.sh` - Esempio di configurazione
 - `README-DEPLOY.md` - Questa documentazione
@@ -69,6 +71,22 @@ chmod +x deploy/quick-deploy.sh
 ./deploy/auto-deploy.sh --dry-run
 ```
 
+### Riavvio Applicazione
+
+```bash
+# Riavvio semplice (Bash)
+./deploy/restart-app.sh
+
+# Riavvio staging (Bash)
+./deploy/restart-app.sh --env staging
+
+# Riavvio semplice (PowerShell)
+.\deploy\restart-app.ps1
+
+# Riavvio staging (PowerShell)
+.\deploy\restart-app.ps1 -Environment staging
+```
+
 ## 📋 Opzioni Disponibili
 
 ### auto-deploy.sh
@@ -93,6 +111,7 @@ chmod +x deploy/quick-deploy.sh
 # Server produzione
 export DEPLOY_SERVER="167.172.42.248"
 export DEPLOY_USER="root"
+export DEPLOY_PASSWORD="hPmCLn7dk6YfjXV"
 export DEPLOY_APP_PATH="/opt/coupongen"
 export DEPLOY_BRANCH="feature/migration-cloud-multitenant-prerelease"
 
@@ -100,6 +119,27 @@ export DEPLOY_BRANCH="feature/migration-cloud-multitenant-prerelease"
 export PRODUCTION_URL="https://platform.coupongen.it"
 export STAGING_URL="https://staging.coupongen.it"
 ```
+
+## 🔄 Funzionalità di Riavvio Avanzate
+
+### Processo di Riavvio
+
+Gli script di deploy e riavvio includono:
+
+1. **Arresto pulito** dei container esistenti
+2. **Pulizia sistema** Docker (rimozione immagini non utilizzate)
+3. **Ricostruzione** e avvio container
+4. **Attesa intelligente** per l'avvio (15 secondi)
+5. **Health check** con retry (3 tentativi)
+6. **Test endpoint** login automatico
+7. **Verifica stato** finale container
+
+### Verifiche Post-Riavvio
+
+- ✅ **Health Check**: `/healthz` endpoint
+- ✅ **Login Test**: Test automatico endpoint `/api/login`
+- ✅ **Container Status**: Verifica stato container Docker
+- ✅ **Log Analysis**: Visualizzazione log in caso di errori
 
 ## 🔐 Sicurezza
 
