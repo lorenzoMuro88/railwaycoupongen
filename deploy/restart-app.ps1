@@ -121,20 +121,20 @@ echo "🎉 Riavvio completato con successo!"
 try {
     Write-ColorLog "Esecuzione riavvio sul server..." "Info"
     Invoke-SSHCommand -Command $restartCommands -Server $Server -User $User -Password $Password
-    Write-ColorLog "✅ Riavvio completato con successo!" "Success"
-    Write-ColorLog "🌐 Applicazione disponibile su: https://platform.coupongen.it" "Info"
+    Write-ColorLog "Riavvio completato con successo!" "Success"
+    Write-ColorLog "Applicazione disponibile su: https://platform.coupongen.it" "Info"
     
     if ($Environment -eq "staging") {
-        Write-ColorLog "🧪 Staging disponibile su: https://staging.coupongen.it" "Info"
+        Write-ColorLog "Staging disponibile su: https://staging.coupongen.it" "Info"
     }
     
     Write-Host ""
-    Write-ColorLog "📋 Comandi utili per il monitoraggio:" "Info"
+    Write-ColorLog "Comandi utili per il monitoraggio:" "Info"
     Write-Host "  ssh $User@$Server 'cd $AppPath && docker compose $ComposeFile logs -f app'"
     Write-Host "  ssh $User@$Server 'cd $AppPath && docker compose $ComposeFile ps'"
     Write-Host "  curl https://platform.coupongen.it/healthz"
     
 } catch {
-    Write-ColorLog "❌ Riavvio fallito: $($_.Exception.Message)" "Error"
+    Write-ColorLog "Riavvio fallito: $($_.Exception.Message)" "Error"
     exit 1
 }
