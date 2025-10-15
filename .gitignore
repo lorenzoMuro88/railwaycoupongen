@@ -107,3 +107,6 @@ nginx.conf
 # User uploads (keep directory but ignore files)
 static/uploads/*
 !static/uploads/.gitkeep
+
+# Deploy configuration with credentials
+deploy/deploy-config.sh
