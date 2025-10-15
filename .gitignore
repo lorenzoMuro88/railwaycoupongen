@@ -11,11 +11,11 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# Database files
-data/
-*.db
-*.sqlite
-*.sqlite3
+# Database files (keep directory but ignore database files)
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+!data/.gitkeep
 
 # Logs
 logs
@@ -95,3 +95,15 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Application specific files
+cookie.txt
+doctl.exe
+doctl.zip
+ENV.PRODUCTION
+ENV.STAGING
+nginx.conf
+
+# User uploads (keep directory but ignore files)
+static/uploads/*
+!static/uploads/.gitkeep

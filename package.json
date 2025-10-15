@@ -1,5 +1,5 @@
 {
-  "name": "couponen-standalone",
+  "name": "couponen-cloud",
   "version": "1.0.0",
   "private": true,
   "description": "Standalone coupon generator with email + QR and in-store redemption",

@@ -25,8 +25,8 @@
 
 1. **Clona il repository**
 ```bash
-git clone https://github.com/lorenzoMuro88/CouponGen.git
-cd CouponGen
+git clone https://github.com/lorenzoMuro88/CouponGenCloud.git
+cd CouponGenCloud
 ```
 
 2. **Installa le dipendenze**
@@ -193,7 +193,7 @@ pm2 save
 ## 📁 Struttura Progetto
 
 ```
-CouponGen/
+CouponGenCloud/
 ├── data/                 # Database SQLite
 ├── static/              # File CSS/JS statici (+ uploads per-tenant)
 ├── views/               # Template HTML
@@ -221,8 +221,8 @@ Distribuito sotto licenza MIT. Vedi `LICENSE` per maggiori informazioni.
 ## 🆘 Supporto
 
 Per supporto e domande:
-- Apri una [Issue](https://github.com/lorenzoMuro88/CouponGen/issues)
-- Controlla la [documentazione](https://github.com/lorenzoMuro88/CouponGen/wiki)
+- Apri una [Issue](https://github.com/lorenzoMuro88/CouponGenCloud/issues)
+- Controlla la [documentazione](https://github.com/lorenzoMuro88/CouponGenCloud/wiki)
 
 ## 🔄 Changelog
 
