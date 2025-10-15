@@ -624,6 +624,39 @@
             <p>Gestisci campagne e monitora i coupon</p>
         </div>
         
+        <!-- Email Configuration Section -->
+        <div class="email-config-section">
+            <h2>Configurazione Email</h2>
+            <div class="card">
+                <h3>Nome Mittente Email</h3>
+                <p style="color: var(--text-medium); margin-bottom: 1rem;">
+                    Personalizza il nome che apparirà come mittente nelle email inviate ai tuoi clienti. 
+                    Il dominio rimarrà sempre <code>send.coupongen.it</code>.
+                </p>
+                <form id="emailFromNameForm" onsubmit="updateEmailFromName(event)">
+                    <div class="form-row">
+                        <label style="grid-column: 1 / -1;">
+                            Nome mittente
+                            <input type="text" id="emailFromNameInput" required 
+                                   placeholder="es. Il Tuo Negozio" 
+                                   maxlength="50" />
+                        </label>
+                    </div>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <button type="submit" class="refresh-btn">
+                            <span class="btn-text">Salva Configurazione</span>
+                        </button>
+                        <button type="button" class="refresh-btn" onclick="testEmailFromName()" style="background: var(--gradient-secondary);">
+                            <span class="btn-text">Test Email</span>
+                        </button>
+                    </div>
+                </form>
+                <div id="emailFromNamePreview" style="margin-top: 1rem; padding: 1rem; background: var(--background-light); border-radius: 8px; display: none;">
+                    <strong>Anteprima:</strong> <span id="emailFromNamePreviewText"></span>
+                </div>
+            </div>
+        </div>
+        
         <!-- Campaign Management Section -->
         <div class="campaigns-section">
             <h2>Gestione Campagne</h2>
@@ -856,17 +889,12 @@
                             <h3 class="modal-title">${title}</h3>
                             <button class="modal-close" onclick="closeModal()">&times;</button>
                         </div>
-                        <div class="modal-body" style="padding: 1rem 1.25rem;">
-                            ${type === 'info' 
-                                ? `<div style=\"font-size:1rem; color: var(--text-dark);\">${message}</div>`
-                                : `<div style=\"display:flex;align-items:center;gap:.9rem;\">
-                                        <div class=\"modal-icon ${type}\" style=\"display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:999px;background:var(--primary-green);color:#fff;box-shadow:0 3px 8px rgba(45,90,61,.15);\">${getModalIcon(type)}</div>
-                                        <div style=\"font-size:1rem; color: var(--text-dark);\">${message}</div>
-                                   </div>`}
+                        <div class="modal-body" style="padding:1.5rem 1.25rem;">
+                            <div style="font-size:1.1rem; color: var(--text-dark); line-height: 1.6; text-align: center;">${message}</div>
                         </div>
                         <div class="modal-footer">
                             ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
-                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">OK</button>
+                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">${showCancel ? 'CONFERMA' : 'OK'}</button>
                         </div>
                     </div>
                 </div>
@@ -1788,15 +1816,127 @@
             document.getElementById('adminSearchResults').innerHTML = '';
         }
         
+        // Email configuration functions
+        async function loadEmailFromName() {
+            try {
+                const response = await fetch('/t/' + window.tenantSlug + '/api/admin/email-from-name');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('emailFromNameInput').value = data.emailFromName || 'CouponGen';
+                    updateEmailPreview();
+                }
+            } catch (error) {
+                console.error('Error loading email from name:', error);
+            }
+        }
+        
+        async function updateEmailFromName(event) {
+            event.preventDefault();
+            
+            const emailFromName = document.getElementById('emailFromNameInput').value.trim();
+            if (!emailFromName) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Il nome mittente non può essere vuoto.',
+                    type: 'error'
+                });
+                return;
+            }
+            
+            try {
+                const response = await fetch('/t/' + window.tenantSlug + '/api/admin/email-from-name', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ emailFromName })
+                });
+                
+                if (response.ok) {
+                    showModal({
+                        title: 'Successo',
+                        message: 'Nome mittente email aggiornato con successo!',
+                        type: 'success'
+                    });
+                    updateEmailPreview();
+                } else {
+                    const error = await response.json();
+                    showModal({
+                        title: 'Errore',
+                        message: error.error || 'Errore durante l\'aggiornamento',
+                        type: 'error'
+                    });
+                }
+            } catch (error) {
+                console.error('Error updating email from name:', error);
+                showModal({
+                    title: 'Errore',
+                    message: 'Errore di connessione',
+                    type: 'error'
+                });
+            }
+        }
+        
+        function updateEmailPreview() {
+            const emailFromName = document.getElementById('emailFromNameInput').value.trim();
+            if (emailFromName) {
+                const previewText = `${emailFromName} <no-reply@send.coupongen.it>`;
+                document.getElementById('emailFromNamePreviewText').textContent = previewText;
+                document.getElementById('emailFromNamePreview').style.display = 'block';
+            } else {
+                document.getElementById('emailFromNamePreview').style.display = 'none';
+            }
+        }
+        
+        async function testEmailFromName() {
+            const emailFromName = document.getElementById('emailFromNameInput').value.trim();
+            if (!emailFromName) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Inserisci prima un nome mittente valido.',
+                    type: 'error'
+                });
+                return;
+            }
+            
+            try {
+                const response = await fetch('/t/' + window.tenantSlug + '/api/admin/test-email');
+                if (response.ok) {
+                    showModal({
+                        title: 'Email di test inviata',
+                        message: 'Controlla la tua casella email per vedere come apparirà il nuovo nome mittente.',
+                        type: 'success'
+                    });
+                } else {
+                    showModal({
+                        title: 'Errore',
+                        message: 'Errore durante l\'invio dell\'email di test',
+                        type: 'error'
+                    });
+                }
+            } catch (error) {
+                console.error('Error sending test email:', error);
+                showModal({
+                    title: 'Errore',
+                    message: 'Errore di connessione',
+                    type: 'error'
+                });
+            }
+        }
+        
         // Event listener rimosso - ora usa loadWithFeedback
         load();
         loadRedeemedOnly();
         loadCampaigns();
+        loadEmailFromName();
         
         // Initialize discount input based on current selection
         setTimeout(() => {
             toggleDiscountInput();
         }, 100);
+        
+        // Add event listener for email from name preview
+        document.getElementById('emailFromNameInput').addEventListener('input', updateEmailPreview);
         
         // Products are already loaded in DOMContentLoaded
 

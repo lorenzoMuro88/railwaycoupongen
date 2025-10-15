@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Super Admin - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/navigation.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .superadmin-container {
+            min-height: 100vh;
+            background: var(--cream);
+            padding: 2rem;
+        }
+        
+        .superadmin-header {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+        }
+        
+        .superadmin-header h1 {
+            color: var(--primary-green);
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .superadmin-header p {
+            color: var(--text-medium);
+            font-size: 1.1rem;
+            margin: 0;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 20px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-green);
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: var(--text-medium);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.9rem;
+        }
+        
+        .tenants-section {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        
+        .refresh-button {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-button:hover {
+            box-shadow: 0 4px 12px rgba(45, 90, 61, 0.3);
+        }
+        
+        .tenants-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .tenants-table th,
+        .tenants-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-light);
+        }
+        
+        .tenants-table th {
+            background: var(--light-green);
+            color: var(--primary-green);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.9rem;
+        }
+        
+        .tenants-table tr:hover {
+            background: var(--light-green);
+        }
+        
+        .tenant-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .action-button {
+            padding: 0.4rem 0.8rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .action-button.visit {
+            background: var(--accent-green);
+            color: var(--white);
+        }
+        
+        .action-button.visit:hover {
+            background: var(--primary-green);
+        }
+        
+        .action-button.danger {
+            background: #e74c3c;
+            color: var(--white);
+        }
+        
+        .action-button.danger:hover {
+            background: #c0392b;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-medium);
+        }
+        
+        .error-message {
+            background: #fdf2f2;
+            border: 2px solid #e74c3c;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            color: #e74c3c;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .success-message {
+            background: #f0f9f0;
+            border: 2px solid #27ae60;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            color: #27ae60;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .success-message.show {
+            display: block;
+        }
+        
+        .user-type-badge {
+            background: var(--accent-green);
+            color: var(--white);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .status-badge {
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .status-badge.active {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-badge.inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .tenant-link {
+            color: var(--primary-green);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .tenant-link:hover {
+            text-decoration: underline;
+        }
+        
+        .no-tenant {
+            color: var(--text-medium);
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .superadmin-container {
+                padding: 1rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .tenants-table {
+                font-size: 0.9rem;
+            }
+            
+            .tenants-table th,
+            .tenants-table td {
+                padding: 0.5rem;
+            }
+            
+            .tenant-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="superadmin-container">
+        <div class="superadmin-header">
+            <h1>Super Admin</h1>
+            <p>Gestione tenant e monitoraggio sistema</p>
+            <div style="margin-top: 1rem;">
+                <a href="/superadmin/logs" style="background: var(--gradient-primary); color: var(--white); padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500; display: inline-block; transition: all 0.3s ease;">
+                    📊 Visualizza Logs Sistema
+                </a>
+            </div>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        <div class="success-message" id="successMessage"></div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="totalTenants">-</div>
+                <div class="stat-label">Tenant Totali</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalUsers">-</div>
+                <div class="stat-label">Utenti Totali</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalCampaigns">-</div>
+                <div class="stat-label">Campagne Totali</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalCoupons">-</div>
+                <div class="stat-label">Coupon Totali</div>
+            </div>
+        </div>
+        
+        <div class="tenants-section">
+            <div class="section-header">
+                <h2 class="section-title">Gestione Tenant</h2>
+                <button class="refresh-button" onclick="loadData()">Aggiorna</button>
+            </div>
+            
+            <div id="tenantsTable">
+                <div class="loading">Caricamento tenant...</div>
+            </div>
+        </div>
+        
+        <div class="tenants-section">
+            <div class="section-header">
+                <h2 class="section-title">Utenti Admin del Sistema</h2>
+                <button class="refresh-button" onclick="loadData()">Aggiorna</button>
+            </div>
+            
+            <div id="adminUsersTable">
+                <div class="loading">Caricamento utenti admin...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        async function loadData() {
+            try {
+                // Load stats
+                const statsResponse = await fetch('/api/superadmin/stats');
+                if (statsResponse.ok) {
+                    const stats = await statsResponse.json();
+                    document.getElementById('totalTenants').textContent = stats.totalTenants || 0;
+                    document.getElementById('totalUsers').textContent = stats.totalUsers || 0;
+                    document.getElementById('totalCampaigns').textContent = stats.totalCampaigns || 0;
+                    document.getElementById('totalCoupons').textContent = stats.totalCoupons || 0;
+                }
+                
+                // Load tenants
+                const tenantsResponse = await fetch('/api/superadmin/tenants');
+                if (tenantsResponse.ok) {
+                    const tenants = await tenantsResponse.json();
+                    renderTenantsTable(tenants);
+                } else {
+                    showError('Errore nel caricamento dei tenant');
+                }
+                
+                // Load admin users
+                const adminUsersResponse = await fetch('/api/superadmin/admin-users');
+                if (adminUsersResponse.ok) {
+                    const adminUsers = await adminUsersResponse.json();
+                    renderAdminUsersTable(adminUsers);
+                } else {
+                    showError('Errore nel caricamento degli utenti admin');
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showError('Errore di connessione');
+            }
+        }
+        
+        function renderTenantsTable(tenants) {
+            const tableContainer = document.getElementById('tenantsTable');
+            
+            if (!tenants || tenants.length === 0) {
+                tableContainer.innerHTML = '<div class="loading">Nessun tenant trovato</div>';
+                return;
+            }
+            
+            const tableHTML = `
+                <table class="tenants-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nome</th>
+                            <th>Slug</th>
+                            <th>Creato</th>
+                            <th>Utenti</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tenants.map(tenant => `
+                            <tr>
+                                <td>${tenant.id}</td>
+                                <td>${tenant.name}</td>
+                                <td><code>${tenant.slug}</code></td>
+                                <td>${new Date(tenant.created_at).toLocaleDateString('it-IT')}</td>
+                                <td>${tenant.user_count || 0}</td>
+                                <td>
+                                    <div class="tenant-actions">
+                                        <button class="action-button visit" onclick="visitTenant('${tenant.slug}')">
+                                            Visita
+                                        </button>
+                                        <button class="action-button danger" onclick="deleteTenant(${tenant.id}, '${tenant.name}')">
+                                            Elimina
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            tableContainer.innerHTML = tableHTML;
+        }
+        
+        function renderAdminUsersTable(adminUsers) {
+            const tableContainer = document.getElementById('adminUsersTable');
+            
+            if (!adminUsers || adminUsers.length === 0) {
+                tableContainer.innerHTML = '<div class="loading">Nessun utente admin trovato</div>';
+                return;
+            }
+            
+            const tableHTML = `
+                <table class="tenants-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Tipo</th>
+                            <th>Tenant</th>
+                            <th>Stato</th>
+                            <th>Creato</th>
+                            <th>Ultimo Login</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${adminUsers.map(user => `
+                            <tr>
+                                <td>${user.id}</td>
+                                <td><strong>${user.username}</strong></td>
+                                <td><span class="user-type-badge">${user.user_type}</span></td>
+                                <td>
+                                    ${user.tenant_name ? 
+                                        `<a href="/t/${user.tenant_slug}/admin" target="_blank" class="tenant-link">${user.tenant_name}</a>` : 
+                                        '<span class="no-tenant">Nessun tenant</span>'
+                                    }
+                                </td>
+                                <td>
+                                    <span class="status-badge ${user.is_active ? 'active' : 'inactive'}">
+                                        ${user.is_active ? 'Attivo' : 'Inattivo'}
+                                    </span>
+                                </td>
+                                <td>${new Date(user.created_at).toLocaleDateString('it-IT')}</td>
+                                <td>${user.last_login ? new Date(user.last_login).toLocaleDateString('it-IT') : 'Mai'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            tableContainer.innerHTML = tableHTML;
+        }
+        
+        function visitTenant(slug) {
+            window.open(`/t/${slug}/admin`, '_blank');
+        }
+        
+        async function deleteTenant(tenantId, tenantName) {
+            if (!confirm(`Sei sicuro di voler eliminare il tenant "${tenantName}"? Questa azione è irreversibile e cancellerà tutti i dati associati.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/superadmin/tenants/${tenantId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showSuccess(`Tenant "${tenantName}" eliminato con successo`);
+                    loadData(); // Reload data
+                } else {
+                    const error = await response.json();
+                    showError(error.error || 'Errore nell\'eliminazione del tenant');
+                }
+            } catch (error) {
+                console.error('Error deleting tenant:', error);
+                showError('Errore di connessione');
+            }
+        }
+        
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.classList.add('show');
+            setTimeout(() => errorElement.classList.remove('show'), 5000);
+        }
+        
+        function showSuccess(message) {
+            const successElement = document.getElementById('successMessage');
+            successElement.textContent = message;
+            successElement.classList.add('show');
+            setTimeout(() => successElement.classList.remove('show'), 5000);
+        }
+        
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>

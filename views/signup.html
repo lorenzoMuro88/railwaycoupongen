@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Registrazione - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .signup-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--cream);
+            padding: 2rem 1rem;
+        }
+        
+        .signup-card {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 40px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .signup-header {
+            margin-bottom: 2.5rem;
+        }
+        
+        .signup-header h1 {
+            color: var(--primary-green);
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .signup-header p {
+            color: var(--text-medium);
+            font-size: 1.1rem;
+            margin: 0;
+        }
+        
+        .signup-form {
+            display: grid;
+            gap: 1.5rem;
+            text-align: left;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .form-group label {
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 1rem 1.2rem;
+            border: 2px solid var(--border-light);
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: var(--white);
+            color: var(--text-dark);
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent-green);
+            box-shadow: 0 0 0 3px rgba(74, 124, 89, 0.1);
+        }
+        
+        .signup-button {
+            width: 100%;
+            padding: 1rem 2rem;
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 1rem;
+        }
+        
+        .signup-button:hover {
+            box-shadow: 0 6px 20px rgba(45, 90, 61, 0.4);
+            transform: translateY(-2px);
+        }
+        
+        .signup-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .error-message {
+            background: #fdf2f2;
+            border: 2px solid #e74c3c;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            color: #e74c3c;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .success-message {
+            background: #f0f9f0;
+            border: 2px solid #27ae60;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            color: #27ae60;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .success-message.show {
+            display: block;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--white);
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 0.5rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .back-to-login {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border-light);
+        }
+        
+        .back-to-login a {
+            color: var(--text-medium);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }
+        
+        .back-to-login a:hover {
+            color: var(--primary-green);
+        }
+        
+        .tenant-preview {
+            background: var(--light-green);
+            border-radius: 8px;
+            padding: 0.8rem;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--primary-green);
+            display: none;
+        }
+        
+        .tenant-preview.show {
+            display: block;
+        }
+        
+        @media (max-width: 480px) {
+            .signup-card {
+                padding: 2rem 1.5rem;
+                margin: 1rem;
+            }
+            
+            .signup-header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="signup-container">
+        <div class="signup-card">
+            <div class="signup-header">
+                <h1>CouponGen</h1>
+                <p>Crea il tuo account aziendale</p>
+            </div>
+            
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+            
+            <form class="signup-form" id="signupForm" onsubmit="handleSignup(event)">
+                <div class="form-group">
+                    <label for="tenantName">Nome Azienda</label>
+                    <input 
+                        type="text" 
+                        id="tenantName" 
+                        name="tenantName" 
+                        required 
+                        placeholder="Es. La Mia Pizzeria"
+                        autocomplete="organization"
+                    />
+                    <div class="tenant-preview" id="tenantPreview">
+                        Il tuo URL sarà: <strong>https://tuodominio.com/t/<span id="tenantSlug">nome-azienda</span></strong>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="adminUsername">Username Admin</label>
+                    <input 
+                        type="text" 
+                        id="adminUsername" 
+                        name="adminUsername" 
+                        required 
+                        placeholder="admin"
+                        autocomplete="username"
+                    />
+                </div>
+                
+                <div class="form-group">
+                    <label for="adminPassword">Password Admin</label>
+                    <input 
+                        type="password" 
+                        id="adminPassword" 
+                        name="adminPassword" 
+                        required 
+                        placeholder="Scegli una password sicura"
+                        autocomplete="new-password"
+                        minlength="6"
+                    />
+                </div>
+                
+                <button type="submit" class="signup-button" id="signupButton">
+                    <span id="buttonText">Crea Account</span>
+                </button>
+            </form>
+            
+            <div class="back-to-login">
+                <a href="/access">← Torna alla selezione accesso</a> | 
+                <a href="/login">Login</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let isSubmitting = false;
+        
+        // Generate tenant slug from company name
+        function generateSlug(name) {
+            return name
+                .toLowerCase()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/-+/g, '-')
+                .trim();
+        }
+        
+        // Update tenant preview
+        function updateTenantPreview() {
+            const tenantName = document.getElementById('tenantName').value.trim();
+            if (tenantName) {
+                const slug = generateSlug(tenantName);
+                document.getElementById('tenantSlug').textContent = slug;
+                document.getElementById('tenantPreview').classList.add('show');
+            } else {
+                document.getElementById('tenantPreview').classList.remove('show');
+            }
+        }
+        
+        // Listen for tenant name changes
+        document.getElementById('tenantName').addEventListener('input', updateTenantPreview);
+        
+        async function handleSignup(event) {
+            event.preventDefault();
+            
+            if (isSubmitting) return;
+            
+            const tenantName = document.getElementById('tenantName').value.trim();
+            const adminUsername = document.getElementById('adminUsername').value.trim();
+            const adminPassword = document.getElementById('adminPassword').value;
+            
+            if (!tenantName || !adminUsername || !adminPassword) {
+                showError('Compila tutti i campi');
+                return;
+            }
+            
+            if (adminPassword.length < 6) {
+                showError('La password deve essere di almeno 6 caratteri');
+                return;
+            }
+            
+            isSubmitting = true;
+            setButtonLoading(true);
+            hideMessages();
+            
+            try {
+                const response = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        tenantName,
+                        adminUsername,
+                        adminPassword
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // Signup successful
+                    showSuccess(`Account creato con successo! Il tuo URL è: /t/${result.tenantSlug}/admin`);
+                    
+                    // Clear form
+                    document.getElementById('signupForm').reset();
+                    document.getElementById('tenantPreview').classList.remove('show');
+                    
+                    // Redirect to login after 3 seconds
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 3000);
+                } else {
+                    // Signup failed
+                    showError(result.error || 'Errore durante la registrazione');
+                }
+            } catch (error) {
+                console.error('Signup error:', error);
+                showError('Errore di connessione. Riprova più tardi.');
+            } finally {
+                isSubmitting = false;
+                setButtonLoading(false);
+            }
+        }
+        
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.classList.add('show');
+        }
+        
+        function showSuccess(message) {
+            const successElement = document.getElementById('successMessage');
+            successElement.textContent = message;
+            successElement.classList.add('show');
+        }
+        
+        function hideMessages() {
+            document.getElementById('errorMessage').classList.remove('show');
+            document.getElementById('successMessage').classList.remove('show');
+        }
+        
+        function setButtonLoading(loading) {
+            const button = document.getElementById('signupButton');
+            const buttonText = document.getElementById('buttonText');
+            
+            if (loading) {
+                button.disabled = true;
+                buttonText.innerHTML = '<span class="loading-spinner"></span>Creazione in corso...';
+            } else {
+                button.disabled = false;
+                buttonText.textContent = 'Crea Account';
+            }
+        }
+        
+        // Auto-focus on first field
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('tenantName').focus();
+        });
+    </script>
+</body>
+</html>
+

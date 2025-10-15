@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Logs Sistema - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/navigation.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .logs-container {
+            min-height: 100vh;
+            background: var(--cream);
+            padding: 2rem;
+        }
+        
+        .logs-header {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+        }
+        
+        .logs-header h1 {
+            color: var(--primary-green);
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .logs-header p {
+            color: var(--text-medium);
+            font-size: 1.1rem;
+            margin: 0;
+        }
+        
+        .filters-section {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+        }
+        
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .filter-label {
+            font-weight: 500;
+            color: var(--text-dark);
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .filter-input, .filter-select {
+            padding: 0.75rem;
+            border: 2px solid var(--border-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: border-color 0.3s ease;
+        }
+        
+        .filter-input:focus, .filter-select:focus {
+            outline: none;
+            border-color: var(--primary-green);
+        }
+        
+        .filter-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: end;
+        }
+        
+        .filter-button {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        
+        .filter-button:hover {
+            box-shadow: 0 4px 12px rgba(45, 90, 61, 0.3);
+        }
+        
+        .filter-button.secondary {
+            background: var(--text-medium);
+        }
+        
+        .filter-button.secondary:hover {
+            background: var(--text-dark);
+        }
+        
+        .logs-section {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(45, 90, 61, 0.1);
+            border: 2px solid var(--border-light);
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        
+        .refresh-button {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-button:hover {
+            box-shadow: 0 4px 12px rgba(45, 90, 61, 0.3);
+        }
+        
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .logs-table th,
+        .logs-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-light);
+        }
+        
+        .logs-table th {
+            background: var(--light-green);
+            color: var(--primary-green);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.9rem;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .logs-table tr:hover {
+            background: var(--light-green);
+        }
+        
+        .log-level {
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .log-level.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .log-level.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .log-level.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .log-level.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .user-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+        
+        .user-name {
+            font-weight: 500;
+            color: var(--text-dark);
+        }
+        
+        .user-role {
+            font-size: 0.8rem;
+            color: var(--text-medium);
+            text-transform: uppercase;
+        }
+        
+        .tenant-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+        
+        .tenant-name {
+            font-weight: 500;
+            color: var(--primary-green);
+        }
+        
+        .tenant-slug {
+            font-size: 0.8rem;
+            color: var(--text-medium);
+            font-family: monospace;
+        }
+        
+        .action-details {
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+        
+        .action-type {
+            font-weight: 500;
+            color: var(--text-dark);
+            margin-bottom: 0.2rem;
+        }
+        
+        .action-description {
+            font-size: 0.9rem;
+            color: var(--text-medium);
+        }
+        
+        .timestamp {
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: var(--text-medium);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-medium);
+        }
+        
+        .error-message {
+            background: #fdf2f2;
+            border: 2px solid #e74c3c;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            color: #e74c3c;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .no-logs {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-medium);
+            font-style: italic;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        
+        .pagination button {
+            background: var(--white);
+            border: 2px solid var(--border-light);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .pagination button:hover:not(:disabled) {
+            border-color: var(--primary-green);
+            background: var(--light-green);
+        }
+        
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pagination .current-page {
+            background: var(--primary-green);
+            color: var(--white);
+            border-color: var(--primary-green);
+        }
+        
+        .stats-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            background: var(--light-green);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: var(--primary-green);
+            font-weight: 500;
+        }
+        
+        @media (max-width: 768px) {
+            .logs-container {
+                padding: 1rem;
+            }
+            
+            .filters-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .filter-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .logs-table {
+                font-size: 0.8rem;
+            }
+            
+            .logs-table th,
+            .logs-table td {
+                padding: 0.5rem;
+            }
+            
+            .action-details {
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="logs-container">
+        <div class="logs-header">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>Logs Sistema</h1>
+                    <p>Monitoraggio delle azioni eseguite da tutti gli utenti</p>
+                </div>
+                <div>
+                    <a href="/superadmin" style="background: var(--text-medium); color: var(--white); padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500; display: inline-block; transition: all 0.3s ease;">
+                        ← Torna al Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        
+        <div class="filters-section">
+            <div class="filters-grid">
+                <div class="filter-group">
+                    <label class="filter-label" for="tenantFilter">Tenant</label>
+                    <select class="filter-select" id="tenantFilter">
+                        <option value="">Tutti i tenant</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="userFilter">Utente</label>
+                    <input type="text" class="filter-input" id="userFilter" placeholder="Cerca per username...">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="actionFilter">Azione</label>
+                    <select class="filter-select" id="actionFilter">
+                        <option value="">Tutte le azioni</option>
+                        <option value="login">Login</option>
+                        <option value="logout">Logout</option>
+                        <option value="create">Creazione</option>
+                        <option value="update">Modifica</option>
+                        <option value="delete">Eliminazione</option>
+                        <option value="view">Visualizzazione</option>
+                        <option value="export">Esportazione</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="levelFilter">Livello</label>
+                    <select class="filter-select" id="levelFilter">
+                        <option value="">Tutti i livelli</option>
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                        <option value="success">Success</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="dateFrom">Data Da</label>
+                    <input type="date" class="filter-input" id="dateFrom">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="dateTo">Data A</label>
+                    <input type="date" class="filter-input" id="dateTo">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button class="filter-button" onclick="applyFilters()">Applica Filtri</button>
+                <button class="filter-button secondary" onclick="clearFilters()">Pulisci</button>
+                <button class="filter-button secondary" onclick="exportLogs()">Esporta CSV</button>
+            </div>
+        </div>
+        
+        <div class="logs-section">
+            <div class="section-header">
+                <h2 class="section-title">Log delle Azioni</h2>
+                <button class="refresh-button" onclick="loadLogs()">Aggiorna</button>
+            </div>
+            
+            <div class="stats-row" id="statsRow">
+                <!-- Stats will be populated here -->
+            </div>
+            
+            <div id="logsTable">
+                <div class="loading">Caricamento logs...</div>
+            </div>
+            
+            <div class="pagination" id="pagination">
+                <!-- Pagination will be populated here -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentPage = 1;
+        const logsPerPage = 50;
+        let totalLogs = 0;
+        let currentFilters = {};
+        
+        async function loadLogs(page = 1) {
+            try {
+                currentPage = page;
+                const params = new URLSearchParams({
+                    page: page,
+                    limit: logsPerPage,
+                    ...currentFilters
+                });
+                
+                const response = await fetch(`/api/superadmin/logs?${params}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    renderLogsTable(data.logs);
+                    renderPagination(data.total, data.page, data.totalPages);
+                    updateStats(data.stats);
+                } else {
+                    showError('Errore nel caricamento dei logs');
+                }
+            } catch (error) {
+                console.error('Error loading logs:', error);
+                showError('Errore di connessione');
+            }
+        }
+        
+        async function loadTenants() {
+            try {
+                const response = await fetch('/api/superadmin/tenants');
+                if (response.ok) {
+                    const tenants = await response.json();
+                    const tenantSelect = document.getElementById('tenantFilter');
+                    tenantSelect.innerHTML = '<option value="">Tutti i tenant</option>';
+                    tenants.forEach(tenant => {
+                        const option = document.createElement('option');
+                        option.value = tenant.id;
+                        option.textContent = tenant.name;
+                        tenantSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading tenants:', error);
+            }
+        }
+        
+        function renderLogsTable(logs) {
+            const tableContainer = document.getElementById('logsTable');
+            
+            if (!logs || logs.length === 0) {
+                tableContainer.innerHTML = '<div class="no-logs">Nessun log trovato per i filtri selezionati</div>';
+                return;
+            }
+            
+            const tableHTML = `
+                <table class="logs-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Utente</th>
+                            <th>Tenant</th>
+                            <th>Azione</th>
+                            <th>Livello</th>
+                            <th>Dettagli</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${logs.map(log => `
+                            <tr>
+                                <td class="timestamp">${new Date(log.timestamp).toLocaleString('it-IT')}</td>
+                                <td>
+                                    <div class="user-info">
+                                        <div class="user-name">${log.username || 'Sistema'}</div>
+                                        <div class="user-role">${log.user_type || 'system'}</div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="tenant-info">
+                                        <div class="tenant-name">${log.tenant_name || 'N/A'}</div>
+                                        <div class="tenant-slug">${log.tenant_slug || ''}</div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="action-details">
+                                        <div class="action-type">${log.action_type}</div>
+                                        <div class="action-description">${log.action_description || ''}</div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="log-level ${log.level}">${log.level}</span>
+                                </td>
+                                <td>
+                                    <div class="action-details">
+                                        ${log.details ? `<div class="action-description">${log.details}</div>` : ''}
+                                        ${log.ip_address ? `<div class="action-description">IP: ${log.ip_address}</div>` : ''}
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            tableContainer.innerHTML = tableHTML;
+        }
+        
+        function renderPagination(total, currentPage, totalPages) {
+            const paginationContainer = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                paginationContainer.innerHTML = '';
+                return;
+            }
+            
+            let paginationHTML = '';
+            
+            // Previous button
+            paginationHTML += `<button ${currentPage === 1 ? 'disabled' : ''} onclick="loadLogs(${currentPage - 1})">‹ Precedente</button>`;
+            
+            // Page numbers
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+            
+            if (startPage > 1) {
+                paginationHTML += `<button onclick="loadLogs(1)">1</button>`;
+                if (startPage > 2) {
+                    paginationHTML += `<span>...</span>`;
+                }
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const isCurrent = i === currentPage;
+                paginationHTML += `<button class="${isCurrent ? 'current-page' : ''}" onclick="loadLogs(${i})">${i}</button>`;
+            }
+            
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    paginationHTML += `<span>...</span>`;
+                }
+                paginationHTML += `<button onclick="loadLogs(${totalPages})">${totalPages}</button>`;
+            }
+            
+            // Next button
+            paginationHTML += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="loadLogs(${currentPage + 1})">Successiva ›</button>`;
+            
+            paginationContainer.innerHTML = paginationHTML;
+        }
+        
+        function updateStats(stats) {
+            const statsContainer = document.getElementById('statsRow');
+            statsContainer.innerHTML = `
+                <div class="stat-item">Totale: ${stats.total || 0}</div>
+                <div class="stat-item">Info: ${stats.info || 0}</div>
+                <div class="stat-item">Warning: ${stats.warning || 0}</div>
+                <div class="stat-item">Error: ${stats.error || 0}</div>
+                <div class="stat-item">Success: ${stats.success || 0}</div>
+            `;
+        }
+        
+        function applyFilters() {
+            currentFilters = {
+                tenant_id: document.getElementById('tenantFilter').value,
+                username: document.getElementById('userFilter').value,
+                action_type: document.getElementById('actionFilter').value,
+                level: document.getElementById('levelFilter').value,
+                date_from: document.getElementById('dateFrom').value,
+                date_to: document.getElementById('dateTo').value
+            };
+            
+            // Remove empty filters
+            Object.keys(currentFilters).forEach(key => {
+                if (!currentFilters[key]) {
+                    delete currentFilters[key];
+                }
+            });
+            
+            loadLogs(1);
+        }
+        
+        function clearFilters() {
+            document.getElementById('tenantFilter').value = '';
+            document.getElementById('userFilter').value = '';
+            document.getElementById('actionFilter').value = '';
+            document.getElementById('levelFilter').value = '';
+            document.getElementById('dateFrom').value = '';
+            document.getElementById('dateTo').value = '';
+            
+            currentFilters = {};
+            loadLogs(1);
+        }
+        
+        async function exportLogs() {
+            try {
+                const params = new URLSearchParams({
+                    export: 'csv',
+                    ...currentFilters
+                });
+                
+                const response = await fetch(`/api/superadmin/logs?${params}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `logs_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    showError('Errore nell\'esportazione dei logs');
+                }
+            } catch (error) {
+                console.error('Error exporting logs:', error);
+                showError('Errore di connessione');
+            }
+        }
+        
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.classList.add('show');
+            setTimeout(() => errorElement.classList.remove('show'), 5000);
+        }
+        
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTenants();
+            loadLogs();
+        });
+    </script>
+</body>
+</html>

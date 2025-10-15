@@ -286,16 +286,16 @@ code {
 
 .modal {
   background: var(--white);
-  border-radius: 16px;
-  padding: 2rem;
-  max-width: 500px;
+  border-radius: 20px;
+  padding: 0;
+  max-width: 480px;
   width: 90%;
   max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
   transform: scale(0.9) translateY(20px);
   transition: all 0.3s ease;
-  border: 2px solid var(--border-light);
+  border: none;
 }
 
 .modal-overlay.show .modal {
@@ -306,32 +306,34 @@ code {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid var(--border-light);
+  padding: 1.5rem 2rem 1rem 2rem;
+  border-bottom: 1px solid var(--border-light);
+  background: linear-gradient(135deg, #f8fffe 0%, #f0f8f5 100%);
 }
 
 .modal-title {
   color: var(--primary-green);
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 1.4rem;
+  font-weight: 700;
   margin: 0;
+  letter-spacing: -0.02em;
 }
 
 .modal-close {
   background: none;
   border: none;
-  font-size: 1.5rem;
+  font-size: 1.8rem;
   color: var(--text-light);
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 50%;
   transition: all 0.3s ease;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-weight: 300;
 }
 
 .modal-close:hover {
@@ -342,23 +344,32 @@ code {
 .modal-body {
   color: var(--text-dark);
   line-height: 1.6;
-  margin-bottom: 2rem;
+  padding: 2rem;
 }
 
 .modal-footer {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
+  padding: 1rem 2rem 2rem 2rem;
+  background: #fafbfc;
+  border-top: 1px solid var(--border-light);
 }
 
 .modal-btn {
-  padding: 0.8rem 1.5rem;
+  padding: 0.9rem 2rem;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+  min-width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .modal-btn-primary {
@@ -367,7 +378,8 @@ code {
 }
 
 .modal-btn-primary:hover {
-  box-shadow: 0 4px 15px rgba(45, 90, 61, 0.3);
+  box-shadow: 0 6px 20px rgba(45, 90, 61, 0.4);
+  transform: translateY(-1px);
 }
 
 .modal-btn-secondary {
@@ -377,6 +389,7 @@ code {
 
 .modal-btn-secondary:hover {
   background: var(--text-medium);
+  transform: translateY(-1px);
 }
 
 .modal-success {
@@ -391,71 +404,8 @@ code {
   border-left: 4px solid var(--gold-accent);
 }
 
-.modal-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  text-align: center;
-}
+/* Modal icon styles removed - no longer using icons */
 
-.modal-icon.success {
-  color: var(--white);
-  background: var(--accent-green);
-  border-radius: 50%;
-  width: 60px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 1rem auto;
-  font-size: 2rem;
-  font-weight: bold;
-  box-shadow: 0 4px 12px rgba(74, 124, 89, 0.3);
-}
-
-.modal-icon.error {
-  color: var(--white);
-  background: #e74c3c;
-  border-radius: 50%;
-  width: 60px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 1rem auto;
-  font-size: 2rem;
-  font-weight: bold;
-  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
-}
-
-.modal-icon.warning {
-  color: var(--white);
-  background: var(--gold-accent);
-  border-radius: 50%;
-  width: 60px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 1rem auto;
-  font-size: 2rem;
-  font-weight: bold;
-  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
-}
-
-.modal-icon.info {
-  color: var(--white);
-  background: var(--accent-green);
-  border-radius: 50%;
-  width: 60px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 1rem auto;
-  font-size: 2rem;
-  font-weight: bold;
-  box-shadow: 0 4px 12px rgba(74, 124, 89, 0.3);
-}
 
 /* Responsive Design */
 @media (max-width: 768px) {

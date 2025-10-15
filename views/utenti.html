@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gestione Utenti - Admin e Store</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/navigation.css" />
+    <style>
+        .page-header { margin: 1rem 0 1.5rem; }
+        .grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+        .card { background: var(--white); border-radius: 12px; padding: 1.5rem; border: 2px solid var(--border-light); }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: .75rem; }
+        .form-row input, .form-row select { padding: .8rem; border: 2px solid var(--border-light); border-radius: 8px; }
+        .actions { display:flex; gap:.5rem; justify-content:flex-end; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: .8rem; border-bottom: 1px solid var(--light-gray); text-align: left; }
+        th { background: var(--light-green); color: var(--primary-green); }
+        .tag { display:inline-block; padding:.15rem .5rem; border-radius:12px; font-size:.8rem; background:var(--light-green); color:var(--primary-green); }
+        .muted { color: var(--text-light); font-size: .9rem; }
+        /* Action buttons - aligned with project style */
+        .action-btn {
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 0.25rem;
+            text-decoration: none;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .primary-btn { 
+            background: var(--gradient-primary); 
+            color: var(--white); 
+            border: none; 
+            border-radius: 8px; 
+            padding: 0.8rem 1.5rem; 
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(45, 90, 61, 0.2);
+        }
+
+        .primary-btn:hover {
+            box-shadow: 0 4px 15px rgba(45, 90, 61, 0.3);
+        }
+
+        .danger-btn { 
+            background: #e74c3c; 
+            color: var(--white); 
+            border: none; 
+            border-radius: 6px; 
+            padding: 0.5rem 1rem; 
+            font-size: 0.8rem;
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(231, 76, 60, 0.2);
+        }
+
+        .danger-btn:hover {
+            background: #c0392b;
+            box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
+        }
+
+        .ghost-btn { 
+            background: var(--text-light); 
+            color: var(--white); 
+            border: none; 
+            border-radius: 6px; 
+            padding: 0.5rem 1rem; 
+            font-size: 0.8rem;
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: all 0.3s ease;
+        }
+
+        .ghost-btn:hover {
+            background: var(--text-medium);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .refresh-btn {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(45, 90, 61, 0.2);
+        }
+
+        .refresh-btn:hover {
+            box-shadow: 0 4px 15px rgba(45, 90, 61, 0.3);
+        }
+        .status-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.4rem; background:#4caf50; }
+        .status-off { background:#bbb; }
+        @media (max-width: 900px){ .form-row { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <script src="/static/navigation.js"></script>
+    <div id="navigation-container"></div>
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Utenti</h1>
+            <p class="muted">Crea e gestisci utenti di tipo Admin e Store</p>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2 style="margin-top:0">Crea nuovo utente</h2>
+                <form id="createForm" onsubmit="return createAuthUser(event)">
+                    <div class="form-row">
+                        <input id="newUsername" type="text" placeholder="Username" required />
+                        <input id="newPassword" type="password" placeholder="Password" required />
+                        <select id="newRole" required>
+                            <option value="admin">admin</option>
+                            <option value="store">store</option>
+                        </select>
+                        <button class="primary-btn" type="submit">Crea</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem;">
+                    <h2 style="margin:0">Elenco utenti</h2>
+                    <button class="refresh-btn" onclick="loadAuthUsers()">Aggiorna</button>
+                </div>
+                <div class="table-wrap" style="margin-top:1rem;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Ruolo</th>
+                                <th>Stato</th>
+                                <th>Ultimo accesso</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTbody">
+                            <tr><td colspan="5" class="muted">Caricamento...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="site-footer">CouponGen</footer>
+
+    <script>
+        // Load navigation
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/static/navigation.html')
+                .then(r => r.text())
+                .then(html => { document.getElementById('navigation-container').innerHTML = html; })
+                .catch(console.error);
+            loadAuthUsers();
+        });
+
+        // Function to identify the first admin (lowest ID among admin users)
+        function getFirstAdminId(users) {
+            const adminUsers = users.filter(u => u.userType === 'admin');
+            if (adminUsers.length === 0) return null;
+            return Math.min(...adminUsers.map(u => u.id));
+        }
+
+        async function loadAuthUsers(){
+            const tbody = document.getElementById('usersTbody');
+            tbody.innerHTML = '<tr><td colspan="5" class="muted">Caricamento...</td></tr>';
+            try {
+                const r = await fetch('/api/admin/auth-users');
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || 'Errore');
+                if (!Array.isArray(data) || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="muted">Nessun utente</td></tr>';
+                    return;
+                }
+                
+                const firstAdminId = getFirstAdminId(data);
+                
+                tbody.innerHTML = data.map(u => {
+                    const isFirstAdmin = u.id === firstAdminId;
+                    
+                    let actionsHtml = '';
+                    if (u.userType === 'admin') {
+                        if (isFirstAdmin) {
+                            // First admin cannot be modified
+                            actionsHtml = '<span class="muted">Primo admin (non modificabile)</span>';
+                        } else {
+                            // Other admins can be managed by first admin
+                            actionsHtml = `
+                                <button class="action-btn" style="background: ${u.isActive ? '#f39c12' : '#27ae60'}; color: white;" onclick="toggleActive(${u.id}, ${u.isActive?0:1})">${u.isActive? 'Disattiva':'Attiva'}</button>
+                                <button class="action-btn" style="background: var(--accent-green); color: white;" onclick="changeRole(${u.id}, 'store')">Rendi Store</button>
+                                <button class="action-btn" style="background: var(--primary-green); color: white;" onclick="resetPassword(${u.id})">Reset PW</button>
+                                <button class="danger-btn" onclick="removeAuthUser(${u.id})">Elimina</button>
+                            `;
+                        }
+                    } else {
+                        // Non-admin users (store, etc.)
+                        actionsHtml = `
+                            <button class="action-btn" style="background: ${u.isActive ? '#f39c12' : '#27ae60'}; color: white;" onclick="toggleActive(${u.id}, ${u.isActive?0:1})">${u.isActive? 'Disattiva':'Attiva'}</button>
+                            <button class="action-btn" style="background: var(--accent-green); color: white;" onclick="changeRole(${u.id}, 'admin')">Rendi Admin</button>
+                            <button class="action-btn" style="background: var(--primary-green); color: white;" onclick="resetPassword(${u.id})">Reset PW</button>
+                            <button class="danger-btn" onclick="removeAuthUser(${u.id})">Elimina</button>
+                        `;
+                    }
+                    
+                    return `
+                        <tr>
+                            <td>${u.username}</td>
+                            <td><span class="tag">${u.userType}</span></td>
+                            <td>${u.isActive ? '<span class="status-dot"></span>Attivo' : '<span class="status-dot status-off"></span>Disattivo'}</td>
+                            <td>${u.lastLogin ? new Date(u.lastLogin).toLocaleString('it-IT') : '-'}</td>
+                            <td>${actionsHtml}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error(e);
+                tbody.innerHTML = '<tr><td colspan="5" class="muted">Errore nel caricamento</td></tr>';
+            }
+        }
+
+        async function createAuthUser(ev){
+            ev.preventDefault();
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+            if (!username || !password) return;
+            try {
+                const r = await fetch('/api/admin/auth-users', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password, user_type: role }) });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || 'Errore');
+                document.getElementById('createForm').reset();
+                showModal({
+                    title: 'Utente Creato',
+                    message: 'L\'utente è stato creato con successo.',
+                    type: 'success'
+                });
+                loadAuthUsers();
+            } catch (e) {
+                showModal({
+                    title: 'Errore',
+                    message: e.message || 'Errore durante la creazione dell\'utente.',
+                    type: 'error'
+                });
+            }
+        }
+
+        async function toggleActive(id, active){
+            const action = active ? 'attivare' : 'disattivare';
+            showModal({
+                title: `Conferma ${active ? 'Attivazione' : 'Disattivazione'}`,
+                message: `Sei sicuro di voler ${action} questo utente?`,
+                type: 'warning',
+                showCancel: true,
+                onConfirm: async () => {
+                    try {
+                        const r = await fetch(`/api/admin/auth-users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ is_active: !!active }) });
+                        const data = await r.json();
+                        if (!r.ok) throw new Error(data.error || 'Errore');
+                        showModal({
+                            title: 'Utente Aggiornato',
+                            message: `L'utente è stato ${active ? 'attivato' : 'disattivato'} con successo.`,
+                            type: 'success'
+                        });
+                        loadAuthUsers();
+                    } catch(e){ 
+                        showModal({
+                            title: 'Errore',
+                            message: e.message || 'Errore durante l\'aggiornamento dell\'utente.',
+                            type: 'error'
+                        });
+                    }
+                }
+            });
+        }
+
+        async function changeRole(id, role){
+            const roleText = role === 'admin' ? 'Admin' : 'Store';
+            showModal({
+                title: 'Conferma Cambio Ruolo',
+                message: `Sei sicuro di voler rendere questo utente un ${roleText}?`,
+                type: 'warning',
+                showCancel: true,
+                onConfirm: async () => {
+                    try {
+                        const r = await fetch(`/api/admin/auth-users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ user_type: role }) });
+                        const data = await r.json();
+                        if (!r.ok) throw new Error(data.error || 'Errore');
+                        showModal({
+                            title: 'Ruolo Aggiornato',
+                            message: `L'utente è ora un ${roleText}.`,
+                            type: 'success'
+                        });
+                        loadAuthUsers();
+                    } catch(e){ 
+                        showModal({
+                            title: 'Errore',
+                            message: e.message || 'Errore durante l\'aggiornamento del ruolo.',
+                            type: 'error'
+                        });
+                    }
+                }
+            });
+        }
+
+        async function resetPassword(id){
+            showPasswordModal(id);
+        }
+
+        function showPasswordModal(id) {
+            const modalHtml = `
+                <div class="modal-overlay" id="passwordModalOverlay">
+                    <div class="modal info">
+                        <div class="modal-header">
+                            <h3 class="modal-title">Reset Password</h3>
+                            <button class="modal-close" onclick="closePasswordModal()">&times;</button>
+                        </div>
+                        <div class="modal-body" style="padding:1rem 1.25rem;">
+                            <div style="font-size:1rem; color: var(--text-dark); margin-bottom: 1rem;">
+                                Inserisci la nuova password per questo utente:
+                            </div>
+                            <input type="password" id="newPasswordInput" placeholder="Nuova password" 
+                                   style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-light); border-radius: 8px; font-size: 1rem; margin-bottom: 0.5rem;">
+                            <input type="password" id="confirmPasswordInput" placeholder="Conferma password" 
+                                   style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-light); border-radius: 8px; font-size: 1rem;">
+                        </div>
+                        <div class="modal-footer">
+                            <button class="modal-btn modal-btn-secondary" onclick="closePasswordModal()">Annulla</button>
+                            <button class="modal-btn modal-btn-primary" onclick="confirmPasswordReset(${id})">Conferma</button>
+                        </div>
+                    </div>
+                </div>`;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('passwordModalOverlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal with animation
+            setTimeout(() => {
+                document.getElementById('passwordModalOverlay').classList.add('show');
+                document.getElementById('newPasswordInput').focus();
+            }, 10);
+            
+            // Store callbacks
+            window.closePasswordModal = () => { 
+                const m = document.getElementById('passwordModalOverlay'); 
+                if(m){ 
+                    m.classList.remove('show'); 
+                    setTimeout(() => m.remove(), 300);
+                } 
+            };
+        }
+
+        async function confirmPasswordReset(id) {
+            const newPassword = document.getElementById('newPasswordInput').value;
+            const confirmPassword = document.getElementById('confirmPasswordInput').value;
+            
+            if (!newPassword) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Inserisci una password.',
+                    type: 'error'
+                });
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                showModal({
+                    title: 'Errore',
+                    message: 'Le password non coincidono.',
+                    type: 'error'
+                });
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                showModal({
+                    title: 'Errore',
+                    message: 'La password deve essere di almeno 6 caratteri.',
+                    type: 'error'
+                });
+                return;
+            }
+            
+            closePasswordModal();
+            
+            try {
+                const r = await fetch(`/api/admin/auth-users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password: newPassword }) });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || 'Errore');
+                showModal({
+                    title: 'Password Aggiornata',
+                    message: 'La password è stata aggiornata con successo.',
+                    type: 'success'
+                });
+            } catch(e){ 
+                showModal({
+                    title: 'Errore',
+                    message: e.message || 'Errore durante l\'aggiornamento della password.',
+                    type: 'error'
+                });
+            }
+        }
+
+        async function removeAuthUser(id){
+            showModal({
+                title: 'Conferma Eliminazione',
+                message: 'Sei sicuro di voler eliminare questo utente? Questa azione non può essere annullata.',
+                type: 'warning',
+                showCancel: true,
+                onConfirm: async () => {
+                    try {
+                        const r = await fetch(`/api/admin/auth-users/${id}`, { method:'DELETE' });
+                        const data = await r.json();
+                        if (!r.ok) throw new Error(data.error || 'Errore');
+                        showModal({
+                            title: 'Utente Eliminato',
+                            message: 'L\'utente è stato eliminato con successo.',
+                            type: 'success'
+                        });
+                        loadAuthUsers();
+                    } catch(e){ 
+                        showModal({
+                            title: 'Errore',
+                            message: e.message || 'Errore durante l\'eliminazione dell\'utente.',
+                            type: 'error'
+                        });
+                    }
+                }
+            });
+        }
+
+        // Modal System
+        function showModal(options) {
+            const { title, message, type = 'info', showCancel = false, onConfirm, onCancel } = options;
+            
+            const modalHtml = `
+                <div class="modal-overlay" id="modalOverlay">
+                    <div class="modal ${type}">
+                        <div class="modal-header">
+                            <h3 class="modal-title">${title}</h3>
+                            <button class="modal-close" onclick="closeModal()">&times;</button>
+                        </div>
+                        <div class="modal-body" style="padding:1.5rem 1.25rem;">
+                            <div style="font-size:1.1rem; color: var(--text-dark); line-height: 1.6; text-align: center;">${message}</div>
+                        </div>
+                        <div class="modal-footer">
+                            ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
+                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">${showCancel ? 'CONFERMA' : 'OK'}</button>
+                        </div>
+                    </div>
+                </div>`;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('modalOverlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal with animation
+            setTimeout(() => {
+                document.getElementById('modalOverlay').classList.add('show');
+            }, 10);
+            
+            // Store callbacks
+            window.closeModal = () => { 
+                const m = document.getElementById('modalOverlay'); 
+                if(m){ 
+                    m.classList.remove('show'); 
+                    setTimeout(() => m.remove(), 300);
+                } 
+            };
+            window.confirmModal = () => { 
+                if(onConfirm) onConfirm(); 
+                closeModal(); 
+            };
+        }
+
+        function getModalIcon(type){
+            const icons = {
+                success: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M7 12.5l3 3 7-7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                error: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                warning: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 7v7M12 17.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                info: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="currentColor" opacity="0.15"/><path d="M12 10v7M12 7.5v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>'
+            };
+            return icons[type] || icons.info;
+        }
+    </script>
+</body>
+</html>
+
+

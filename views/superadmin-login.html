@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Super Admin Login - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: var(--cream);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-container {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 8px 32px rgba(45, 90, 61, 0.15);
+            border: 2px solid var(--border-light);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        
+        .superadmin-logo {
+            margin-bottom: 2rem;
+        }
+        
+        .superadmin-logo h1 {
+            color: var(--primary-green);
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin: 0;
+            letter-spacing: -0.02em;
+        }
+        
+        .superadmin-logo p {
+            color: var(--text-medium);
+            font-size: 1rem;
+            margin: 0.5rem 0 0 0;
+        }
+        
+        .login-form {
+            text-align: left;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            color: var(--text-dark);
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--border-light);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(45, 90, 61, 0.1);
+        }
+        
+        .login-button {
+            width: 100%;
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+        }
+        
+        .login-button:hover {
+            box-shadow: 0 4px 12px rgba(45, 90, 61, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .login-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .back-link {
+            display: inline-block;
+            color: var(--text-medium);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: var(--primary-green);
+        }
+        
+        .error-message {
+            background: #fdf2f2;
+            border: 2px solid #e74c3c;
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            color: #e74c3c;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .security-notice {
+            background: #f0f9f0;
+            border: 2px solid var(--accent-green);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1.5rem;
+            color: var(--primary-green);
+            font-size: 0.85rem;
+            text-align: left;
+        }
+        
+        .security-notice strong {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        
+        @media (max-width: 480px) {
+            .login-container {
+                margin: 1rem;
+                padding: 2rem;
+            }
+            
+            .superadmin-logo h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="superadmin-logo">
+            <h1>🔐 Super Admin</h1>
+            <p>Accesso riservato agli amministratori di sistema</p>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        
+        <form class="login-form" id="loginForm">
+            <div class="form-group">
+                <label for="username">Username Super Admin</label>
+                <input 
+                    type="text" 
+                    id="username" 
+                    name="username" 
+                    placeholder="Inserisci il tuo username" 
+                    required 
+                    autocomplete="username"
+                />
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Inserisci la tua password" 
+                    required 
+                    autocomplete="current-password"
+                />
+            </div>
+            
+            <button type="submit" class="login-button" id="loginButton">
+                Accedi come Super Admin
+            </button>
+        </form>
+        
+        <a href="/" class="back-link">← Torna alla home</a>
+        
+        <div class="security-notice">
+            <strong>⚠️ Accesso Riservato</strong>
+            Questa area è riservata esclusivamente agli amministratori di sistema. 
+            L'accesso è monitorato e registrato per motivi di sicurezza.
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const loginButton = document.getElementById('loginButton');
+            const errorMessage = document.getElementById('errorMessage');
+            
+            // Hide previous errors
+            errorMessage.classList.remove('show');
+            
+            // Disable button and show loading
+            loginButton.disabled = true;
+            loginButton.textContent = 'Accesso in corso...';
+            
+            try {
+                const response = await fetch('/api/superadmin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    // Redirect to superadmin dashboard
+                    window.location.href = '/superadmin';
+                } else {
+                    const error = await response.json();
+                    showError(error.error || 'Credenziali non valide');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showError('Errore di connessione. Riprova.');
+            } finally {
+                // Re-enable button
+                loginButton.disabled = false;
+                loginButton.textContent = 'Accedi come Super Admin';
+            }
+        });
+        
+        function showError(message) {
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+        }
+        
+        // Focus on username field
+        document.getElementById('username').focus();
+    </script>
+</body>
+</html>

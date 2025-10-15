@@ -3,7 +3,7 @@
 ![Node.js](https://img.shields.io/badge/node.js-18+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-**CouponGen** è un'applicazione Node.js standalone per generare coupon via form web, inviare email con QR code e permettere il riscatto in negozio tramite interfaccia protetta.
+**CouponGen** è un'applicazione Node.js multi-tenant per generare coupon via form web, inviare email con QR code e permettere il riscatto in negozio tramite interfaccia protetta. Ogni tenant ha area admin, store e configurazioni separate.
 
 ## 🚀 Caratteristiche
 
@@ -12,7 +12,8 @@
 - **Gestione Campagne**: Sistema completo per gestire campagne promozionali
 - **Interfaccia Cassa**: Sistema protetto per il riscatto coupon in negozio
 - **Analytics**: Dashboard completa con statistiche e report
-- **Database SQLite**: Nessun database esterno richiesto
+- **Multi-tenant (A+A)**: singolo DB con `tenant_id`, routing path-based `/t/{tenant}`
+- **Database SQLite**: Nessun database esterno richiesto (migrazione a Postgres opzionale)
 - **API REST**: API complete per integrazione con sistemi esterni
 
 ## 📋 Requisiti
@@ -50,22 +51,26 @@ npm start
 
 ## 🔧 Configurazione
 
-### Variabili d'Ambiente
+### Variabili d'Ambiente (principali)
 
 Copia `env.example` in `.env` e configura:
 
 ```env
 # Server
 PORT=3000
-
-# Autenticazione
-STORE_USER=admin
-STORE_PASS=admin123
+SESSION_SECRET=change-me
+DEFAULT_TENANT_SLUG=default
+ENFORCE_TENANT_PREFIX=false
+UPLOAD_MAX_BYTES=2097152
 
 # Email (scegli un provider)
 MAIL_PROVIDER=mailgun
 MAILGUN_API_KEY=your_key
 MAILGUN_DOMAIN=your_domain.mailgun.org
+MAILGUN_FROM=CouponGen <no-reply@send.coupongen.it>
+
+# Redis (prod)
+REDIS_URL=redis://redis:6379
 ```
 
 ### Provider Email Supportati
@@ -76,23 +81,53 @@ MAILGUN_DOMAIN=your_domain.mailgun.org
 
 ## 🌐 Utilizzo
 
-### Interfacce Principali
+### Interfacce Principali (multi-tenant)
 
-- **Form Pubblico**: `http://localhost:3000`
-- **Interfaccia Cassa**: `http://localhost:3000/store` (protetta)
-- **Pannello Admin**: `http://localhost:3000/admin` (protetto)
-- **Analytics**: `http://localhost:3000/analytics` (protetto)
+- **Form Pubblico**: `http://localhost:3000/t/{tenant}`
+- **Interfaccia Cassa**: `http://localhost:3000/t/{tenant}/store` (protetta)
+- **Pannello Admin**: `http://localhost:3000/t/{tenant}/admin` (protetto)
+- **Analytics**: `http://localhost:3000/t/{tenant}/analytics` (protetto)
+- Legacy senza prefisso reindirizzati se `ENFORCE_TENANT_PREFIX=true`
 
 ### API Endpoints
 
 #### Pubblici
-- `GET /api/campaigns/:code` - Dettagli campagna
-- `POST /submit` - Invio form coupon
+- `GET /t/:tenantSlug/api/campaigns/:code` - Dettagli campagna
+- `POST /t/:tenantSlug/submit` - Invio form coupon
 
-#### Protetti (Basic Auth)
-- `GET /api/admin/coupons` - Lista coupon
-- `GET /api/admin/campaigns` - Gestione campagne
-- `GET /api/admin/analytics/*` - Statistiche
+### Sicurezza Moduli Pubblici
+
+- reCAPTCHA invisibile lato client e verifica lato server (abilitabile via env)
+- Limite invii per IP in finestra (default 20/10min) con lock temporaneo
+- Limite giornaliero per email (default 3/24h) per mitigare abusi
+
+Variabili d'ambiente rilevanti:
+
+```
+RECAPTCHA_ENABLED=true
+RECAPTCHA_SITE_KEY=la_tua_site_key
+RECAPTCHA_SECRET=la_tua_secret_key
+
+SUBMIT_WINDOW_MS=600000
+SUBMIT_MAX_PER_IP=20
+SUBMIT_LOCK_MS=1800000
+
+EMAIL_DAILY_WINDOW_MS=86400000
+EMAIL_MAX_PER_DAY=3
+EMAIL_LOCK_MS=86400000
+```
+
+Se `RECAPTCHA_ENABLED=true`, inserisci il tag script con la `RECAPTCHA_SITE_KEY` nella pagina del form. Il backend accetta il token in `recaptchaToken` o `g-recaptcha-response`.
+
+#### Protetti (sessione + ruoli per-tenant)
+- `POST /api/login` – login (admin/store), redirect tenant
+- `POST /api/logout` – logout
+- `POST /api/signup` – crea tenant + primo admin
+- `GET /t/:tenantSlug/api/admin/campaigns` – elenco campagne
+- `POST /t/:tenantSlug/api/admin/campaigns` – crea campagna
+- `PUT /t/:tenantSlug/api/admin/campaigns/:id/(activate|deactivate)` – stato campagna
+- `GET /t/:tenantSlug/api/store/coupons/*` – liste/ricerche store
+- `POST /t/:tenantSlug/api/coupons/:code/redeem` – riscatto
 
 ## 📊 Funzionalità
 
@@ -122,10 +157,12 @@ MAILGUN_DOMAIN=your_domain.mailgun.org
 
 ## 🔒 Sicurezza
 
-- **Basic Authentication** per aree protette
-- **Validazione input** su tutti i form
-- **SQL Injection protection** tramite prepared statements
-- **Rate limiting** consigliato per produzione
+- **Sessione per-tenant** con rigenerazione al login; ruoli `admin` e `store`
+- **Validazione input** su endpoint critici
+- **Prepared statements** per query SQLite
+- **Rate limit login** con lockout progressivo
+- **Uploads** con whitelist MIME, size limit, sanitizzazione filename
+- **/healthz** con check DB; log strutturati con `requestId` e `tenant`
 
 ## 🚀 Deploy in Produzione
 
@@ -134,6 +171,15 @@ MAILGUN_DOMAIN=your_domain.mailgun.org
 3. **Configura provider email reale**
 4. **Considera backup automatici** del database SQLite
 5. **Usa un process manager** come PM2
+
+### Docker (consigliato)
+
+```bash
+docker compose up -d --build
+# App su :3000, Redis incluso, volumi per data e uploads
+```
+
+Nginx come reverse proxy: vedi `nginx.conf.example`. Abilita HTTPS (Let’s Encrypt) e redirect 80→443.
 
 ### Esempio con PM2
 
@@ -149,11 +195,14 @@ pm2 save
 ```
 CouponGen/
 ├── data/                 # Database SQLite
-├── static/              # File CSS/JS statici
+├── static/              # File CSS/JS statici (+ uploads per-tenant)
 ├── views/               # Template HTML
 ├── server.js            # Server principale
 ├── package.json         # Dipendenze
 ├── env.example          # Template configurazione
+├── Dockerfile           # Container build
+├── docker-compose.yml   # App + Redis
+├── nginx.conf.example   # Reverse proxy
 └── README.md           # Documentazione
 ```
 

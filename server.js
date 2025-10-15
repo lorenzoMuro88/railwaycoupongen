@@ -6,33 +6,338 @@ const fs = require('fs');
 const express = require('express');
 const basicAuth = require('express-basic-auth');
 const session = require('express-session');
+const RedisStore = require('connect-redis').default;
+const { createClient: createRedisClient } = require('redis');
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 // Mailgun SDK
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
-const { nanoid } = require('nanoid');
+function generateId(length = 12) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const bytes = crypto.randomBytes(length);
+    let out = '';
+    for (let i = 0; i < length; i++) {
+        out += alphabet[bytes[i] % alphabet.length];
+    }
+    return out;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || 'default';
+const DEFAULT_TENANT_NAME = process.env.DEFAULT_TENANT_NAME || 'Default Tenant';
+const ENFORCE_TENANT_PREFIX = String(process.env.ENFORCE_TENANT_PREFIX || 'false') === 'true';
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '15mb' }));
 app.use('/static', express.static(path.join(__dirname, 'static')));
 
-// Session configuration
-app.use(session({
+// Public signup page
+app.get('/access', (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'access.html'));
+});
+
+app.get('/signup', (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'signup.html'));
+});
+
+// Super admin page will be defined after session middleware
+
+// Request ID and basic structured logging
+app.use((req, res, next) => {
+    req.requestId = generateId(10);
+    const startedAt = Date.now();
+    res.on('finish', () => {
+        const durationMs = Date.now() - startedAt;
+        const tenantPart = req.tenant ? req.tenant.slug : (req.session?.user?.tenantSlug || '-');
+        console.log(JSON.stringify({
+            level: 'info',
+            msg: 'request',
+            requestId: req.requestId,
+            method: req.method,
+            path: req.originalUrl,
+            status: res.statusCode,
+            durationMs,
+            tenant: tenantPart
+        }));
+    });
+    next();
+});
+
+// Simple in-memory login rate limiter (per IP)
+const loginAttempts = new Map(); // key: ip, value: { count, first, lockedUntil }
+const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 10 * 60 * 1000); // 10 min
+const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 10);
+const LOGIN_LOCK_MS = Number(process.env.LOGIN_LOCK_MS || 30 * 60 * 1000); // 30 min
+function checkLoginRateLimit(ip) {
+    const now = Date.now();
+    let entry = loginAttempts.get(ip);
+    if (!entry) {
+        entry = { count: 0, first: now, lockedUntil: 0 };
+        loginAttempts.set(ip, entry);
+    }
+    if (entry.lockedUntil && now < entry.lockedUntil) {
+        return { ok: false, retryAfterMs: entry.lockedUntil - now };
+    }
+    if (now - entry.first > LOGIN_WINDOW_MS) {
+        entry.count = 0; entry.first = now; entry.lockedUntil = 0;
+    }
+    return { ok: true };
+}
+function recordLoginFailure(ip) {
+    const now = Date.now();
+    const entry = loginAttempts.get(ip) || { count: 0, first: now, lockedUntil: 0 };
+    entry.count += 1;
+    if (entry.count >= LOGIN_MAX_ATTEMPTS) {
+        entry.lockedUntil = now + LOGIN_LOCK_MS;
+    }
+    loginAttempts.set(ip, entry);
+}
+function recordLoginSuccess(ip) {
+    loginAttempts.delete(ip);
+}
+
+// Submit rate limiting (per IP + per Email)
+const submitAttemptsByIp = new Map(); // key: ip, value: { count, first, lockedUntil }
+const submitAttemptsByEmail = new Map(); // key: emailKey, value: { count, first, lockedUntil }
+
+const SUBMIT_WINDOW_MS = Number(process.env.SUBMIT_WINDOW_MS || 10 * 60 * 1000); // 10 min
+const SUBMIT_MAX_PER_IP = Number(process.env.SUBMIT_MAX_PER_IP || 20); // per window
+const SUBMIT_LOCK_MS = Number(process.env.SUBMIT_LOCK_MS || 30 * 60 * 1000); // 30 min
+
+const EMAIL_DAILY_WINDOW_MS = Number(process.env.EMAIL_DAILY_WINDOW_MS || 24 * 60 * 60 * 1000); // 24h
+const EMAIL_MAX_PER_DAY = Number(process.env.EMAIL_MAX_PER_DAY || 3);
+const EMAIL_LOCK_MS = Number(process.env.EMAIL_LOCK_MS || 24 * 60 * 60 * 1000);
+
+function normalizeEmailForKey(email) {
+    return String(email || '').trim().toLowerCase();
+}
+
+function getEmailKey(email, tenantId) {
+    const base = normalizeEmailForKey(email);
+    return typeof tenantId === 'number' ? `${tenantId}:${base}` : base;
+}
+
+function checkIpSubmitLimit(ip) {
+    const now = Date.now();
+    let entry = submitAttemptsByIp.get(ip);
+    if (!entry) {
+        entry = { count: 0, first: now, lockedUntil: 0 };
+        submitAttemptsByIp.set(ip, entry);
+    }
+    if (entry.lockedUntil && now < entry.lockedUntil) {
+        return { ok: false, retryAfterMs: entry.lockedUntil - now };
+    }
+    if (now - entry.first > SUBMIT_WINDOW_MS) {
+        entry.count = 0; entry.first = now; entry.lockedUntil = 0;
+    }
+    return { ok: true };
+}
+
+function recordIpSubmit(ip) {
+    const now = Date.now();
+    const entry = submitAttemptsByIp.get(ip) || { count: 0, first: now, lockedUntil: 0 };
+    entry.count += 1;
+    if (entry.count >= SUBMIT_MAX_PER_IP) {
+        entry.lockedUntil = now + SUBMIT_LOCK_MS;
+    }
+    submitAttemptsByIp.set(ip, entry);
+}
+
+function checkEmailDailyLimit(emailKey) {
+    const now = Date.now();
+    let entry = submitAttemptsByEmail.get(emailKey);
+    if (!entry) {
+        entry = { count: 0, first: now, lockedUntil: 0 };
+        submitAttemptsByEmail.set(emailKey, entry);
+    }
+    if (entry.lockedUntil && now < entry.lockedUntil) {
+        return { ok: false, retryAfterMs: entry.lockedUntil - now };
+    }
+    if (now - entry.first > EMAIL_DAILY_WINDOW_MS) {
+        entry.count = 0; entry.first = now; entry.lockedUntil = 0;
+    }
+    if (entry.count >= EMAIL_MAX_PER_DAY) {
+        return { ok: false, retryAfterMs: (entry.first + EMAIL_DAILY_WINDOW_MS) - now };
+    }
+    return { ok: true };
+}
+
+function recordEmailSubmit(emailKey) {
+    const now = Date.now();
+    const entry = submitAttemptsByEmail.get(emailKey) || { count: 0, first: now, lockedUntil: 0 };
+    entry.count += 1;
+    if (entry.count >= EMAIL_MAX_PER_DAY) {
+        entry.lockedUntil = Math.max(entry.lockedUntil, entry.first + EMAIL_LOCK_MS);
+    }
+    submitAttemptsByEmail.set(emailKey, entry);
+}
+
+function checkSubmitRateLimit(req, res, next) {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const email = req.body?.email;
+    const tenantId = req.tenant?.id ?? req.session?.user?.tenantId;
+
+    // Per-IP windowed limit
+    const ipCheck = checkIpSubmitLimit(ip);
+    if (!ipCheck.ok) {
+        return res.status(429).send('Troppi invii da questo IP. Riprova più tardi.');
+    }
+
+    // Per-email daily limit
+    const emailKey = getEmailKey(email, tenantId);
+    const emailCheck = checkEmailDailyLimit(emailKey);
+    if (!emailCheck.ok) {
+        return res.status(429).send('Hai raggiunto il numero massimo di richieste per questa email.');
+    }
+
+    // Record immediately to mitigate bursts; we can roll back later if needed
+    recordIpSubmit(ip);
+    recordEmailSubmit(emailKey);
+    next();
+}
+
+// reCAPTCHA verification (Invisible v2 or v3)
+const RECAPTCHA_ENABLED = String(process.env.RECAPTCHA_ENABLED || 'false') === 'true';
+const RECAPTCHA_SECRET = process.env.RECAPTCHA_SECRET || '';
+const RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || '';
+
+async function verifyRecaptchaToken(token, remoteIp) {
+    if (!token) return { ok: false, reason: 'missing-token' };
+    const params = new URLSearchParams();
+    params.append('secret', RECAPTCHA_SECRET);
+    params.append('response', token);
+    if (remoteIp) params.append('remoteip', remoteIp);
+    try {
+        const resp = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        });
+        const data = await resp.json();
+        if (data.success) {
+            return { ok: true };
+        }
+        return { ok: false, reason: data['error-codes']?.join(',') || 'verify-failed' };
+    } catch (e) {
+        console.error('reCAPTCHA verify error', e);
+        return { ok: false, reason: 'verify-exception' };
+    }
+}
+
+async function verifyRecaptchaIfEnabled(req, res, next) {
+    if (!RECAPTCHA_ENABLED) return next();
+    const token = req.body['g-recaptcha-response'] || req.body['recaptchaToken'];
+    const ip = req.ip || req.connection?.remoteAddress || undefined;
+    if (!RECAPTCHA_SECRET) {
+        console.warn('RECAPTCHA_ENABLED=true ma RECAPTCHA_SECRET è vuoto');
+        return res.status(500).send('Configurazione reCAPTCHA mancante');
+    }
+    const result = await verifyRecaptchaToken(token, ip);
+    if (!result.ok) {
+        return res.status(400).send('Verifica reCAPTCHA fallita');
+    }
+    next();
+}
+
+// Public config for frontend (exposes only safe keys)
+app.get('/api/public-config', (req, res) => {
+    res.json({
+        recaptchaEnabled: RECAPTCHA_ENABLED,
+        recaptchaSiteKey: RECAPTCHA_SITE_KEY || null
+    });
+});
+
+// Tenant loader (read-only for M1): resolves :tenantSlug to req.tenant
+async function tenantLoader(req, res, next) {
+    try {
+        const { tenantSlug } = req.params;
+        const dbConn = await getDb();
+        const tenant = await dbConn.get('SELECT id, slug, name FROM tenants WHERE slug = ?', tenantSlug);
+        if (!tenant) {
+            return res.status(404).send('Tenant non trovato');
+        }
+        req.tenant = tenant;
+        req.tenantSlug = tenant.slug;
+        // Simple visibility in logs
+        console.log(`[tenant:${tenant.slug}] ${req.method} ${req.originalUrl}`);
+        next();
+    } catch (e) {
+        console.error('tenantLoader error', e);
+        res.status(500).send('Errore tenant');
+    }
+}
+
+// Require that the logged-in user's tenant matches the tenant in path
+function requireSameTenantAsSession(req, res, next) {
+    if (!req.session || !req.session.user) {
+        return res.redirect('/login');
+    }
+    
+    // Superadmin can access all tenants
+    if (req.session.user.userType === 'superadmin') {
+        return next();
+    }
+    
+    if (!req.tenant || typeof req.tenant.id !== 'number') {
+        return res.status(400).send('Tenant non valido');
+    }
+    const sessTenantId = req.session.user.tenantId;
+    const sessTenantSlug = req.session.user.tenantSlug;
+    if (typeof sessTenantId === 'number' && sessTenantId === req.tenant.id) {
+        return next();
+    }
+    if (sessTenantSlug && sessTenantSlug === req.tenant.slug) {
+        return next();
+    }
+    // As a safety, if only slug matches session, redirect to correct slug path
+    if (sessTenantSlug && sessTenantSlug !== req.tenant.slug) {
+        return res.redirect(`/t/${sessTenantSlug}${req.path.replace(`/t/${req.params.tenantSlug}`, '')}`);
+    }
+    return res.status(403).send('Tenant mismatch');
+}
+
+// Generic role guard using session userType
+function requireRole(role) {
+    return function(req, res, next) {
+        const user = req.session && req.session.user;
+        if (!user) return res.redirect('/login');
+        
+        // Superadmin can access everything
+        if (user.userType === 'superadmin') {
+            return next();
+        }
+        
+        if (role === 'admin' && user.userType !== 'admin') return res.status(403).send('Accesso negato. Richiesto ruolo Admin.');
+        if (role === 'store' && user.userType !== 'store' && user.userType !== 'admin') return res.status(403).send('Accesso negato. Richiesto ruolo Store.');
+        return next();
+    }
+}
+
+// Session configuration (Redis in production)
+let sessionOptions = {
     secret: process.env.SESSION_SECRET || 'coupon-gen-secret-key-change-in-production',
     resave: false,
     saveUninitialized: false,
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000
     }
-}));
+};
+if (process.env.NODE_ENV === 'production' && process.env.REDIS_URL) {
+    const redisClient = createRedisClient({ url: process.env.REDIS_URL });
+    redisClient.connect().catch(console.error);
+    sessionOptions.store = new RedisStore({ client: redisClient, prefix: 'sess:' });
+}
+app.use(session(sessionOptions));
+
+// Super admin page will be defined before /admin middleware
 
 // Ensure data directory exists
 const DATA_DIR = path.join(__dirname, 'data');
@@ -51,12 +356,20 @@ async function getDb() {
     // First, create tables without foreign keys to avoid migration issues
     await db.exec(`
         PRAGMA foreign_keys = OFF;
+        CREATE TABLE IF NOT EXISTS tenants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            name TEXT,
+            email_from_name TEXT DEFAULT 'CouponGen',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT NOT NULL,
             first_name TEXT,
             last_name TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            tenant_id INTEGER
         );
         CREATE TABLE IF NOT EXISTS campaigns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,7 +380,8 @@ async function getDb() {
             discount_type TEXT NOT NULL DEFAULT 'percent',
             discount_value TEXT NOT NULL,
             form_config TEXT DEFAULT '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}, "phone": {"visible": false, "required": false}, "address": {"visible": false, "required": false}, "allergies": {"visible": false, "required": false}, "customFields": []}', -- JSON config for form fields
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            tenant_id INTEGER
         );
         CREATE TABLE IF NOT EXISTS coupons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +392,8 @@ async function getDb() {
             discount_value TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
             issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            redeemed_at DATETIME
+            redeemed_at DATETIME,
+            tenant_id INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code);
         CREATE TABLE IF NOT EXISTS user_custom_data (
@@ -87,15 +402,54 @@ async function getDb() {
             field_name TEXT NOT NULL,
             field_value TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            tenant_id INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_user_custom_data_user_id ON user_custom_data(user_id);
         CREATE INDEX IF NOT EXISTS idx_user_custom_data_field_name ON user_custom_data(field_name);
+        CREATE TABLE IF NOT EXISTS system_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER,
+            username TEXT,
+            user_type TEXT,
+            tenant_id INTEGER,
+            tenant_name TEXT,
+            tenant_slug TEXT,
+            action_type TEXT NOT NULL,
+            action_description TEXT,
+            level TEXT DEFAULT 'info',
+            details TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE SET NULL,
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_system_logs_user_id ON system_logs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_system_logs_tenant_id ON system_logs(tenant_id);
+        CREATE INDEX IF NOT EXISTS idx_system_logs_action_type ON system_logs(action_type);
+        CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
     `);
     
     // Migrate existing database
     try {
         console.log('Starting database migration...');
+        
+        // Simple versioned migrations table
+        await db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+        const currentVersion = '2025-10-mt-a2';
+        const hasVersion = await db.get('SELECT 1 FROM schema_migrations WHERE version = ?', currentVersion);
+
+        // Ensure default tenant exists
+        const existingDefaultTenant = await db.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
+        let defaultTenantId = existingDefaultTenant ? existingDefaultTenant.id : null;
+        if (!defaultTenantId) {
+            await db.run('INSERT INTO tenants (slug, name) VALUES (?, ?)', DEFAULT_TENANT_SLUG, DEFAULT_TENANT_NAME);
+            const row = await db.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
+            defaultTenantId = row.id;
+            console.log('Created default tenant with slug:', DEFAULT_TENANT_SLUG);
+        }
         
         // Check if new columns exist in coupons table
         const columns = await db.all("PRAGMA table_info(coupons)");
@@ -143,6 +497,10 @@ async function getDb() {
         
         // Create campaign index after adding the column
         await db.exec('CREATE INDEX IF NOT EXISTS idx_coupons_campaign ON coupons(campaign_id)');
+        if (!columnNames.includes('tenant_id')) {
+            console.log('Adding tenant_id column to coupons...');
+            await db.exec('ALTER TABLE coupons ADD COLUMN tenant_id INTEGER');
+        }
         
         // Check if campaign_code column exists in campaigns table
         const campaignColumns = await db.all("PRAGMA table_info(campaigns)");
@@ -156,7 +514,7 @@ async function getDb() {
             const existingCampaigns = await db.all('SELECT id FROM campaigns WHERE campaign_code IS NULL');
             console.log(`Found ${existingCampaigns.length} campaigns without campaign_code`);
             for (const campaign of existingCampaigns) {
-                const campaignCode = nanoid(12).toUpperCase();
+                const campaignCode = generateId(12);
                 await db.run('UPDATE campaigns SET campaign_code = ? WHERE id = ?', campaignCode, campaign.id);
                 console.log(`Generated campaign_code ${campaignCode} for campaign ${campaign.id}`);
             }
@@ -171,7 +529,7 @@ async function getDb() {
             if (campaignsWithoutCode.length > 0) {
                 console.log(`Found ${campaignsWithoutCode.length} campaigns without campaign_code, generating codes...`);
                 for (const campaign of campaignsWithoutCode) {
-                    const campaignCode = nanoid(12).toUpperCase();
+                    const campaignCode = generateId(12).toUpperCase();
                     await db.run('UPDATE campaigns SET campaign_code = ? WHERE id = ?', campaignCode, campaign.id);
                     console.log(`Generated campaign_code ${campaignCode} for campaign ${campaign.id}`);
                 }
@@ -213,6 +571,10 @@ async function getDb() {
                 }
             }
         }
+        if (!campaignColumnNames.includes('tenant_id')) {
+            console.log('Adding tenant_id column to campaigns...');
+            await db.exec('ALTER TABLE campaigns ADD COLUMN tenant_id INTEGER');
+        }
         
         // Check if new columns exist in users table
         const userColumns = await db.all("PRAGMA table_info(users)");
@@ -230,6 +592,10 @@ async function getDb() {
             console.log('Adding allergies column to users...');
             await db.exec("ALTER TABLE users ADD COLUMN allergies TEXT");
         }
+        if (!userColumnNames.includes('tenant_id')) {
+            console.log('Adding tenant_id column to users...');
+            await db.exec('ALTER TABLE users ADD COLUMN tenant_id INTEGER');
+        }
         
         // Check if user_custom_data table exists
         const customDataTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='user_custom_data'");
@@ -242,11 +608,67 @@ async function getDb() {
                     field_name TEXT NOT NULL,
                     field_value TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    tenant_id INTEGER,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS idx_user_custom_data_user_id ON user_custom_data(user_id);
                 CREATE INDEX IF NOT EXISTS idx_user_custom_data_field_name ON user_custom_data(field_name);
             `);
+        }
+
+        // Ensure auth_users has tenant_id and default records are tenant-scoped
+        const authUserCols = await db.all("PRAGMA table_info(auth_users)");
+        const authUserColNames = authUserCols.map(c => c.name);
+        if (!authUserColNames.includes('tenant_id')) {
+            console.log('Adding tenant_id to auth_users...');
+            await db.exec('ALTER TABLE auth_users ADD COLUMN tenant_id INTEGER');
+        }
+        if (!authUserColNames.includes('first_name')) {
+            console.log('Adding first_name to auth_users...');
+            await db.exec('ALTER TABLE auth_users ADD COLUMN first_name TEXT');
+        }
+        if (!authUserColNames.includes('last_name')) {
+            console.log('Adding last_name to auth_users...');
+            await db.exec('ALTER TABLE auth_users ADD COLUMN last_name TEXT');
+        }
+        if (!authUserColNames.includes('email')) {
+            console.log('Adding email to auth_users...');
+            await db.exec('ALTER TABLE auth_users ADD COLUMN email TEXT');
+        }
+        // Backfill tenant_id for existing rows to default tenant
+        await db.run('UPDATE users SET tenant_id = COALESCE(tenant_id, ?) WHERE tenant_id IS NULL', defaultTenantId);
+        await db.run('UPDATE campaigns SET tenant_id = COALESCE(tenant_id, ?) WHERE tenant_id IS NULL', defaultTenantId);
+        await db.run('UPDATE coupons SET tenant_id = COALESCE(tenant_id, ?) WHERE tenant_id IS NULL', defaultTenantId);
+        
+        // Check if user_custom_data has tenant_id column before updating
+        const userCustomDataCols = await db.all("PRAGMA table_info(user_custom_data)");
+        const userCustomDataColNames = userCustomDataCols.map(c => c.name);
+        if (userCustomDataColNames.includes('tenant_id')) {
+            await db.run('UPDATE user_custom_data SET tenant_id = COALESCE(tenant_id, ?) WHERE tenant_id IS NULL', defaultTenantId);
+        }
+        
+        await db.run('UPDATE auth_users SET tenant_id = COALESCE(tenant_id, ?) WHERE tenant_id IS NULL', defaultTenantId);
+
+        // Indexes and unique constraints (via unique indexes in SQLite)
+        await db.exec('CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id)');
+        await db.exec('CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON campaigns(tenant_id)');
+        await db.exec('CREATE INDEX IF NOT EXISTS idx_coupons_tenant ON coupons(tenant_id)');
+        if (userCustomDataColNames.includes('tenant_id')) {
+            await db.exec('CREATE INDEX IF NOT EXISTS idx_ucd_tenant ON user_custom_data(tenant_id)');
+        }
+        await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_users_tenant_email ON users(tenant_id, email)');
+        await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_coupons_tenant_code ON coupons(tenant_id, code)');
+
+        if (!hasVersion) {
+            // Add email_from_name column to tenants table if it doesn't exist
+            const tenantColumns = await db.all("PRAGMA table_info(tenants)");
+            const hasEmailFromName = tenantColumns.some(col => col.name === 'email_from_name');
+            if (!hasEmailFromName) {
+                console.log('Adding email_from_name column to tenants table...');
+                await db.exec('ALTER TABLE tenants ADD COLUMN email_from_name TEXT DEFAULT "CouponGen"');
+            }
+            
+            await db.run('INSERT INTO schema_migrations(version) VALUES (?)', currentVersion);
         }
 
         // Email template table
@@ -290,28 +712,31 @@ async function getDb() {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    user_type TEXT NOT NULL CHECK (user_type IN ('admin', 'store')),
+                    user_type TEXT NOT NULL CHECK (user_type IN ('superadmin', 'admin', 'store')),
                     is_active BOOLEAN DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    last_login DATETIME
+                    last_login DATETIME,
+                    first_name TEXT,
+                    last_name TEXT,
+                    email TEXT
                 );
             `);
             
-            // Create default admin user if no users exist
-            const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+            // Create default superadmin user if no users exist
+            const defaultSuperAdminPassword = process.env.SUPERADMIN_PASSWORD || 'admin123';
             const defaultStorePassword = process.env.STORE_PASSWORD || 'store123';
             
             // Simple password hashing (in production, use bcrypt)
-            const adminHash = Buffer.from(defaultAdminPassword).toString('base64');
+            const superAdminHash = Buffer.from(defaultSuperAdminPassword).toString('base64');
             const storeHash = Buffer.from(defaultStorePassword).toString('base64');
             
             await db.run(`
                 INSERT INTO auth_users (username, password_hash, user_type) 
-                VALUES ('admin', ?, 'admin'), ('store', ?, 'store')
-            `, adminHash, storeHash);
+                VALUES ('admin', ?, 'superadmin'), ('store', ?, 'store')
+            `, superAdminHash, storeHash);
             
             console.log('Default users created:');
-            console.log('- Admin: username=admin, password=' + defaultAdminPassword);
+            console.log('- SuperAdmin: username=admin, password=' + defaultSuperAdminPassword);
             console.log('- Store: username=store, password=' + defaultStorePassword);
         }
         
@@ -353,6 +778,23 @@ async function getDb() {
         await db.exec('PRAGMA foreign_keys = ON');
         
         console.log('Database migration completed successfully');
+        
+        // Create some initial sample logs for testing
+        try {
+            const sampleLogs = await db.all('SELECT COUNT(*) as count FROM system_logs');
+            if (sampleLogs[0].count === 0) {
+                console.log('Creating sample logs...');
+                await db.run(`
+                    INSERT INTO system_logs (username, user_type, action_type, action_description, level, details, timestamp) VALUES
+                    ('Sistema', 'system', 'create', 'Sistema avviato', 'info', '{"message": "Sistema CouponGen avviato correttamente"}', datetime('now', '-1 hour')),
+                    ('admin', 'superadmin', 'login', 'Login SuperAdmin effettuato', 'success', '{"username": "admin", "userType": "superadmin"}', datetime('now', '-30 minutes')),
+                    ('Sistema', 'system', 'create', 'Database inizializzato', 'info', '{"tables": ["tenants", "users", "campaigns", "coupons", "system_logs"]}', datetime('now', '-15 minutes'))
+                `);
+                console.log('Sample logs created');
+            }
+        } catch (error) {
+            console.error('Error creating sample logs:', error);
+        }
     } catch (migrationError) {
         console.error('Migration error:', migrationError);
         // Re-enable foreign keys even if migration fails
@@ -376,7 +818,7 @@ function buildTransport() {
             async sendMail(message) {
                 // Build Mailgun message
                 const data = {
-                    from: message.from || (process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.vibemarketingstudio.it>'),
+                    from: message.from || (process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>'),
                     to: message.to,
                     subject: message.subject || 'Il tuo coupon',
                     html: message.html,
@@ -426,6 +868,48 @@ function buildTransport() {
 
 const transporter = buildTransport();
 
+// Utilities
+function toSlug(input) {
+    return String(input || '')
+        .toLowerCase()
+        .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 64) || 'tenant';
+}
+
+// Logging utility function
+async function logAction(req, actionType, actionDescription, level = 'info', details = null) {
+    try {
+        const db = await getDb();
+        const user = req.session?.user;
+        const tenant = req.tenant;
+        
+        await db.run(`
+            INSERT INTO system_logs (
+                user_id, username, user_type, tenant_id, tenant_name, tenant_slug,
+                action_type, action_description, level, details, ip_address, user_agent
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            user?.id || null,
+            user?.username || 'Sistema',
+            user?.userType || 'system',
+            tenant?.id || user?.tenantId || null,
+            tenant?.name || null,
+            tenant?.slug || user?.tenantSlug || null,
+            actionType,
+            actionDescription,
+            level,
+            details ? JSON.stringify(details) : null,
+            req.ip || req.connection?.remoteAddress || null,
+            req.get('User-Agent') || null
+        ]);
+    } catch (error) {
+        console.error('Error logging action:', error);
+        // Don't throw error to avoid breaking the main flow
+    }
+}
+
 // Authentication middleware
 function requireAuth(req, res, next) {
     if (req.session && req.session.user) {
@@ -436,15 +920,25 @@ function requireAuth(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
-    if (req.session && req.session.user && req.session.user.userType === 'admin') {
+    if (req.session && req.session.user && (req.session.user.userType === 'admin' || req.session.user.userType === 'superadmin')) {
         return next();
     } else {
         return res.status(403).send('Accesso negato. Richiesto ruolo Admin.');
     }
 }
 
+// Super admin middleware
+function requireSuperAdmin(req, res, next) {
+    if (req.session && req.session.user && req.session.user.userType === 'superadmin') {
+        return next();
+    }
+    return res.status(403).send('Accesso negato. Richiesto ruolo SuperAdmin.');
+}
+
+// Super admin page already defined above
+
 function requireStore(req, res, next) {
-    if (req.session && req.session.user && req.session.user.userType === 'store') {
+    if (req.session && req.session.user && (req.session.user.userType === 'store' || req.session.user.userType === 'admin' || req.session.user.userType === 'superadmin')) {
         return next();
     } else {
         return res.status(403).send('Accesso negato. Richiesto ruolo Store.');
@@ -456,10 +950,28 @@ function verifyPassword(password, hash) {
     return Buffer.from(password).toString('base64') === hash;
 }
 
+function hashPassword(password) {
+    return Buffer.from(password).toString('base64');
+}
+
+// Helper function to check if a user is the first admin of their tenant
+async function isFirstAdmin(dbConn, userId, tenantId) {
+    const firstAdmin = await dbConn.get(
+        'SELECT id FROM auth_users WHERE tenant_id = ? AND user_type = ? ORDER BY created_at ASC LIMIT 1',
+        tenantId, 'admin'
+    );
+    return firstAdmin && firstAdmin.id === parseInt(userId);
+}
+
 // Login API endpoint
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password, userType } = req.body;
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        const rate = checkLoginRateLimit(ip);
+        if (!rate.ok) {
+            return res.status(429).json({ error: 'Troppi tentativi. Riprova più tardi.' });
+        }
         
         if (!username || !password || !userType) {
             return res.status(400).json({ error: 'Username, password e tipo utente sono richiesti' });
@@ -472,29 +984,48 @@ app.post('/api/login', async (req, res) => {
         );
         
         if (!user || !verifyPassword(password, user.password_hash)) {
+            recordLoginFailure(ip);
             return res.status(401).json({ error: 'Credenziali non valide' });
         }
         
+        recordLoginSuccess(ip);
         // Update last login
         await dbConn.run(
             'UPDATE auth_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?',
             user.id
         );
         
-        // Create session
+        // Regenerate session to prevent fixation
+        await new Promise((resolve, reject) => {
+            req.session.regenerate(err => err ? reject(err) : resolve());
+        });
+        // Create session (tenant-scoped payload)
+        const superAdminUsername = process.env.SUPERADMIN_USERNAME || 'admin';
+        const isSuperAdmin = user && user.username === superAdminUsername;
         req.session.user = {
             id: user.id,
             username: user.username,
-            userType: user.user_type
+            userType: user.user_type,
+            tenantId: user.tenant_id,
+            tenantSlug: DEFAULT_TENANT_SLUG, // until path-based routing is introduced
+            isSuperAdmin
         };
         
-        // Determine redirect URL
-        let redirectUrl = '/';
+        // Determine redirect URL (tenant-prefixed)
+        const slug = req.session.user.tenantSlug || DEFAULT_TENANT_SLUG;
+        let redirectUrl = `/t/${slug}`;
         if (userType === 'admin') {
-            redirectUrl = '/admin';
+            redirectUrl = `/t/${slug}/admin`;
         } else if (userType === 'store') {
-            redirectUrl = '/store';
+            redirectUrl = `/t/${slug}/store`;
         }
+        
+        // Log successful login
+        await logAction(req, 'login', `Login effettuato come ${userType}`, 'success', {
+            username: user.username,
+            userType: user.user_type,
+            tenantId: user.tenant_id
+        });
         
         res.json({ 
             success: true, 
@@ -508,28 +1039,159 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Logout API endpoint
-app.post('/api/logout', (req, res) => {
-    req.session.destroy((err) => {
-        if (err) {
-            console.error('Logout error:', err);
-            return res.status(500).json({ error: 'Errore durante il logout' });
+// Tenant provisioning: create tenant + first admin user, then login
+app.post('/api/signup', async (req, res) => {
+    try {
+        const { tenantName, tenantSlug, adminUsername, adminPassword } = req.body || {};
+        if (!tenantName || !adminUsername || !adminPassword) {
+            return res.status(400).json({ error: 'tenantName, adminUsername e adminPassword sono richiesti' });
         }
+        const slug = toSlug(tenantSlug || tenantName);
+        const dbConn = await getDb();
+
+        // Check slug uniqueness
+        const existing = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', slug);
+        if (existing) {
+            return res.status(409).json({ error: 'Slug tenant già in uso' });
+        }
+
+        // Create tenant
+        const resultTenant = await dbConn.run('INSERT INTO tenants (slug, name) VALUES (?, ?)', slug, tenantName);
+        const newTenantId = resultTenant.lastID;
+
+        // Create first admin user (auth)
+        const existingAdmin = await dbConn.get('SELECT id FROM auth_users WHERE username = ? AND tenant_id = ?', adminUsername, newTenantId);
+        if (existingAdmin) {
+            return res.status(409).json({ error: 'Username già in uso per questo tenant' });
+        }
+        await dbConn.run(
+            'INSERT INTO auth_users (username, password_hash, user_type, is_active, tenant_id) VALUES (?, ?, ?, 1, ?)',
+            adminUsername, hashPassword(adminPassword), 'admin', newTenantId
+        );
+
+        // Login session
+        await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
+        const superAdminUsername = process.env.SUPERADMIN_USERNAME || 'admin';
+        const isSuperAdmin = adminUsername === superAdminUsername;
+        req.session.user = {
+            id: null,
+            username: adminUsername,
+            userType: 'admin',
+            tenantId: newTenantId,
+            tenantSlug: slug,
+            isSuperAdmin
+        };
+        
+        // Log tenant creation
+        await logAction(req, 'create', `Nuovo tenant creato: ${tenantName}`, 'success', {
+            tenantName: tenantName,
+            tenantSlug: slug,
+            adminUsername: adminUsername,
+            tenantId: newTenantId
+        });
+        
+        return res.json({ ok: true, redirect: `/t/${slug}/admin` });
+    } catch (e) {
+        console.error('Signup error', e);
+        res.status(500).json({ error: 'Errore durante la registrazione' });
+    }
+});
+
+// Logout API endpoint
+app.post('/api/logout', async (req, res) => {
+    // Log logout action before destroying session
+    if (req.session && req.session.user) {
+        await logAction(req, 'logout', 'Logout effettuato', 'info', {
+            username: req.session.user.username,
+            userType: req.session.user.userType
+        });
+    }
+    
+    if (req.session) {
+        req.session.destroy((err) => {
+            if (err) {
+                console.error('Logout error:', err);
+                return res.status(500).json({ error: 'Errore durante il logout' });
+            }
+            res.clearCookie('connect.sid');
+            res.json({ success: true, message: 'Logout effettuato con successo' });
+        });
+    } else {
         res.json({ success: true, message: 'Logout effettuato con successo' });
-    });
+    }
+});
+
+// Tenant-scoped logout API for convenience
+app.post('/t/:tenantSlug/api/logout', tenantLoader, (req, res) => {
+    if (req.session) {
+        req.session.destroy((err) => {
+            if (err) {
+                console.error('Logout error:', err);
+                return res.status(500).json({ error: 'Errore durante il logout' });
+            }
+            res.clearCookie('connect.sid');
+            res.json({ success: true, message: 'Logout effettuato con successo' });
+        });
+    } else {
+        res.json({ success: true, message: 'Logout effettuato con successo' });
+    }
+});
+
+// Tenant info API - get current tenant information
+app.get('/t/:tenantSlug/api/tenant-info', tenantLoader, requireSameTenantAsSession, (req, res) => {
+    try {
+        res.json({
+            id: req.tenant.id,
+            slug: req.tenant.slug,
+            name: req.tenant.name
+        });
+    } catch (e) {
+        console.error('Error getting tenant info:', e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// GET convenience routes that redirect to /access
+app.get('/logout', (req, res) => {
+    if (req.session) {
+        req.session.destroy(() => {
+            res.clearCookie('connect.sid');
+            return res.redirect('/access');
+        });
+    } else {
+        return res.redirect('/access');
+    }
+});
+app.get('/t/:tenantSlug/logout', tenantLoader, (req, res) => {
+    if (req.session) {
+        req.session.destroy(() => {
+            res.clearCookie('connect.sid');
+            return res.redirect('/access');
+        });
+    } else {
+        return res.redirect('/access');
+    }
 });
 
 // Login page
 app.get('/login', (req, res) => {
     // If already logged in, redirect to appropriate page
     if (req.session && req.session.user) {
-        if (req.session.user.userType === 'admin') {
-            return res.redirect('/admin');
-        } else if (req.session.user.userType === 'store') {
-            return res.redirect('/store');
-        }
+        const base = req.session.user.tenantSlug ? `/t/${req.session.user.tenantSlug}` : '';
+        if (req.session.user.userType === 'admin') return res.redirect(base + '/admin');
+        if (req.session.user.userType === 'store') return res.redirect(base + '/store');
     }
     res.sendFile(path.join(__dirname, 'views', 'login.html'));
+});
+
+// Store login page
+app.get('/store-login', (req, res) => {
+    // If already logged in as store, redirect to store page
+    if (req.session && req.session.user && req.session.user.userType === 'store') {
+        const base = req.session.user.tenantSlug ? `/t/${req.session.user.tenantSlug}` : '';
+        return res.redirect(base + '/store');
+    }
+    res.sendFile(path.join(__dirname, 'views', 'store-login.html'));
 });
 
 // Test email endpoint (admin protected)
@@ -538,7 +1200,7 @@ app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
         const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
         const html = `<p>Test Mailgun integrazione da CouponGen.</p>`;
         const message = {
-            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.vibemarketingstudio.it>',
+            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
             to,
             subject: 'Test Email - CouponGen',
             html
@@ -630,15 +1292,24 @@ app.post('/api/admin/upload-image', requireAdmin, async (req, res) => {
         if (!match) return res.status(400).json({ error: 'Formato dataUrl non valido' });
         const mime = match[1];
         const base64 = match[2];
-        const ext = mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
+        // Whitelist mime types and size limit (~2MB)
+        const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+        if (!allowed.includes(mime)) {
+            return res.status(400).json({ error: 'Tipo file non consentito' });
+        }
         const buffer = Buffer.from(base64, 'base64');
+        if (buffer.length > (Number(process.env.UPLOAD_MAX_BYTES || 2 * 1024 * 1024))) {
+            return res.status(400).json({ error: 'File troppo grande' });
+        }
+        const ext = mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
         // Ensure uploads dir exists
-        const uploadsDir = path.join(__dirname, 'static', 'uploads');
+        const tenantSlug = (req.session && req.session.user && req.session.user.tenantSlug) || DEFAULT_TENANT_SLUG;
+        const uploadsDir = path.join(__dirname, 'static', 'uploads', tenantSlug);
         if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
         const filename = `header-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const filePath = path.join(uploadsDir, filename);
         fs.writeFileSync(filePath, buffer);
-        const publicUrl = `/static/uploads/${filename}`;
+        const publicUrl = `/static/uploads/${tenantSlug}/${filename}`;
         res.json({ url: publicUrl });
     } catch (e) {
         console.error('Upload image error:', e);
@@ -646,7 +1317,55 @@ app.post('/api/admin/upload-image', requireAdmin, async (req, res) => {
     }
 });
 
-// API per configurazione form (pubblica)
+// Tenant-scoped admin upload
+app.post('/t/:tenantSlug/api/admin/upload-image', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { dataUrl } = req.body || {};
+        if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+            return res.status(400).json({ error: 'dataUrl mancante o non valido' });
+        }
+        const match = dataUrl.match(/^data:(.*?);base64,(.*)$/);
+        if (!match) return res.status(400).json({ error: 'Formato dataUrl non valido' });
+        const mime = match[1];
+        const base64 = match[2];
+        const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+        if (!allowed.includes(mime)) {
+            return res.status(400).json({ error: 'Tipo file non consentito' });
+        }
+        const buffer = Buffer.from(base64, 'base64');
+        if (buffer.length > (Number(process.env.UPLOAD_MAX_BYTES || 2 * 1024 * 1024))) {
+            return res.status(400).json({ error: 'File troppo grande' });
+        }
+        const ext = mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
+        const uploadsDir = path.join(__dirname, 'static', 'uploads', req.tenant.slug);
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+        const filename = `header-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const filePath = path.join(uploadsDir, filename);
+        fs.writeFileSync(filePath, buffer);
+        const publicUrl = `/static/uploads/${req.tenant.slug}/${filename}`;
+        res.json({ url: publicUrl });
+    } catch (e) {
+        console.error('Upload image error:', e);
+        res.status(500).json({ error: 'Errore durante il caricamento immagine' });
+    }
+});
+
+// Tenant-scoped: API per configurazione form (pubblica)
+app.get('/t/:tenantSlug/api/form-customization', tenantLoader, async (req, res) => {
+    try {
+        const config = await db.get('SELECT * FROM form_customization WHERE id = 1');
+        if (config) {
+            res.json(JSON.parse(config.config_data));
+        } else {
+            res.json({});
+        }
+    } catch (error) {
+        console.error('Errore caricamento configurazione form:', error);
+        res.json({});
+    }
+});
+
+// Legacy: API per configurazione form (pubblica)
 app.get('/api/form-customization', async (req, res) => {
     try {
         const config = await db.get('SELECT * FROM form_customization WHERE id = 1');
@@ -686,19 +1405,26 @@ app.post('/api/form-customization', async (req, res) => {
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'index.html'));
 });
+// Tenant-prefixed read-only equivalents (M1)
+app.get('/t/:tenantSlug', tenantLoader, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'index.html'));
+});
 
 app.get('/thanks', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'thanks.html'));
 });
+app.get('/t/:tenantSlug/thanks', tenantLoader, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'thanks.html'));
+});
 
 // Form submission - create user and coupon, send email with QR
-app.post('/submit', async (req, res) => {
+app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
     try {
         const { email, firstName, lastName, campaign_id, ...customFields } = req.body;
         if (!email) {
             return res.status(400).send('Email richiesta');
         }
-        const couponCode = nanoid(12).toUpperCase();
+        const couponCode = generateId(12);
 
         const dbConn = await getDb();
         
@@ -787,7 +1513,7 @@ app.post('/submit', async (req, res) => {
             .replaceAll('{{redemptionUrl}}', redemptionUrl);
 
         const message = {
-            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.vibemarketingstudio.it>',
+            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
             to: email,
             subject: templateSubject,
             html,
@@ -820,15 +1546,164 @@ app.post('/submit', async (req, res) => {
     }
 });
 
-// Store area - protected by session authentication
+// Tenant-scoped form submission (M3)
+app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
+    try {
+        const { email, firstName, lastName, campaign_id, ...customFields } = req.body;
+        if (!email) {
+            return res.status(400).send('Email richiesta');
+        }
+        const couponCode = generateId(12);
+
+        const dbConn = await getDb();
+        let discountType = 'percent';
+        let discountValue = process.env.DEFAULT_DISCOUNT_PERCENT || '10';
+        let campaignId = null;
+        let specificCampaign = null;
+
+        if (campaign_id) {
+            specificCampaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', campaign_id, req.tenant.id);
+            if (specificCampaign) {
+                if (!specificCampaign.is_active) {
+                    return res.status(400).send('Questo coupon non esiste o è scaduto');
+                }
+                discountType = specificCampaign.discount_type;
+                discountValue = specificCampaign.discount_value;
+                campaignId = specificCampaign.id;
+            } else {
+                return res.status(400).send('Questo coupon non esiste o è scaduto');
+            }
+        } else {
+            return res.status(400).send('Questo coupon non esiste o è scaduto');
+        }
+
+        const user = await dbConn.get('SELECT * FROM users WHERE email = ? AND tenant_id = ?', email, req.tenant.id);
+        let userId;
+        if (user) {
+            userId = user.id;
+        } else {
+            const result = await dbConn.run(
+                'INSERT INTO users (email, first_name, last_name, tenant_id) VALUES (?, ?, ?, ?)',
+                email, firstName || null, lastName || null, req.tenant.id
+            );
+            userId = result.lastID;
+        }
+
+        // Save custom fields
+        const formConfig = JSON.parse(specificCampaign.form_config);
+        if (formConfig.customFields && formConfig.customFields.length > 0) {
+            for (const customField of formConfig.customFields) {
+                const fieldValue = customFields[customField.id];
+                if (fieldValue !== undefined && fieldValue !== '') {
+                    await dbConn.run(
+                        'INSERT INTO user_custom_data (user_id, field_name, field_value, tenant_id) VALUES (?, ?, ?, ?)',
+                        userId, customField.id, fieldValue, req.tenant.id
+                    );
+                }
+            }
+        }
+
+        await dbConn.run(
+            'INSERT INTO coupons (code, user_id, campaign_id, discount_type, discount_value, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            couponCode, userId, campaignId, discountType, discountValue, 'active', req.tenant.id
+        );
+
+        const redemptionUrl = `${req.protocol}://${req.get('host')}/t/${req.tenant.slug}/redeem/${couponCode}`;
+        const qrDataUrl = await QRCode.toDataURL(redemptionUrl, { width: 300, margin: 2 });
+
+        const discountText = discountType === 'percent' ? `uno sconto del ${discountValue}%` : 
+                            discountType === 'fixed' ? `uno sconto di &euro;${discountValue}` : discountValue;
+        let templateSubject = process.env.MAIL_SUBJECT || 'Il tuo coupon';
+        let templateHtml = '';
+        try {
+            const t = await dbConn.get('SELECT subject, html FROM email_template WHERE id = 1');
+            if (t) { templateSubject = t.subject || templateSubject; templateHtml = t.html || templateHtml; }
+        } catch (e) {}
+        if (!templateHtml) {
+            templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
+            <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
+            <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
+            <p><img src="cid:couponqr.png" alt="QR Code" /></p>
+            <p>Grazie!</p>`;
+        }
+        const html = templateHtml
+            .replaceAll('{{firstName}}', firstName || '')
+            .replaceAll('{{lastName}}', lastName || '')
+            .replaceAll('{{code}}', couponCode)
+            .replaceAll('{{discountText}}', discountText)
+            .replaceAll('{{redemptionUrl}}', redemptionUrl);
+
+        const message = {
+            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
+            to: email,
+            subject: templateSubject,
+            html,
+            attachments: [
+                { filename: 'couponqr.png', cid: 'couponqr', content: Buffer.from(qrDataUrl.split(',')[1], 'base64'), contentType: 'image/png' }
+            ]
+        };
+        try { await transporter.sendMail(message); } catch (emailErr) { console.error('Email error:', emailErr); }
+
+        // Log coupon creation
+        await logAction(req, 'create', `Coupon creato: ${couponCode}`, 'success', {
+            couponCode: couponCode,
+            campaignId: campaignId,
+            discountType: discountType,
+            discountValue: discountValue,
+            userEmail: email
+        });
+
+        res.redirect(`/t/${req.tenant.slug}/thanks`);
+    } catch (err) {
+        console.error('Error in submit (tenant):', err);
+        res.status(500).send('Errore durante la creazione del coupon');
+    }
+});
+
+// Legacy protected areas (kept for now)
 app.use('/store', requireAuth);
 app.use('/api/store', requireStore);
-
-// Admin area - protected by session authentication  
 app.use('/admin', requireAuth);
 app.use('/api/admin', requireAdmin);
 
+// Super admin login page
+app.get('/superadmin-login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'superadmin-login.html'));
+});
+
+// Super admin page (defined after /admin middleware to avoid conflicts)
+app.get('/superadmin', (req, res) => {
+    // Check if user is logged in and is superadmin
+    if (!req.session || !req.session.user) {
+        return res.redirect('/superadmin-login');
+    }
+    if (req.session.user.userType !== 'superadmin') {
+        return res.status(403).send('Accesso negato. Richiesto ruolo SuperAdmin.');
+    }
+    res.sendFile(path.join(__dirname, 'views', 'superadmin.html'));
+});
+
+app.get('/superadmin/logs', (req, res) => {
+    // Check if user is logged in and is superadmin
+    if (!req.session || !req.session.user) {
+        return res.redirect('/superadmin-login');
+    }
+    if (req.session.user.userType !== 'superadmin') {
+        return res.status(403).send('Accesso negato. Richiesto ruolo SuperAdmin.');
+    }
+    res.sendFile(path.join(__dirname, 'views', 'logs.html'));
+});
+
+// Tenant-scoped protected areas (soft-enforce in M2)
+app.use('/t/:tenantSlug/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
+app.use('/t/:tenantSlug/api/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
+app.use('/t/:tenantSlug/store', tenantLoader, requireSameTenantAsSession, requireRole('store'));
+app.use('/t/:tenantSlug/api/store', tenantLoader, requireSameTenantAsSession, requireRole('store'));
+
 app.get('/store', (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'store.html'));
+});
+app.get('/t/:tenantSlug/store', tenantLoader, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'store.html'));
 });
 
@@ -842,6 +1717,27 @@ app.get('/api/coupons/:code', async (req, res) => {
             LEFT JOIN campaigns camp ON camp.id = c.campaign_id 
             WHERE c.code = ?
         `, req.params.code);
+        if (!coupon) return res.status(404).json({ error: 'Non trovato' });
+        res.json({ 
+            code: coupon.code, 
+            status: coupon.status, 
+            discountType: coupon.discount_type,
+            discountValue: coupon.discount_value,
+            campaignName: coupon.campaignName
+        });
+    } catch (e) {
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+app.get('/t/:tenantSlug/api/coupons/:code', tenantLoader, async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const coupon = await dbConn.get(`
+            SELECT c.*, camp.name AS campaignName 
+            FROM coupons c 
+            LEFT JOIN campaigns camp ON camp.id = c.campaign_id 
+            WHERE c.code = ? AND c.tenant_id = ?
+        `, req.params.code, req.tenant.id);
         if (!coupon) return res.status(404).json({ error: 'Non trovato' });
         res.json({ 
             code: coupon.code, 
@@ -874,6 +1770,24 @@ app.get('/api/store/coupons/active', async (req, res) => {
         res.status(500).json({ error: 'Errore server' });
     }
 });
+app.get('/t/:tenantSlug/api/store/coupons/active', tenantLoader, async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const coupons = await dbConn.all(`
+            SELECT c.code, c.discount_type AS discountType, c.discount_value AS discountValue, c.issued_at AS issuedAt,
+                   u.first_name AS firstName, u.last_name AS lastName, u.email, camp.name AS campaignName
+            FROM coupons c
+            JOIN users u ON u.id = c.user_id
+            LEFT JOIN campaigns camp ON camp.id = c.campaign_id
+            WHERE c.status = 'active' AND c.tenant_id = ?
+            ORDER BY c.issued_at DESC
+        `, req.tenant.id);
+        res.json(coupons);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
 
 // Store: get redeemed coupons with user info
 app.get('/api/store/coupons/redeemed', async (req, res) => {
@@ -888,6 +1802,24 @@ app.get('/api/store/coupons/redeemed', async (req, res) => {
             WHERE c.status = 'redeemed'
             ORDER BY c.redeemed_at DESC
         `);
+        res.json(coupons);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+app.get('/t/:tenantSlug/api/store/coupons/redeemed', tenantLoader, async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const coupons = await dbConn.all(`
+            SELECT c.code, c.discount_type AS discountType, c.discount_value AS discountValue, c.issued_at AS issuedAt, c.redeemed_at AS redeemedAt,
+                   u.first_name AS firstName, u.last_name AS lastName, u.email, camp.name AS campaignName
+            FROM coupons c
+            JOIN users u ON u.id = c.user_id
+            LEFT JOIN campaigns camp ON camp.id = c.campaign_id
+            WHERE c.status = 'redeemed' AND c.tenant_id = ?
+            ORDER BY c.redeemed_at DESC
+        `, req.tenant.id);
         res.json(coupons);
     } catch (e) {
         console.error(e);
@@ -917,6 +1849,30 @@ app.get('/api/store/coupons/search', async (req, res) => {
             LIMIT 50
         `, searchTerm, searchTerm);
         
+        res.json(coupons);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+app.get('/t/:tenantSlug/api/store/coupons/search', tenantLoader, async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q || q.trim().length < 2) {
+            return res.json([]);
+        }
+        const dbConn = await getDb();
+        const searchTerm = `%${q.trim().toUpperCase()}%`;
+        const coupons = await dbConn.all(`
+            SELECT c.code, c.discount_type AS discountType, c.discount_value AS discountValue, c.status, c.issued_at AS issuedAt, c.redeemed_at AS redeemedAt,
+                   u.first_name AS firstName, u.last_name AS lastName, u.email, camp.name AS campaignName
+            FROM coupons c
+            JOIN users u ON u.id = c.user_id
+            LEFT JOIN campaigns camp ON camp.id = c.campaign_id
+            WHERE (c.code LIKE ? OR UPPER(u.last_name) LIKE ?) AND c.tenant_id = ?
+            ORDER BY c.issued_at DESC
+            LIMIT 50
+        `, searchTerm, searchTerm, req.tenant.id);
         res.json(coupons);
     } catch (e) {
         console.error(e);
@@ -967,6 +1923,18 @@ app.post('/api/coupons/:code/redeem', async (req, res) => {
         res.status(500).json({ error: 'Errore server' });
     }
 });
+app.post('/t/:tenantSlug/api/coupons/:code/redeem', tenantLoader, async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const coupon = await dbConn.get('SELECT * FROM coupons WHERE code = ? AND tenant_id = ?', req.params.code, req.tenant.id);
+        if (!coupon) return res.status(404).json({ error: 'Non trovato' });
+        if (coupon.status !== 'active') return res.status(400).json({ error: 'Coupon non attivo' });
+        await dbConn.run('UPDATE coupons SET status = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?', 'redeemed', coupon.id);
+        res.json({ ok: true, code: coupon.code, status: 'redeemed' });
+    } catch (e) {
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
 
 // Admin: list coupons (JSON). Protected via Basic Auth under /api/admin
 // Note: Authentication is already applied above
@@ -982,8 +1950,132 @@ app.get('/api/admin/campaigns', async (req, res) => {
         res.status(500).json({ error: 'Errore server' });
     }
 });
+app.get('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const campaigns = await dbConn.all('SELECT * FROM campaigns WHERE tenant_id = ? ORDER BY created_at DESC', req.tenant.id);
+        res.json(campaigns);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
 
-// Public: get campaign by code (for form parameter)
+// Tenant-scoped: create campaign
+app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { name, description, discount_type, discount_value } = req.body || {};
+        if (!name || !discount_type || !discount_value) {
+            return res.status(400).json({ error: 'Nome, tipo sconto e valore richiesti' });
+        }
+        if (!['percent', 'fixed'].includes(String(discount_type))) {
+            return res.status(400).json({ error: 'Tipo sconto non valido' });
+        }
+        if (isNaN(Number(discount_value))) {
+            return res.status(400).json({ error: 'Valore sconto non valido' });
+        }
+        const dbConn = await getDb();
+        const campaignCode = generateId(12);
+        const defaultFormConfig = JSON.stringify({ 
+            email: { visible: true, required: true }, 
+            firstName: { visible: true, required: true }, 
+            lastName: { visible: true, required: true },
+            phone: { visible: false, required: false },
+            address: { visible: false, required: false },
+            allergies: { visible: false, required: false },
+            customFields: []
+        });
+        const result = await dbConn.run(
+            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, tenant_id, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
+            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, req.tenant.id
+        );
+        res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: activate/deactivate campaign
+app.put('/t/:tenantSlug/api/admin/campaigns/:id/activate', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        await dbConn.run('UPDATE campaigns SET is_active = 1 WHERE id = ? AND tenant_id = ?', req.params.id, req.tenant.id);
+        res.json({ ok: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+app.put('/t/:tenantSlug/api/admin/campaigns/:id/deactivate', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ? AND tenant_id = ?', req.params.id, req.tenant.id);
+        res.json({ ok: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: update email from name
+app.put('/t/:tenantSlug/api/admin/email-from-name', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { emailFromName } = req.body || {};
+        if (!emailFromName || typeof emailFromName !== 'string' || emailFromName.trim().length === 0) {
+            return res.status(400).json({ error: 'Nome mittente email richiesto' });
+        }
+        
+        const dbConn = await getDb();
+        await dbConn.run('UPDATE tenants SET email_from_name = ? WHERE id = ?', emailFromName.trim(), req.tenant.id);
+        
+        // Log the action
+        await logAction(req, 'update', `Nome mittente email aggiornato: ${emailFromName.trim()}`, 'info');
+        
+        res.json({ ok: true, emailFromName: emailFromName.trim() });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: get current email from name
+app.get('/t/:tenantSlug/api/admin/email-from-name', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const tenant = await dbConn.get('SELECT email_from_name FROM tenants WHERE id = ?', req.tenant.id);
+        res.json({ emailFromName: tenant?.email_from_name || 'CouponGen' });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: get campaign by code (for form parameter)
+app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, req.tenant.id);
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        // Check if campaign is active
+        if (!campaign.is_active) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Parse form config
+        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
+        campaign.form_config = formConfig;
+        
+        res.json(campaign);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Legacy: get campaign by code (DEPRECATED - use tenant-scoped endpoint)
 app.get('/api/campaigns/:code', async (req, res) => {
     try {
         const dbConn = await getDb();
@@ -1010,13 +2102,22 @@ app.get('/api/campaigns/:code', async (req, res) => {
 app.post('/api/admin/campaigns', async (req, res) => {
     try {
         const { name, description, discount_type, discount_value } = req.body;
+        if (typeof name !== 'string' || !name.trim()) {
+            return res.status(400).json({ error: 'Nome non valido' });
+        }
+        if (!['percent', 'fixed'].includes(String(discount_type))) {
+            return res.status(400).json({ error: 'Tipo sconto non valido' });
+        }
+        if (isNaN(Number(discount_value))) {
+            return res.status(400).json({ error: 'Valore sconto non valido' });
+        }
         
         if (!name || !discount_type || !discount_value) {
             return res.status(400).json({ error: 'Nome, tipo sconto e valore richiesti' });
         }
         
         const dbConn = await getDb();
-        const campaignCode = nanoid(12).toUpperCase();
+        const campaignCode = generateId(12).toUpperCase();
         const defaultFormConfig = JSON.stringify({ 
             email: { visible: true, required: true }, 
             firstName: { visible: true, required: true }, 
@@ -1448,6 +2549,12 @@ app.get('/api/admin/products', async (req, res) => {
 app.post('/api/admin/products', async (req, res) => {
     try {
         const { name, value, margin_price, sku } = req.body;
+        if (typeof name !== 'string' || !name.trim()) {
+            return res.status(400).json({ error: 'Nome non valido' });
+        }
+        if (isNaN(parseFloat(value)) || isNaN(parseFloat(margin_price))) {
+            return res.status(400).json({ error: 'Valori numerici non validi' });
+        }
         
         if (!name || !value || !margin_price) {
             return res.status(400).json({ error: 'Name, value and margin_price are required' });
@@ -1473,6 +2580,12 @@ app.post('/api/admin/products', async (req, res) => {
 app.put('/api/admin/products/:id', async (req, res) => {
     try {
         const { name, value, margin_price, sku } = req.body;
+        if (typeof name !== 'string' || !name.trim()) {
+            return res.status(400).json({ error: 'Nome non valido' });
+        }
+        if (isNaN(parseFloat(value)) || isNaN(parseFloat(margin_price))) {
+            return res.status(400).json({ error: 'Valori numerici non validi' });
+        }
         const dbConn = await getDb();
         
         await dbConn.run(
@@ -1549,17 +2662,29 @@ app.post('/api/admin/campaigns/:id/products', async (req, res) => {
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'admin.html'));
 });
+app.get('/t/:tenantSlug/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'admin.html'));
+});
 
 app.get('/formsetup', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'formsetup.html'));
+});
+app.get('/t/:tenantSlug/formsetup', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'formsetup.html'));
 });
 
 app.get('/custom-fields', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'custom-fields.html'));
 });
+app.get('/t/:tenantSlug/custom-fields', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'custom-fields.html'));
+});
 
 // New canonical route for aesthetic personalization
 app.get('/form-design', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'form-setup.html'));
+});
+app.get('/t/:tenantSlug/form-design', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'form-setup.html'));
 });
 
@@ -1569,15 +2694,45 @@ app.get('/admin/form-setup', (req, res) => res.redirect('/form-design'));
 app.get('/form-setup', (req, res) => res.redirect('/form-design'));
 app.get('/views/form-setup.html', (req, res) => res.redirect('/form-design'));
 
+// Legacy → tenant-prefixed redirects (controlled by flag)
+if (ENFORCE_TENANT_PREFIX) {
+    app.use((req, res, next) => {
+        // Only redirect for known top-level pages
+        const known = ['/admin', '/store', '/form-design', '/formsetup', '/custom-fields', '/admin/email-template', '/db-utenti', '/utenti', '/prodotti', '/analytics', '/thanks'];
+        const pathOnly = req.path;
+        if (known.includes(pathOnly) || pathOnly.startsWith('/redeem/')) {
+            return res.redirect(302, `/t/${DEFAULT_TENANT_SLUG}${req.originalUrl}`);
+        }
+        return next();
+    });
+}
+
 app.get('/admin/email-template', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
+});
+app.get('/t/:tenantSlug/admin/email-template', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
 });
 
 app.get('/db-utenti', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'db-utenti.html'));
 });
+app.get('/t/:tenantSlug/db-utenti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'db-utenti.html'));
+});
+
+// Utenti (gestione auth_users admin/store)
+app.get('/utenti', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'utenti.html'));
+});
+app.get('/t/:tenantSlug/utenti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'utenti.html'));
+});
 
 app.get('/prodotti', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'prodotti.html'));
+});
+app.get('/t/:tenantSlug/prodotti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'prodotti.html'));
 });
 
@@ -1585,6 +2740,11 @@ app.get('/prodotti', requireAuth, (req, res) => {
 app.get('/analytics', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'analytics.html'));
 });
+app.get('/t/:tenantSlug/analytics', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'analytics.html'));
+});
+
+// (moved 404 handler to the very end, before app.listen)
 
 // Admin analytics: summary
 app.get('/api/admin/analytics/summary', async (req, res) => {
@@ -1818,6 +2978,287 @@ app.get('/api/admin/analytics/export', async (req, res) => {
     }
 });
 
+// Admin auth users management (admin/store users) - tenant scoped by session
+app.get('/api/admin/auth-users', async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
+        const dbConn = await getDb();
+        
+        // Superadmin can see users from current tenant context, regular admin sees only their tenant
+        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        
+        const rows = await dbConn.all(
+            `SELECT id, username, user_type as userType, is_active as isActive, last_login as lastLogin
+             FROM auth_users
+             WHERE tenant_id = ? AND user_type IN ('admin','store')
+             ORDER BY user_type ASC, username ASC`,
+            tenantId
+        );
+        // Sicurezza extra: non mostrare mai superadmin
+        const filtered = rows.filter(u => u.userType !== 'superadmin');
+        res.json(filtered);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.post('/api/admin/auth-users', async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
+        const { username, password, user_type } = req.body || {};
+        const role = String(user_type || '').toLowerCase();
+        if (!username || !password || !['admin', 'store'].includes(role)) {
+            return res.status(400).json({ error: 'Dati non validi' });
+        }
+        const dbConn = await getDb();
+        // Simple hash to match existing approach
+        const passwordHash = Buffer.from(String(password)).toString('base64');
+        
+        // Superadmin can create users in current tenant context, regular admin creates in their tenant
+        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        
+        try {
+            const result = await dbConn.run(
+                'INSERT INTO auth_users (username, password_hash, user_type, is_active, tenant_id) VALUES (?, ?, ?, 1, ?)',
+                username, passwordHash, role, tenantId
+            );
+            res.json({ id: result.lastID, username, userType: role, isActive: 1 });
+        } catch (err) {
+            if (String(err && err.message || '').includes('UNIQUE')) {
+                return res.status(400).json({ error: 'Username già esistente' });
+            }
+            throw err;
+        }
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.put('/api/admin/auth-users/:id', async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
+        const { username, password, user_type, is_active } = req.body || {};
+        const role = user_type ? String(user_type).toLowerCase() : undefined;
+        if (role && !['admin', 'store'].includes(role)) {
+            return res.status(400).json({ error: 'Ruolo non valido' });
+        }
+        const dbConn = await getDb();
+        // Superadmin can modify users from current tenant context, regular admin sees only their tenant
+        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        const user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (!user) return res.status(404).json({ error: 'Utente non trovato' });
+        if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
+        // Admin non può modificare utenti con ruolo admin, tranne se è il primo admin
+        if (user.user_type === 'admin' && sess.userType === 'admin') {
+            const isCurrentUserFirstAdmin = await isFirstAdmin(dbConn, sess.authUserId || sess.id, tenantId);
+            if (!isCurrentUserFirstAdmin) {
+                return res.status(400).json({ error: 'Gli utenti admin non possono essere modificati' });
+            }
+        }
+        if (user.id === (sess.authUserId || sess.id)) {
+            // Prevent demoting or deactivating self
+            if ((role && role !== 'admin') || (is_active === 0 || is_active === false)) {
+                return res.status(400).json({ error: 'Non puoi disattivare o cambiare ruolo al tuo utente' });
+            }
+        }
+        
+        // Prevent first admin from being modified by others (including themselves for critical changes)
+        const isTargetUserFirstAdmin = await isFirstAdmin(dbConn, user.id, tenantId);
+        if (isTargetUserFirstAdmin && user.id !== (sess.authUserId || sess.id)) {
+            return res.status(400).json({ error: 'Il primo admin non può essere modificato da altri utenti' });
+        }
+        // Build update dynamically
+        const fields = [];
+        const params = [];
+        if (username && username !== user.username) {
+            fields.push('username = ?');
+            params.push(username);
+        }
+        if (typeof is_active !== 'undefined') {
+            fields.push('is_active = ?');
+            params.push(is_active ? 1 : 0);
+        }
+        if (role) {
+            fields.push('user_type = ?');
+            params.push(role);
+        }
+        if (password) {
+            fields.push('password_hash = ?');
+            params.push(Buffer.from(String(password)).toString('base64'));
+        }
+        if (fields.length === 0) return res.json({ ok: true });
+        params.push(req.params.id);
+        await dbConn.run(`UPDATE auth_users SET ${fields.join(', ')} WHERE id = ?` , ...params);
+        res.json({ ok: true });
+    } catch (e) {
+        if (String(e && e.message || '').includes('UNIQUE')) {
+            return res.status(400).json({ error: 'Username già esistente' });
+        }
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.delete('/api/admin/auth-users/:id', async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
+        const dbConn = await getDb();
+        // Superadmin can modify users from current tenant context, regular admin sees only their tenant
+        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        const user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (!user) return res.status(404).json({ error: 'Utente non trovato' });
+        if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
+        // Admin non può eliminare utenti con ruolo admin, tranne se è il primo admin
+        if (user.user_type === 'admin' && sess.userType === 'admin') {
+            const isCurrentUserFirstAdmin = await isFirstAdmin(dbConn, sess.authUserId || sess.id, tenantId);
+            if (!isCurrentUserFirstAdmin) {
+                return res.status(400).json({ error: 'Gli utenti admin non possono essere eliminati' });
+            }
+        }
+        
+        // Prevent first admin from being deleted
+        const isTargetUserFirstAdmin = await isFirstAdmin(dbConn, user.id, tenantId);
+        if (isTargetUserFirstAdmin) {
+            return res.status(400).json({ error: 'Il primo admin non può essere eliminato' });
+        }
+        if (user.id === (sess.authUserId || sess.id)) return res.status(400).json({ error: 'Non puoi eliminare il tuo utente' });
+        await dbConn.run('DELETE FROM auth_users WHERE id = ?', req.params.id);
+        res.json({ ok: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Account management routes (for current user)
+app.get('/account', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'account.html'));
+});
+
+app.get('/t/:tenantSlug/account', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'account.html'));
+});
+
+// Get current user profile
+app.get('/api/account/profile', async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess) return res.status(401).json({ error: 'Non autenticato' });
+        
+        const dbConn = await getDb();
+        const user = await dbConn.get(
+            'SELECT id, username, user_type, is_active, created_at, last_login, first_name, last_name, email FROM auth_users WHERE id = ?',
+            sess.authUserId || sess.id
+        );
+        
+        if (!user) {
+            return res.status(404).json({ error: 'Utente non trovato' });
+        }
+        
+        res.json({
+            id: user.id,
+            username: user.username,
+            userType: user.user_type,
+            isActive: user.is_active,
+            createdAt: user.created_at,
+            lastLogin: user.last_login,
+            firstName: user.first_name,
+            lastName: user.last_name,
+            email: user.email
+        });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Update current user profile
+app.put('/api/account/profile', async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess) return res.status(401).json({ error: 'Non autenticato' });
+        
+        const { firstName, lastName } = req.body;
+        const dbConn = await getDb();
+        
+        // Update user profile (excluding email for security)
+        await dbConn.run(
+            'UPDATE auth_users SET first_name = ?, last_name = ? WHERE id = ?',
+            firstName || null, lastName || null, sess.authUserId || sess.id
+        );
+        
+        res.json({ success: true, message: 'Profilo aggiornato con successo' });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Change current user password
+app.put('/api/account/password', async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess) return res.status(401).json({ error: 'Non autenticato' });
+        
+        const { currentPassword, newPassword } = req.body;
+        
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Password attuale e nuova password sono richieste' });
+        }
+        
+        // Validate new password strength
+        if (newPassword.length < 8) {
+            return res.status(400).json({ error: 'La nuova password deve essere di almeno 8 caratteri' });
+        }
+        
+        if (!/[A-Z]/.test(newPassword)) {
+            return res.status(400).json({ error: 'La nuova password deve contenere almeno una lettera maiuscola' });
+        }
+        
+        if (!/[a-z]/.test(newPassword)) {
+            return res.status(400).json({ error: 'La nuova password deve contenere almeno una lettera minuscola' });
+        }
+        
+        if (!/\d/.test(newPassword)) {
+            return res.status(400).json({ error: 'La nuova password deve contenere almeno un numero' });
+        }
+        
+        const dbConn = await getDb();
+        
+        // Get current user and verify current password
+        const user = await dbConn.get(
+            'SELECT password_hash FROM auth_users WHERE id = ?',
+            sess.authUserId || sess.id
+        );
+        
+        if (!user) {
+            return res.status(404).json({ error: 'Utente non trovato' });
+        }
+        
+        if (!verifyPassword(currentPassword, user.password_hash)) {
+            return res.status(400).json({ error: 'Password attuale non corretta' });
+        }
+        
+        // Update password
+        const newPasswordHash = hashPassword(newPassword);
+        await dbConn.run(
+            'UPDATE auth_users SET password_hash = ? WHERE id = ?',
+            newPasswordHash, sess.authUserId || sess.id
+        );
+        
+        res.json({ success: true, message: 'Password cambiata con successo' });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
 // Protected redemption page (QR link opens this for cashier)
 app.use('/redeem', requireAuth);
 
@@ -1825,8 +3266,371 @@ app.get('/redeem/:code', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'redeem.html'));
 });
 
-// Minimal health
+// Health endpoints
 app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/healthz', async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const row = await dbConn.get('SELECT 1 as ok');
+        if (row && row.ok === 1) return res.json({ ok: true });
+        return res.status(500).json({ ok: false });
+    } catch (e) {
+        return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+});
+
+// Super admin API endpoints
+app.get('/api/superadmin/stats', requireSuperAdmin, async (req, res) => {
+    try {
+        if (req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        const db = await getDb();
+        
+        const [totalTenants, totalUsers, totalCampaigns, totalCoupons] = await Promise.all([
+            db.get('SELECT COUNT(*) as count FROM tenants'),
+            db.get('SELECT COUNT(*) as count FROM auth_users'),
+            db.get('SELECT COUNT(*) as count FROM campaigns'),
+            db.get('SELECT COUNT(*) as count FROM coupons')
+        ]);
+        
+        res.json({
+            totalTenants: totalTenants.count,
+            totalUsers: totalUsers.count,
+            totalCampaigns: totalCampaigns.count,
+            totalCoupons: totalCoupons.count
+        });
+    } catch (error) {
+        console.error('Error fetching super admin stats:', error);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+app.get('/api/superadmin/tenants', requireSuperAdmin, async (req, res) => {
+    try {
+        if (req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        const db = await getDb();
+        const tenants = await db.all(`
+            SELECT t.*, 
+                   COUNT(au.id) as user_count
+            FROM tenants t
+            LEFT JOIN auth_users au ON t.id = au.tenant_id
+            GROUP BY t.id
+            ORDER BY t.created_at DESC
+        `);
+        
+        res.json(tenants);
+    } catch (error) {
+        console.error('Error fetching tenants:', error);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+app.post('/api/superadmin/login', async (req, res) => {
+    try {
+        const { username, password } = req.body || {};
+        
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username e password sono richiesti' });
+        }
+        
+        const db = await getDb();
+        
+        // Find user by username
+        const user = await db.get('SELECT * FROM auth_users WHERE username = ? AND user_type = ?', username, 'superadmin');
+        
+        if (!user) {
+            return res.status(401).json({ error: 'Credenziali non valide' });
+        }
+        
+        // Check if user is active
+        if (!user.is_active) {
+            return res.status(401).json({ error: 'Account disattivato' });
+        }
+        
+        // Verify password (simple base64 comparison for now)
+        const passwordHash = Buffer.from(password).toString('base64');
+        if (user.password_hash !== passwordHash) {
+            return res.status(401).json({ error: 'Credenziali non valide' });
+        }
+        
+        // User is already verified as superadmin by the query above
+        
+        // Create session
+        await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
+        
+        req.session.user = {
+            id: user.id,
+            username: user.username,
+            userType: user.user_type,
+            tenantId: user.tenant_id,
+            isSuperAdmin: true
+        };
+        
+        // Update last login
+        await db.run('UPDATE auth_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', user.id);
+        
+        // Log successful superadmin login
+        await logAction(req, 'login', 'Login SuperAdmin effettuato', 'success', {
+            username: user.username,
+            userType: user.user_type
+        });
+        
+        res.json({ success: true, message: 'Login effettuato con successo' });
+    } catch (error) {
+        console.error('Superadmin login error:', error);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+app.get('/api/superadmin/admin-users', requireSuperAdmin, async (req, res) => {
+    try {
+        if (req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        const db = await getDb();
+        
+        // Get all admin users (not superadmin) with their tenant information
+        const adminUsers = await db.all(`
+            SELECT 
+                au.id,
+                au.username,
+                au.user_type,
+                au.is_active,
+                au.created_at,
+                au.last_login,
+                t.name as tenant_name,
+                t.slug as tenant_slug,
+                t.id as tenant_id
+            FROM auth_users au
+            LEFT JOIN tenants t ON au.tenant_id = t.id
+            WHERE au.user_type = 'admin'
+            ORDER BY au.created_at DESC
+        `);
+        
+        res.json(adminUsers);
+    } catch (error) {
+        console.error('Error fetching admin users:', error);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+app.get('/api/superadmin/logs', requireSuperAdmin, async (req, res) => {
+    try {
+        if (req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        const db = await getDb();
+        
+        // Parse query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const offset = (page - 1) * limit;
+        
+        // Build WHERE clause based on filters
+        let whereConditions = [];
+        let params = [];
+        
+        if (req.query.tenant_id) {
+            whereConditions.push('sl.tenant_id = ?');
+            params.push(req.query.tenant_id);
+        }
+        
+        if (req.query.username) {
+            whereConditions.push('sl.username LIKE ?');
+            params.push(`%${req.query.username}%`);
+        }
+        
+        if (req.query.action_type) {
+            whereConditions.push('sl.action_type = ?');
+            params.push(req.query.action_type);
+        }
+        
+        if (req.query.level) {
+            whereConditions.push('sl.level = ?');
+            params.push(req.query.level);
+        }
+        
+        if (req.query.date_from) {
+            whereConditions.push('DATE(sl.timestamp) >= ?');
+            params.push(req.query.date_from);
+        }
+        
+        if (req.query.date_to) {
+            whereConditions.push('DATE(sl.timestamp) <= ?');
+            params.push(req.query.date_to);
+        }
+        
+        const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+        
+        // Get total count
+        const countQuery = `
+            SELECT COUNT(*) as total 
+            FROM system_logs sl 
+            ${whereClause}
+        `;
+        const countResult = await db.get(countQuery, params);
+        const total = countResult.total;
+        
+        // Get logs with pagination
+        const logsQuery = `
+            SELECT 
+                sl.id,
+                sl.timestamp,
+                sl.user_id,
+                sl.username,
+                sl.user_type,
+                sl.tenant_id,
+                sl.tenant_name,
+                sl.tenant_slug,
+                sl.action_type,
+                sl.action_description,
+                sl.level,
+                sl.details,
+                sl.ip_address,
+                sl.user_agent
+            FROM system_logs sl
+            ${whereClause}
+            ORDER BY sl.timestamp DESC
+            LIMIT ? OFFSET ?
+        `;
+        
+        const logs = await db.all(logsQuery, [...params, limit, offset]);
+        
+        // Get stats by level
+        const statsQuery = `
+            SELECT 
+                level,
+                COUNT(*) as count
+            FROM system_logs sl
+            ${whereClause}
+            GROUP BY level
+        `;
+        
+        const statsResult = await db.all(statsQuery, params);
+        const stats = {
+            total: total,
+            info: 0,
+            warning: 0,
+            error: 0,
+            success: 0
+        };
+        
+        statsResult.forEach(stat => {
+            if (stats.hasOwnProperty(stat.level)) {
+                stats[stat.level] = stat.count;
+            }
+        });
+        
+        // Handle CSV export
+        if (req.query.export === 'csv') {
+            const csvQuery = `
+                SELECT 
+                    sl.timestamp,
+                    sl.username,
+                    sl.user_type,
+                    sl.tenant_name,
+                    sl.tenant_slug,
+                    sl.action_type,
+                    sl.action_description,
+                    sl.level,
+                    sl.details,
+                    sl.ip_address
+                FROM system_logs sl
+                ${whereClause}
+                ORDER BY sl.timestamp DESC
+            `;
+            
+            const csvLogs = await db.all(csvQuery, params);
+            
+            // Convert to CSV
+            const csvHeader = 'Timestamp,Username,User Type,Tenant Name,Tenant Slug,Action Type,Action Description,Level,Details,IP Address\n';
+            const csvRows = csvLogs.map(log => [
+                new Date(log.timestamp).toISOString(),
+                log.username || '',
+                log.user_type || '',
+                log.tenant_name || '',
+                log.tenant_slug || '',
+                log.action_type || '',
+                (log.action_description || '').replace(/"/g, '""'),
+                log.level || '',
+                (log.details || '').replace(/"/g, '""'),
+                log.ip_address || ''
+            ].map(field => `"${field}"`).join(',')).join('\n');
+            
+            const csv = csvHeader + csvRows;
+            
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="logs_${new Date().toISOString().split('T')[0]}.csv"`);
+            return res.send(csv);
+        }
+        
+        const totalPages = Math.ceil(total / limit);
+        
+        res.json({
+            logs: logs,
+            total: total,
+            page: page,
+            totalPages: totalPages,
+            stats: stats
+        });
+        
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+app.delete('/api/superadmin/tenants/:id', requireSuperAdmin, async (req, res) => {
+    try {
+        if (req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        const tenantId = parseInt(req.params.id);
+        if (isNaN(tenantId)) {
+            return res.status(400).json({ error: 'ID tenant non valido' });
+        }
+        
+        const db = await getDb();
+        
+        // Get tenant info before deletion
+        const tenant = await db.get('SELECT * FROM tenants WHERE id = ?', tenantId);
+        if (!tenant) {
+            return res.status(404).json({ error: 'Tenant non trovato' });
+        }
+        
+        // Delete all related data (cascading delete)
+        await db.run('DELETE FROM coupons WHERE tenant_id = ?', tenantId);
+        await db.run('DELETE FROM campaigns WHERE tenant_id = ?', tenantId);
+        await db.run('DELETE FROM user_custom_data WHERE tenant_id = ?', tenantId);
+        await db.run('DELETE FROM auth_users WHERE tenant_id = ?', tenantId);
+        await db.run('DELETE FROM tenants WHERE id = ?', tenantId);
+        
+        // Log tenant deletion
+        await logAction(req, 'delete', `Tenant eliminato: ${tenant.name}`, 'warning', {
+            tenantId: tenantId,
+            tenantName: tenant.name,
+            tenantSlug: tenant.slug
+        });
+        
+        res.json({ success: true, message: 'Tenant eliminato con successo' });
+    } catch (error) {
+        console.error('Error deleting tenant:', error);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// 404 handler (must be last): serve friendly not-found page
+app.use((req, res) => {
+    res.status(404).sendFile(path.join(__dirname, 'views', '404.html'));
+});
 
 // Start server
 app.listen(PORT, async () => {

@@ -1273,15 +1273,12 @@
                             <h3 class="modal-title">${title}</h3>
                             <button class="modal-close" onclick="closeModal()">&times;</button>
                         </div>
-                        <div class="modal-body" style="display:flex;align-items:center;gap:1rem;">
-                            <div class="modal-icon ${type}" style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:999px;background:var(--primary-green);color:#fff;">
-                                ${getModalIcon(type)}
-                            </div>
-                            <p>${message}</p>
+                        <div class="modal-body" style="padding:1.5rem 1.25rem;">
+                            <div style="font-size:1.1rem; color: var(--text-dark); line-height: 1.6; text-align: center;">${message}</div>
                         </div>
                         <div class="modal-footer">
                             ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
-                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">OK</button>
+                            <button class="modal-btn modal-btn-primary" onclick="confirmModal()">${showCancel ? 'CONFERMA' : 'OK'}</button>
                         </div>
                     </div>
                 </div>

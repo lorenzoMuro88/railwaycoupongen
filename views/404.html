@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pagina non trovata - CouponGen</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: var(--cream);
+        }
+        .notfound-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+        .notfound-card {
+            background: var(--white);
+            border: 2px solid var(--border-light);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(45, 90, 61, 0.1);
+            max-width: 560px;
+            width: 100%;
+            padding: 2.5rem;
+            text-align: center;
+        }
+        .notfound-code {
+            font-size: 4rem;
+            font-weight: 700;
+            color: var(--primary-green);
+            letter-spacing: -0.03em;
+            margin: 0 0 0.5rem 0;
+        }
+        .notfound-title {
+            font-size: 1.5rem;
+            color: var(--text-dark);
+            margin: 0 0 1rem 0;
+        }
+        .notfound-text {
+            color: var(--text-medium);
+            margin-bottom: 2rem;
+        }
+        .back-button {
+            display: inline-block;
+            padding: 0.75rem 1.25rem;
+            background: var(--accent-green);
+            color: var(--white);
+            text-decoration: none;
+            border-radius: 10px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .back-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(45, 90, 61, 0.15);
+        }
+    </style>
+ </head>
+ <body>
+    <div class="notfound-container">
+        <div class="notfound-card">
+            <div class="notfound-code">404</div>
+            <h1 class="notfound-title">Pagina non trovata</h1>
+            <p class="notfound-text">La risorsa che cerchi non esiste o è stata spostata.</p>
+            <a href="/access" class="back-button">Torna alla pagina di accesso</a>
+        </div>
+    </div>
+    <footer class="site-footer">CouponGen</footer>
+ </body>
+ </html>
+
+

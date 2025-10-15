@@ -1,15 +1,15 @@
 <!-- Navigation Bar -->
 <nav class="navbar">
     <div class="navbar-container">
-        <a href="/admin" class="navbar-brand">
+        <a href="#" onclick="navigateTo('/admin')" class="navbar-brand" id="tenantBrand">
             CouponGen Admin
         </a>
         
         <ul class="navbar-nav">
-            <li class="nav-item"><a href="/admin" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3a9 9 0 100 18 9 9 0 000-18Zm0 4a3 3 0 110 6 3 3 0 010-6Zm0 12a7 7 0 01-5.916-3.18c.09-1.986 3.944-3.07 5.916-3.07 1.97 0 5.826 1.084 5.916 3.07A7 7 0 0112 19z" fill="currentColor"/></svg></span>Dashboard</a></li>
-            <li class="nav-item"><a href="/db-utenti" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 7h18M3 12h18M3 17h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>DB Utenti</a></li>
-            <li class="nav-item"><a href="/prodotti" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 7l1-4h16l1 4M5 7v12a1 1 0 001 1h12a1 1 0 001-1V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Prodotti</a></li>
-            <li class="nav-item"><a href="/analytics" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 19V10M10 19V5M16 19v-7M22 20H2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>Analytics</a></li>
+            <li class="nav-item"><a href="#" onclick="navigateTo('/admin')" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3a9 9 0 100 18 9 9 0 000-18Zm0 4a3 3 0 110 6 3 3 0 010-6Zm0 12a7 7 0 01-5.916-3.18c.09-1.986 3.944-3.07 5.916-3.07 1.97 0 5.826 1.084 5.916 3.07A7 7 0 0112 19z" fill="currentColor"/></svg></span>Dashboard</a></li>
+            <li class="nav-item"><a href="#" onclick="navigateTo('/db-utenti')" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 7h18M3 12h18M3 17h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>DB Utenti</a></li>
+            <li class="nav-item"><a href="#" onclick="navigateTo('/prodotti')" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 7l1-4h16l1 4M5 7v12a1 1 0 001 1h12a1 1 0 001-1V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Prodotti</a></li>
+            <li class="nav-item"><a href="#" onclick="navigateTo('/analytics')" class="nav-link"><span class="nav-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 19V10M10 19V5M16 19v-7M22 20H2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>Analytics</a></li>
         </ul>
         
         <div class="navbar-actions">
@@ -32,21 +32,29 @@
         <button class="sidebar-close" onclick="closeSidebar()">&times;</button>
     </div>
     <div class="sidebar-content">
-        <a href="/form-design" class="sidebar-link" onclick="closeSidebar()">
+        <a href="#" class="sidebar-link" onclick="navigateTo('/form-design'); closeSidebar()">
             <span class="sidebar-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 13l5 5L20 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             Personalizzazione
         </a>
-        <a href="/formsetup" class="sidebar-link" onclick="closeSidebar()">
+        <a href="#" class="sidebar-link" onclick="navigateTo('/formsetup'); closeSidebar()">
             <span class="sidebar-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></span>
             Form Setup
         </a>
-        <a href="/admin/email-template" class="sidebar-link" onclick="closeSidebar()">
+        <a href="#" class="sidebar-link" onclick="navigateTo('/admin/email-template'); closeSidebar()">
             <span class="sidebar-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h16v12H4z" stroke="#fff" stroke-width="2"/><path d="M4 7l8 6 8-6" stroke="#fff" stroke-width="2"/></svg></span>
             Email Template
         </a>
-        <a href="/store" class="sidebar-link" onclick="closeSidebar()">
+        <a href="#" class="sidebar-link" onclick="navigateTo('/store'); closeSidebar()">
             <span class="sidebar-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 10l1-5h16l1 5M5 10v9a1 1 0 001 1h12a1 1 0 001-1v-9M9 20v-6h6v6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             Store
+        </a>
+        <a href="#" class="sidebar-link" onclick="navigateTo('/utenti'); closeSidebar()">
+            <span class="sidebar-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 11c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3ZM8 11c1.66 0 3-1.34 3-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3Zm0 2c-2.67 0-8 1.34-8 4v2h10v-2c0-1.3.84-2.4 2.06-3.13C11.07 13.33 9.22 13 8 13Zm8 0c-.29 0-.62.02-.97.06 1.16.84 1.97 1.97 1.97 3.44v2h7v-2c0-2.66-5.33-4-8-4Z" fill="#fff"/></svg></span>
+            Utenti
+        </a>
+        <a href="#" class="sidebar-link" onclick="navigateTo('/account'); closeSidebar()">
+            <span class="sidebar-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="#fff"/></svg></span>
+            Account
         </a>
         <hr class="sidebar-divider">
         <button class="sidebar-link logout-link" onclick="logout()">

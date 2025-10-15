@@ -1,5 +1,41 @@
 // Global Navigation Functions
 
+// Compute tenant base from current path: '/t/{slug}' or ''
+window.__tenantBase = (function() {
+    try {
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        if (parts[0] === 't' && parts[1]) return '/t/' + parts[1];
+        return '';
+    } catch (_) { return ''; }
+})();
+
+// Load tenant information and update navigation
+async function loadTenantInfo() {
+    try {
+        const base = window.__tenantBase;
+        if (!base) return; // Not in tenant context
+        
+        const response = await fetch(`${base}/api/tenant-info`);
+        if (response.ok) {
+            const tenantInfo = await response.json();
+            const brandElement = document.getElementById('tenantBrand');
+            if (brandElement && tenantInfo.name) {
+                brandElement.textContent = `${tenantInfo.name} Admin`;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading tenant info:', error);
+    }
+}
+
+function navigateTo(path) {
+    const base = window.__tenantBase || '';
+    window.location.href = base + path;
+}
+
+// Load tenant info when DOM is ready
+document.addEventListener('DOMContentLoaded', loadTenantInfo);
+
 // Sidebar functions
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
@@ -28,7 +64,8 @@ function closeSidebar() {
 // Logout function
 async function logout() {
     try {
-        const response = await fetch('/api/logout', {
+        const base = window.__tenantBase || '';
+        const response = await fetch(base + '/api/logout', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -36,16 +73,16 @@ async function logout() {
         });
         
         if (response.ok) {
-            window.location.href = '/login';
+            window.location.href = '/access';
         } else {
             console.error('Logout failed');
             // Force redirect anyway
-            window.location.href = '/login';
+            window.location.href = '/access';
         }
     } catch (error) {
         console.error('Logout error:', error);
         // Force redirect anyway
-        window.location.href = '/login';
+        window.location.href = '/access';
     }
 }
 

@@ -24,8 +24,9 @@
             </p>
         </div>
         
-        <form method="post" action="/submit" class="card" style="max-width: 450px; margin: 0 auto; padding: 2rem;">
+        <form method="post" action="" class="card" style="max-width: 450px; margin: 0 auto; padding: 2rem;" id="couponForm">
             <input type="hidden" id="campaign_id" name="campaign_id" value="" />
+            <input type="hidden" id="recaptchaToken" name="recaptchaToken" value="" />
             <div class="form-group">
                 <label for="email">
                     Email *
@@ -191,6 +192,20 @@
         const urlParams = new URLSearchParams(window.location.search);
         const campaignId = urlParams.get('campaign');
         
+        // Set form action based on tenant mode
+        const form = document.getElementById('couponForm');
+        const isTenantMode = window.location.pathname.startsWith('/t/');
+        
+        if (isTenantMode) {
+            // Extract tenant slug from URL path
+            const pathParts = window.location.pathname.split('/');
+            const tenantSlug = pathParts[2]; // /t/{tenantSlug}/...
+            form.action = `/t/${tenantSlug}/submit`;
+        } else {
+            // Legacy mode
+            form.action = '/submit';
+        }
+        
         // Load campaign info if campaign parameter is present
         if (campaignId) {
             loadCampaignInfo(campaignId);
@@ -201,18 +216,53 @@
         }
         
         // Add form validation
-        const form = document.querySelector('form');
+        // Load public config to decide whether to load reCAPTCHA
+        let recaptchaConfig = { recaptchaEnabled: false, recaptchaSiteKey: null };
+        fetch('/api/public-config').then(r => r.json()).then(cfg => {
+            recaptchaConfig = cfg || recaptchaConfig;
+            if (recaptchaConfig.recaptchaEnabled && recaptchaConfig.recaptchaSiteKey) {
+                const s = document.createElement('script');
+                s.src = 'https://www.google.com/recaptcha/api.js?render=' + encodeURIComponent(recaptchaConfig.recaptchaSiteKey);
+                s.async = true; s.defer = true;
+                document.head.appendChild(s);
+            }
+        }).catch(() => {});
+
         if (form) {
             form.addEventListener('submit', function(e) {
                 if (!validateForm()) {
                     e.preventDefault();
+                    return;
+                }
+                if (recaptchaConfig.recaptchaEnabled && recaptchaConfig.recaptchaSiteKey && window.grecaptcha && typeof grecaptcha.execute === 'function') {
+                    e.preventDefault();
+                    grecaptcha.ready(function() {
+                        grecaptcha.execute(recaptchaConfig.recaptchaSiteKey, { action: 'submit' }).then(function(token) {
+                            document.getElementById('recaptchaToken').value = token;
+                            form.submit();
+                        }).catch(function() { form.submit(); });
+                    });
                 }
             });
         }
         
         async function loadCampaignInfo(campaignId) {
             try {
-                const response = await fetch(`/api/campaigns/${campaignId}`);
+                // Determine if we're in tenant mode by checking the URL path
+                const isTenantMode = window.location.pathname.startsWith('/t/');
+                let apiUrl;
+                
+                if (isTenantMode) {
+                    // Extract tenant slug from URL path
+                    const pathParts = window.location.pathname.split('/');
+                    const tenantSlug = pathParts[2]; // /t/{tenantSlug}/...
+                    apiUrl = `/t/${tenantSlug}/api/campaigns/${campaignId}`;
+                } else {
+                    // Legacy mode - use global endpoint
+                    apiUrl = `/api/campaigns/${campaignId}`;
+                }
+                
+                const response = await fetch(apiUrl);
                 
                 if (!response.ok) {
                     showError('Questo coupon non esiste o è scaduto');
@@ -494,7 +544,21 @@
         // Applica configurazioni personalizzate
         async function applyCustomization() {
             try {
-                const response = await fetch('/api/form-customization');
+                // Determine if we're in tenant mode by checking the URL path
+                const isTenantMode = window.location.pathname.startsWith('/t/');
+                let apiUrl;
+                
+                if (isTenantMode) {
+                    // Extract tenant slug from URL path
+                    const pathParts = window.location.pathname.split('/');
+                    const tenantSlug = pathParts[2]; // /t/{tenantSlug}/...
+                    apiUrl = `/t/${tenantSlug}/api/form-customization`;
+                } else {
+                    // Legacy mode - use global endpoint
+                    apiUrl = '/api/form-customization';
+                }
+                
+                const response = await fetch(apiUrl);
                 const config = await response.json();
                 
                 if (config && Object.keys(config).length > 0) {
@@ -627,6 +691,22 @@
             }
         }
     </script>
+    
+    <!-- Access Links -->
+    <div style="position: fixed; bottom: 10px; left: 10px; z-index: 1000;">
+        <a href="/access" style="color: var(--primary-green); font-size: 0.8rem; text-decoration: none; opacity: 0.7; transition: opacity 0.3s; font-weight: 500;" 
+           onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">
+            🏢 Accesso Aziende
+        </a>
+    </div>
+    
+    <!-- Super Admin Access (discrete) -->
+    <div style="position: fixed; bottom: 10px; right: 10px; z-index: 1000;">
+        <a href="/superadmin-login" style="color: #999; font-size: 0.7rem; text-decoration: none; opacity: 0.5; transition: opacity 0.3s;" 
+           onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'">
+            🔐 Super Admin
+        </a>
+    </div>
 </body>
 </html>
 
