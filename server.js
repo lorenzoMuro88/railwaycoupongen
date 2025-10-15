@@ -331,9 +331,15 @@ let sessionOptions = {
     }
 };
 if (process.env.NODE_ENV === 'production' && process.env.REDIS_URL) {
-    const redisClient = createRedisClient({ url: process.env.REDIS_URL });
-    redisClient.connect().catch(console.error);
-    sessionOptions.store = new RedisStore({ client: redisClient, prefix: 'sess:' });
+    try {
+        const redisClient = createRedisClient({ url: process.env.REDIS_URL });
+        redisClient.connect().catch(err => {
+            console.error('Redis connection failed, falling back to memory store:', err.message);
+        });
+        sessionOptions.store = new RedisStore({ client: redisClient, prefix: 'sess:' });
+    } catch (error) {
+        console.error('Redis setup failed, using memory store:', error.message);
+    }
 }
 app.use(session(sessionOptions));
 
@@ -978,6 +984,11 @@ app.post('/api/login', async (req, res) => {
         }
         
         const dbConn = await getDb();
+        if (!dbConn) {
+            console.error('Database connection failed');
+            return res.status(500).json({ error: 'Errore di connessione al database' });
+        }
+        
         const user = await dbConn.get(
             'SELECT * FROM auth_users WHERE username = ? AND user_type = ? AND is_active = 1',
             username, userType
@@ -996,9 +1007,14 @@ app.post('/api/login', async (req, res) => {
         );
         
         // Regenerate session to prevent fixation
-        await new Promise((resolve, reject) => {
-            req.session.regenerate(err => err ? reject(err) : resolve());
-        });
+        try {
+            await new Promise((resolve, reject) => {
+                req.session.regenerate(err => err ? reject(err) : resolve());
+            });
+        } catch (sessionError) {
+            console.error('Session regeneration failed:', sessionError);
+            // Continue with login even if session regeneration fails
+        }
         // Create session (tenant-scoped payload)
         const superAdminUsername = process.env.SUPERADMIN_USERNAME || 'admin';
         const isSuperAdmin = user && user.username === superAdminUsername;
@@ -1021,11 +1037,16 @@ app.post('/api/login', async (req, res) => {
         }
         
         // Log successful login
-        await logAction(req, 'login', `Login effettuato come ${userType}`, 'success', {
-            username: user.username,
-            userType: user.user_type,
-            tenantId: user.tenant_id
-        });
+        try {
+            await logAction(req, 'login', `Login effettuato come ${userType}`, 'success', {
+                username: user.username,
+                userType: user.user_type,
+                tenantId: user.tenant_id
+            });
+        } catch (logError) {
+            console.error('Failed to log login action:', logError);
+            // Continue with login even if logging fails
+        }
         
         res.json({ 
             success: true, 
@@ -1035,7 +1056,11 @@ app.post('/api/login', async (req, res) => {
         
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ error: 'Errore interno del server' });
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ 
+            error: 'Errore interno del server',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
