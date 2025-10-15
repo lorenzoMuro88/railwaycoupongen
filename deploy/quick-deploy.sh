@@ -7,6 +7,7 @@ set -euo pipefail
 # Configurazione
 SERVER="167.172.42.248"
 USER="root"
+PASSWORD="hPmCLn7dk6YfjXV"
 BRANCH="feature/migration-cloud-multitenant-prerelease"
 APP_PATH="/opt/coupongen"
 
@@ -26,6 +27,30 @@ log_success() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Funzione per eseguire comandi SSH con password automatica
+ssh_with_password() {
+    local commands="$1"
+    
+    # Prova prima con sshpass se disponibile
+    if command -v sshpass >/dev/null 2>&1; then
+        echo "$PASSWORD" | sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$USER@$SERVER" "$commands"
+    else
+        # Fallback: usa expect se disponibile
+        if command -v expect >/dev/null 2>&1; then
+            expect -c "
+                spawn ssh -o StrictHostKeyChecking=no $USER@$SERVER \"$commands\"
+                expect \"password:\"
+                send \"$PASSWORD\r\"
+                expect eof
+            "
+        else
+            # Ultimo fallback: chiedi all'utente di inserire la password
+            log_warning "sshpass e expect non disponibili. Inserisci la password quando richiesto:"
+            ssh -o StrictHostKeyChecking=no "$USER@$SERVER" "$commands"
+        fi
+    fi
 }
 
 # Chiedi messaggio di commit
@@ -48,7 +73,7 @@ git push origin $BRANCH
 # STEP 2: Deploy sul server
 log_info "🔗 Deploy sul server..."
 
-ssh -o StrictHostKeyChecking=no $USER@$SERVER << EOF
+ssh_with_password "
 set -e
 cd $APP_PATH
 echo "📥 Aggiornamento codice..."
@@ -75,7 +100,7 @@ echo "📊 Stato container:"
 docker compose ps
 
 echo "🎉 Deploy completato!"
-EOF
+"
 
 log_success "✅ Deploy completato con successo!"
 log_info "🌐 Applicazione: https://platform.coupongen.it"

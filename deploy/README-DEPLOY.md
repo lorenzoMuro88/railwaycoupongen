@@ -5,7 +5,9 @@ Questo documento spiega come utilizzare gli script di deploy automatizzati per C
 ## 📁 File Disponibili
 
 - `auto-deploy.sh` - Script completo con molte opzioni
+- `auto-deploy-windows.sh` - Script completo ottimizzato per Windows
 - `quick-deploy.sh` - Script semplificato per deploy rapidi
+- `quick-deploy.ps1` - Script PowerShell per Windows
 - `deploy-config.sh` - Configurazione con credenziali (NON COMMITTARE)
 - `deploy-config.example.sh` - Esempio di configurazione
 - `README-DEPLOY.md` - Questa documentazione
@@ -31,11 +33,24 @@ chmod +x deploy/quick-deploy.sh
 
 ## 🚀 Utilizzo
 
-### Deploy Rapido (Raccomandato)
+### Windows (PowerShell)
+
+```powershell
+# Deploy semplice con PowerShell
+.\deploy\quick-deploy.ps1
+
+# Deploy con messaggio personalizzato
+.\deploy\quick-deploy.ps1 -CommitMessage "Fix login error"
+```
+
+### Linux/macOS (Bash)
 
 ```bash
 # Deploy semplice con messaggio di commit
 ./deploy/quick-deploy.sh
+
+# Deploy con autenticazione automatica (Windows Compatible)
+./deploy/auto-deploy-windows.sh
 ```
 
 ### Deploy Avanzato

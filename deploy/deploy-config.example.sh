@@ -5,6 +5,7 @@
 # Configurazione server produzione
 export DEPLOY_SERVER="167.172.42.248"
 export DEPLOY_USER="root"
+export DEPLOY_PASSWORD="your_password_here"
 export DEPLOY_SSH_KEY=""  # Path alla chiave SSH se usi autenticazione a chiave
 export DEPLOY_APP_PATH="/opt/coupongen"
 export DEPLOY_BRANCH="feature/migration-cloud-multitenant-prerelease"
