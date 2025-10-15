@@ -35,21 +35,45 @@ function Invoke-SSHCommand {
         [string]$Password
     )
     
-    # Usa plink (PuTTY) se disponibile, altrimenti ssh
-    if (Get-Command plink -ErrorAction SilentlyContinue) {
+    # Prova diversi metodi per SSH automatico
+    $plinkPath = "C:\Program Files\PuTTY\plink.exe"
+    if (Test-Path $plinkPath) {
+        Write-ColorLog "Usando plink per SSH automatico" "Info"
         $plinkArgs = @(
             "-ssh"
             "-l", $User
             "-pw", $Password
-            "-o", "StrictHostKeyChecking=no"
             $Server
             $Command
         )
-        & plink @plinkArgs
+        & $plinkPath @plinkArgs
+    } elseif (Get-Command sshpass -ErrorAction SilentlyContinue) {
+        Write-ColorLog "Usando sshpass per SSH automatico" "Info"
+        $env:SSHPASS = $Password
+        sshpass -e ssh -o StrictHostKeyChecking=no "$User@$Server" $Command
     } else {
-        # Fallback: usa ssh standard (richiederà password manuale)
-        Write-ColorLog "plink non trovato. Usando ssh standard. Inserisci la password quando richiesto." "Warning"
-        ssh -o StrictHostKeyChecking=no "$User@$Server" $Command
+        # Metodo alternativo: crea un file temporaneo con expect
+        Write-ColorLog "Creando script SSH temporaneo con expect" "Info"
+        $expectScript = @"
+spawn ssh -o StrictHostKeyChecking=no $User@$Server "$Command"
+expect "password:"
+send "$Password\r"
+expect eof
+"@
+        $tempFile = [System.IO.Path]::GetTempFileName() + ".exp"
+        $expectScript | Out-File -FilePath $tempFile -Encoding ASCII
+        
+        try {
+            if (Get-Command expect -ErrorAction SilentlyContinue) {
+                & expect $tempFile
+            } else {
+                Write-ColorLog "expect non trovato. Installazione richiesta per SSH automatico." "Error"
+                Write-ColorLog "Alternative: installa plink, sshpass o expect" "Info"
+                throw "SSH automatico non disponibile"
+            }
+        } finally {
+            Remove-Item $tempFile -ErrorAction SilentlyContinue
+        }
     }
 }
 

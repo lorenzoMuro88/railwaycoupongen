@@ -28,6 +28,9 @@ function generateId(length = 12) {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Trust proxy for HTTPS detection (when behind Nginx/load balancer)
+app.set('trust proxy', 1);
 const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || 'default';
 const DEFAULT_TENANT_NAME = process.env.DEFAULT_TENANT_NAME || 'Default Tenant';
 const ENFORCE_TENANT_PREFIX = String(process.env.ENFORCE_TENANT_PREFIX || 'false') === 'true';
@@ -324,10 +327,11 @@ let sessionOptions = {
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false, // Temporarily disabled for testing
+        secure: 'auto', // Automatically detect HTTPS
         httpOnly: true,
         sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
-        maxAge: 24 * 60 * 60 * 1000
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/'
     }
 };
 if (process.env.NODE_ENV === 'production' && process.env.REDIS_URL) {
@@ -1030,14 +1034,18 @@ app.post('/api/login', async (req, res) => {
         // Debug: Log session creation
         console.log('Session created:', req.session.user);
         console.log('Session ID:', req.sessionID);
+        console.log('Request headers:', req.headers);
+        console.log('Request secure:', req.secure);
+        console.log('Request protocol:', req.protocol);
         
-        // Determine redirect URL (tenant-prefixed)
-        const slug = req.session.user.tenantSlug || DEFAULT_TENANT_SLUG;
-        let redirectUrl = `/t/${slug}`;
+        // Determine redirect URL (simplified for debugging)
+        let redirectUrl;
         if (userType === 'admin') {
-            redirectUrl = `/t/${slug}/admin`;
+            redirectUrl = '/admin';
         } else if (userType === 'store') {
-            redirectUrl = `/t/${slug}/store`;
+            redirectUrl = '/store';
+        } else {
+            redirectUrl = '/';
         }
         
         // Log successful login
@@ -1051,6 +1059,10 @@ app.post('/api/login', async (req, res) => {
             console.error('Failed to log login action:', logError);
             // Continue with login even if logging fails
         }
+        
+        // Debug: Log cookie headers
+        console.log('Response headers being set:', res.getHeaders());
+        console.log('Session cookie should be set with secure flag');
         
         res.json({ 
             success: true, 

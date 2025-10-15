@@ -343,8 +343,15 @@
                 
                 const result = await response.json();
                 
+                // Debug logging
+                console.log('Login response status:', response.status);
+                console.log('Login response headers:', Object.fromEntries(response.headers.entries()));
+                console.log('Login result:', result);
+                console.log('Cookies after login:', document.cookie);
+                
                 if (response.ok) {
                     // Login successful
+                    console.log('Login successful, redirecting to:', result.redirect);
                     if (result.redirect) {
                         window.location.href = result.redirect;
                     } else {
@@ -357,6 +364,7 @@
                     }
                 } else {
                     // Login failed
+                    console.log('Login failed:', result.error);
                     showError(result.error || 'Credenziali non valide');
                 }
             } catch (error) {
