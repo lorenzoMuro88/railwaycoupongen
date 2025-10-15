@@ -2,33 +2,33 @@ version: '3.9'
 services:
   app:
     build: .
-    container_name: coupongen-app
+    container_name: coupongen-app-staging
     restart: unless-stopped
     env_file:
-      - .env
+      - .env.staging
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3000
+      - PORT=3001
       - SESSION_SECRET=${SESSION_SECRET}
       - DEFAULT_TENANT_SLUG=${DEFAULT_TENANT_SLUG:-default}
       - ENFORCE_TENANT_PREFIX=${ENFORCE_TENANT_PREFIX:-true}
       - UPLOAD_MAX_BYTES=${UPLOAD_MAX_BYTES:-2097152}
     volumes:
-      - ./data:/app/data
-      - ./static/uploads:/app/static/uploads
+      - ./data-staging:/app/data
+      - ./static/uploads-staging:/app/static/uploads
     ports:
-      - "3000:3000"
+      - "3001:3001"
     depends_on:
       - redis
   redis:
     image: redis:7-alpine
-    container_name: coupongen-redis
+    container_name: coupongen-redis-staging
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - redis-data:/data
+      - redis-data-staging:/data
 
 volumes:
-  redis-data:
+  redis-data-staging:
 
 

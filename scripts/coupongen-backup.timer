@@ -1,0 +1,12 @@
+[Unit]
+Description=Run CouponGen backup daily at 02:00
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+Unit=coupongen-backup.service
+
+[Install]
+WantedBy=timers.target
+
+
