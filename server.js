@@ -324,7 +324,7 @@ let sessionOptions = {
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
+        secure: false, // Temporarily disabled for testing
         httpOnly: true,
         sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
         maxAge: 24 * 60 * 60 * 1000
@@ -1026,6 +1026,10 @@ app.post('/api/login', async (req, res) => {
             tenantSlug: DEFAULT_TENANT_SLUG, // until path-based routing is introduced
             isSuperAdmin
         };
+        
+        // Debug: Log session creation
+        console.log('Session created:', req.session.user);
+        console.log('Session ID:', req.sessionID);
         
         // Determine redirect URL (tenant-prefixed)
         const slug = req.session.user.tenantSlug || DEFAULT_TENANT_SLUG;
