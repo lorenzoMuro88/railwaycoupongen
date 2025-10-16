@@ -731,25 +731,7 @@ async function getDb() {
             `);
         }
 
-        // Ensure auth_users has tenant_id and default records are tenant-scoped
-        const authUserCols = await db.all("PRAGMA table_info(auth_users)");
-        const authUserColNames = authUserCols.map(c => c.name);
-        if (!authUserColNames.includes('tenant_id')) {
-            console.log('Adding tenant_id to auth_users...');
-            await db.exec('ALTER TABLE auth_users ADD COLUMN tenant_id INTEGER');
-        }
-        if (!authUserColNames.includes('first_name')) {
-            console.log('Adding first_name to auth_users...');
-            await db.exec('ALTER TABLE auth_users ADD COLUMN first_name TEXT');
-        }
-        if (!authUserColNames.includes('last_name')) {
-            console.log('Adding last_name to auth_users...');
-            await db.exec('ALTER TABLE auth_users ADD COLUMN last_name TEXT');
-        }
-        if (!authUserColNames.includes('email')) {
-            console.log('Adding email to auth_users...');
-            await db.exec('ALTER TABLE auth_users ADD COLUMN email TEXT');
-        }
+        // auth_users table already created with all columns in STEP 1
         // Backfill tenant_id for existing rows to default tenant
         await db.run('UPDATE users SET tenant_id = COALESCE(tenant_id, ?) WHERE tenant_id IS NULL', defaultTenantId);
         await db.run('UPDATE campaigns SET tenant_id = COALESCE(tenant_id, ?) WHERE tenant_id IS NULL', defaultTenantId);
