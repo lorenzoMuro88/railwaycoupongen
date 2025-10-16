@@ -461,7 +461,7 @@ async function getDb() {
     
     // Migrate existing database
     try {
-        console.log('Starting database migration...');
+        console.log('Starting database migration v2.1...');
         
         // Simple versioned migrations table
         await db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
