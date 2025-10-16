@@ -27,6 +27,27 @@ $PASSWORD = "hPmCLn7dk6YfjXV"
 $BRANCH = "main"
 $APP_PATH = "/opt/coupongen"
 
+# Funzione SSH con autenticazione automatica
+function Invoke-SSHCommand {
+    param([string]$Command)
+    
+    # Prova diversi metodi di autenticazione automatica
+    $plinkPath = "C:\Program Files\PuTTY\plink.exe"
+    if (Test-Path $plinkPath) {
+        Write-ColorLog "Usando plink per SSH automatico" "Info"
+        $plinkArgs = @("-ssh", "-l", $USER, "-pw", $PASSWORD, $SERVER, $Command)
+        & $plinkPath @plinkArgs
+    } elseif (Get-Command sshpass -ErrorAction SilentlyContinue) {
+        Write-ColorLog "Usando sshpass per SSH automatico" "Info"
+        $env:SSHPASS = $PASSWORD
+        sshpass -e ssh -o StrictHostKeyChecking=no "$USER@$SERVER" $Command
+    } else {
+        Write-ColorLog "Nessun tool di autenticazione automatica trovato" "Warning"
+        Write-ColorLog "Inserisci la password quando richiesto:" "Warning"
+        ssh -o StrictHostKeyChecking=no "$USER@$SERVER" $Command
+    }
+}
+
 # Configurazione ambiente
 if ($Environment -eq "staging") {
     $COMPOSE_FILE = "-f docker-compose.staging.yml"
@@ -73,13 +94,36 @@ $sshCommands = @(
     "git fetch cloud",
     "git reset --hard cloud/$BRANCH",
     "echo 'Codice aggiornato'",
-    "echo 'Ricostruzione container $Environment...'",
+    "echo 'Arresto container esistenti...'",
     "docker compose $COMPOSE_FILE down",
+    "echo 'Pulizia sistema Docker...'",
     "docker system prune -f",
+    "echo 'Ricostruzione e avvio container...'",
     "docker compose $COMPOSE_FILE up -d --build",
     "echo 'Attesa avvio applicazione...'",
     "sleep 15",
     "echo 'Verifica stato container...'",
+    "docker compose $COMPOSE_FILE ps",
+    "echo 'Verifica health check...'",
+    "for i in {1..3}; do",
+    "    if curl -f http://localhost:$PORT/healthz > /dev/null 2>&1; then",
+    "        echo 'Health check OK (tentativo \$i)'",
+    "        break",
+    "    else",
+    "        echo 'Health check fallito (tentativo \$i), attesa 5 secondi...'",
+    "        if [ \$i -lt 3 ]; then",
+    "            sleep 5",
+    "        else",
+    "            echo 'Health check fallito dopo 3 tentativi'",
+    "            echo 'Log applicazione:'",
+    "            docker compose $COMPOSE_FILE logs --tail=30 app",
+    "            exit 1",
+    "        fi",
+    "    fi",
+    "done",
+    "echo 'Test endpoint login...'",
+    "curl -f http://localhost:$PORT/healthz > /dev/null 2>&1 && echo 'Health check endpoint funzionante' || echo 'Health check endpoint test fallito'",
+    "echo 'Stato finale container:'",
     "docker compose $COMPOSE_FILE ps",
     "echo 'Deploy completato con successo!'"
 )
@@ -87,7 +131,12 @@ $sshCommands = @(
 $commandString = $sshCommands -join "; "
 
 Write-ColorLog "Esecuzione comandi sul server..." "Info"
-Write-ColorLog "Comando: $commandString" "Info"
+try {
+    Invoke-SSHCommand -Command $commandString
+} catch {
+    Write-ColorLog "Deploy fallito sul server: $($_.Exception.Message)" "Error"
+    exit 1
+}
 
 # STEP 3: Test finale
 Write-ColorLog "STEP 3: Test finale" "Info"
