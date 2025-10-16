@@ -24,7 +24,7 @@ function Write-ColorLog {
 $SERVER = "167.172.42.248"
 $USER = "root"
 $PASSWORD = "hPmCLn7dk6YfjXV"
-$BRANCH = "feature/migration-cloud-multitenant-prerelease"
+$BRANCH = "main"
 $APP_PATH = "/opt/coupongen"
 
 # Configurazione ambiente
@@ -60,7 +60,7 @@ if ($gitStatus) {
     Write-ColorLog "Nessuna modifica da committare" "Warning"
 }
 
-git push origin $BRANCH
+git push cloud $BRANCH
 Write-ColorLog "Push completato su GitHub" "Success"
 
 # STEP 2: Comandi SSH semplificati
@@ -70,8 +70,8 @@ $sshCommands = @(
     "set -e",
     "cd $APP_PATH",
     "echo 'Aggiornamento codice da branch $BRANCH...'",
-    "git fetch origin",
-    "git reset --hard origin/$BRANCH",
+    "git fetch cloud",
+    "git reset --hard cloud/$BRANCH",
     "echo 'Codice aggiornato'",
     "echo 'Ricostruzione container $Environment...'",
     "docker compose $COMPOSE_FILE down",
