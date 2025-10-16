@@ -37,6 +37,16 @@ const ENFORCE_TENANT_PREFIX = String(process.env.ENFORCE_TENANT_PREFIX || 'false
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '15mb' }));
+
+// Middleware per gestire errori di parsing JSON
+app.use((error, req, res, next) => {
+    if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+        console.error('Errore parsing JSON:', error.message);
+        return res.status(400).json({ success: false, message: 'JSON non valido' });
+    }
+    next();
+});
+
 app.use('/static', express.static(path.join(__dirname, 'static')));
 
 // Public signup page
@@ -1617,8 +1627,21 @@ app.get('/api/form-customization', async (req, res) => {
 // Endpoint pubblico per salvare la configurazione del form (per la pagina di personalizzazione)
 app.post('/api/form-customization', async (req, res) => {
     try {
-        console.log('Ricevuta richiesta POST per form-customization (pubblico):', req.body);
+        console.log('=== RICHIESTA FORM-CUSTOMIZATION ===');
+        console.log('Headers ricevuti:', req.headers);
+        console.log('Content-Type:', req.get('Content-Type'));
+        console.log('Body ricevuto:', req.body);
+        console.log('Tipo del body:', typeof req.body);
+        console.log('=====================================');
+        
+        // Verifica che il body sia un oggetto valido
+        if (!req.body || typeof req.body !== 'object') {
+            console.error('Body non valido o vuoto');
+            return res.status(400).json({ success: false, message: 'Body della richiesta non valido' });
+        }
+        
         const configData = JSON.stringify(req.body);
+        console.log('Config data da salvare:', configData);
         
         // Inserisci o aggiorna la configurazione
         await db.run(`
@@ -2208,10 +2231,10 @@ app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAs
         if (!name || !discount_type || !discount_value) {
             return res.status(400).json({ error: 'Nome, tipo sconto e valore richiesti' });
         }
-        if (!['percent', 'fixed'].includes(String(discount_type))) {
+        if (!['percent', 'fixed', 'text'].includes(String(discount_type))) {
             return res.status(400).json({ error: 'Tipo sconto non valido' });
         }
-        if (isNaN(Number(discount_value))) {
+        if (discount_type !== 'text' && isNaN(Number(discount_value))) {
             return res.status(400).json({ error: 'Valore sconto non valido' });
         }
         const dbConn = await getDb();
@@ -2345,10 +2368,10 @@ app.post('/api/admin/campaigns', async (req, res) => {
         if (typeof name !== 'string' || !name.trim()) {
             return res.status(400).json({ error: 'Nome non valido' });
         }
-        if (!['percent', 'fixed'].includes(String(discount_type))) {
+        if (!['percent', 'fixed', 'text'].includes(String(discount_type))) {
             return res.status(400).json({ error: 'Tipo sconto non valido' });
         }
-        if (isNaN(Number(discount_value))) {
+        if (discount_type !== 'text' && isNaN(Number(discount_value))) {
             return res.status(400).json({ error: 'Valore sconto non valido' });
         }
         
