@@ -110,3 +110,15 @@ static/uploads/*
 
 # Deploy configuration with credentials
 deploy/deploy-config.sh
+
+# Files with API keys and sensitive data
+deploy/fix-email-config.ps1
+deploy/configure-ssl.ps1
+deploy/update-email-template.ps1
+deploy/fix-email-template-issues.ps1
+
+# Any file containing API keys or secrets
+*api-key*
+*secret*
+*password*
+*credential*
