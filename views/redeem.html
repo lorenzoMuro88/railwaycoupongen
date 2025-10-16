@@ -82,6 +82,15 @@
                 grid-template-columns: 1fr;
             }
         }
+        
+        /* Mobile optimizations */
+        @media (max-width: 600px) {
+            .coupon-details code { word-break: break-all; }
+            .text-center.mt-2 a.secondary { display: block; width: 100%; text-align: center; }
+            .success { flex-direction: column; align-items: stretch !important; gap: .75rem !important; }
+            .success .btn { width: 100%; }
+            #content.card { padding: 1rem; }
+        }
     </style>
     
     <script>

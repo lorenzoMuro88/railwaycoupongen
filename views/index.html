@@ -185,6 +185,11 @@
             text-align: center;
             color: #d32f2f;
         }
+        
+        /* Hide header for home page without campaign parameter */
+        body:not([data-campaign]) #publicHeader {
+            display: none !important;
+        }
     </style>
     
     <script>
@@ -208,8 +213,12 @@
         
         // Load campaign info if campaign parameter is present
         if (campaignId) {
+            // Add data-campaign attribute to body to show header
+            document.body.setAttribute('data-campaign', 'true');
             loadCampaignInfo(campaignId);
         } else {
+            // Remove data-campaign attribute to hide header
+            document.body.removeAttribute('data-campaign');
             showNoCampaignMessage();
             // Apply custom styling even without campaign
             applyCustomization();
@@ -283,6 +292,21 @@
         
         function displayCampaignInfo(campaign) {
             const form = document.querySelector('form');
+            
+            // Ensure data-campaign attribute is set for valid campaigns
+            document.body.setAttribute('data-campaign', 'true');
+            
+            // Show the form, header and footer for valid campaigns
+            form.style.display = 'block';
+            const header = document.getElementById('publicHeader');
+            if (header) {
+                header.style.display = 'block';
+            }
+            const footer = document.querySelector('.site-footer');
+            if (footer) {
+                footer.style.display = 'block';
+            }
+            
             const campaignInfo = document.createElement('div');
             campaignInfo.className = 'campaign-info';
             
@@ -436,22 +460,89 @@
             // Hide the entire form
             form.style.display = 'none';
             
-            // Create error message container
-            const errorContainer = document.createElement('div');
-            errorContainer.className = 'card';
-            errorContainer.style.maxWidth = '450px';
-            errorContainer.style.margin = '0 auto';
-            errorContainer.style.padding = '2rem';
-            errorContainer.style.textAlign = 'center';
+            // Ensure data-campaign attribute is removed for home page
+            document.body.removeAttribute('data-campaign');
             
-            errorContainer.innerHTML = `
-                <div class="error-message">
-                    <h3>Questo coupon non esiste o è scaduto</h3>
+            // Hide the footer shadow for home page
+            const footer = document.querySelector('.site-footer');
+            if (footer) {
+                footer.style.display = 'none';
+            }
+            
+            // Create decorative gradient background using platform colors
+            const gradientContainer = document.createElement('div');
+            gradientContainer.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: linear-gradient(135deg, 
+                    #2d5a3d 0%, 
+                    #4a7c59 20%, 
+                    #8b6f47 40%, 
+                    #d4af37 60%, 
+                    #4a7c59 80%, 
+                    #2d5a3d 100%);
+                background-size: 400% 400%;
+                animation: gradientShift 20s ease infinite;
+                z-index: -1;
+            `;
+            
+            // Add gradient animation keyframes
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes gradientShift {
+                    0% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                    100% { background-position: 0% 50%; }
+                }
+            `;
+            document.head.appendChild(style);
+            document.body.appendChild(gradientContainer);
+            
+            // Create welcome message container - perfectly centered
+            const welcomeContainer = document.createElement('div');
+            welcomeContainer.className = 'card';
+            welcomeContainer.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                max-width: 600px;
+                width: 90%;
+                padding: 3rem 2rem;
+                text-align: center;
+                background: rgba(250, 248, 243, 0.95);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(45, 90, 61, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                z-index: 1;
+            `;
+            
+            welcomeContainer.innerHTML = `
+                <div style="color: var(--text-dark);">
+                    <h2 style="color: var(--primary-green); margin-bottom: 1.5rem; font-size: 2rem;">Benvenuto in CouponGen</h2>
+                    <p style="font-size: 1.2rem; margin-bottom: 2rem; color: var(--text-medium);">
+                        Il sistema per generare e gestire coupon personalizzati con QR code
+                    </p>
+                    <div style="background: var(--light-green); border: 2px solid var(--accent-green); border-radius: 12px; padding: 2rem; margin: 2rem 0;">
+                        <h3 style="color: var(--primary-green); margin-bottom: 1rem;">Come funziona?</h3>
+                        <div style="text-align: left; max-width: 400px; margin: 0 auto;">
+                            <p style="margin-bottom: 1rem;">📧 <strong>Inserisci la tua email</strong> e i dati richiesti</p>
+                            <p style="margin-bottom: 1rem;">🎫 <strong>Ricevi il coupon</strong> via email con QR code</p>
+                            <p style="margin-bottom: 0;">🏪 <strong>Presenta il QR code</strong> in negozio per riscattare</p>
+                        </div>
+                    </div>
+                    <p style="color: var(--text-light); font-size: 0.9rem; margin-top: 2rem;">
+                        Per accedere a una campagna specifica, usa il link del coupon che hai ricevuto
+                    </p>
                 </div>
             `;
             
-            // Insert error message where the form was
-            form.parentNode.insertBefore(errorContainer, form);
+            // Insert welcome message where the form was
+            form.parentNode.insertBefore(welcomeContainer, form);
         }
         
         function validateForm() {

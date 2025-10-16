@@ -677,6 +677,13 @@ async function getDb() {
         }
         await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_users_tenant_email ON users(tenant_id, email)');
         await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_coupons_tenant_code ON coupons(tenant_id, code)');
+        
+        // Create email_template index only if tenant_id column exists
+        const emailTemplateCols = await db.all("PRAGMA table_info(email_template)");
+        const emailTemplateColNames = emailTemplateCols.map(c => c.name);
+        if (emailTemplateColNames.includes('tenant_id')) {
+            await db.exec('CREATE INDEX IF NOT EXISTS idx_email_template_tenant ON email_template(tenant_id)');
+        }
 
         if (!hasVersion) {
             // Add email_from_name column to tenants table if it doesn't exist
@@ -690,23 +697,30 @@ async function getDb() {
             await db.run('INSERT INTO schema_migrations(version) VALUES (?)', currentVersion);
         }
 
-        // Email template table
+        // Email template table (multitenant)
         const emailTemplateTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='email_template'");
         if (emailTemplateTable.length === 0) {
             console.log('Creating email_template table...');
             await db.exec(`
                 CREATE TABLE email_template (
-                    id INTEGER PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id INTEGER NOT NULL,
                     subject TEXT NOT NULL,
                     html TEXT NOT NULL,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-                INSERT INTO email_template (id, subject, html) VALUES (
-                    1,
-                    'Il tuo coupon',
-                    '<p>Ciao {{firstName}} {{lastName}},</p>\n<p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>\n<p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>\n<p><img src="cid:couponqr" alt="QR Code" /></p>\n<p>Grazie!</p>'
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
                 );
             `);
+        } else {
+            // Check if tenant_id column exists, if not add it
+            const emailTemplateCols = await db.all("PRAGMA table_info(email_template)");
+            const emailTemplateColNames = emailTemplateCols.map(c => c.name);
+            if (!emailTemplateColNames.includes('tenant_id')) {
+                console.log('Adding tenant_id column to email_template...');
+                await db.exec('ALTER TABLE email_template ADD COLUMN tenant_id INTEGER');
+                // Migrate existing template to default tenant
+                await db.run('UPDATE email_template SET tenant_id = ? WHERE tenant_id IS NULL', defaultTenantId);
+            }
         }
 
         // Check if form_customization table exists
@@ -1128,6 +1142,60 @@ app.post('/api/signup', async (req, res) => {
         const resultTenant = await dbConn.run('INSERT INTO tenants (slug, name) VALUES (?, ?)', slug, tenantName);
         const newTenantId = resultTenant.lastID;
 
+        // Create default email template for new tenant
+        const defaultTemplateHtml = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Il tuo coupon</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                    <tr>
+                        <td style="padding: 30px; text-align: center; background-color: #2d5a3d; border-radius: 8px 8px 0 0;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">🎫 Il tuo Coupon</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 30px;">
+                            <p style="font-size: 16px; color: #333333; margin: 0 0 20px 0;">Ciao {{firstName}} {{lastName}},</p>
+                            <p style="font-size: 16px; color: #333333; margin: 0 0 20px 0;">Ecco il tuo coupon personale che vale <strong style="color: #2d5a3d;">{{discountText}}</strong>!</p>
+                            <div style="background-color: #f8f9fa; border: 2px dashed #2d5a3d; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                                <p style="font-size: 14px; color: #666666; margin: 0 0 10px 0;">Codice Coupon</p>
+                                <p style="font-size: 32px; font-weight: bold; color: #2d5a3d; margin: 0; letter-spacing: 2px;">{{code}}</p>
+                            </div>
+                            <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+                                <p style="font-size: 14px; color: #666666; margin: 0 0 15px 0;">Scansiona il QR Code</p>
+                                <img src="cid:couponqr" alt="QR Code" style="max-width: 200px; height: auto; border: 1px solid #ddd; border-radius: 8px; display: block; margin: 0 auto;">
+                            </div>
+                            <p style="font-size: 16px; color: #333333; margin: 20px 0;">Mostra questo codice in negozio oppure usa il link qui sotto:</p>
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="{{redemptionUrl}}" style="display: inline-block; background-color: #2d5a3d; color: #ffffff; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">🚀 Vai alla Cassa</a>
+                            </div>
+                            <p style="font-size: 14px; color: #666666; margin: 20px 0 0 0;">Grazie per averci scelto!</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 20px 30px; background-color: #f8f9fa; border-radius: 0 0 8px 8px; text-align: center;">
+                            <p style="font-size: 12px; color: #999999; margin: 0;">CouponGen - Sistema di Coupon Digitali</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
+
+        await dbConn.run(
+            'INSERT INTO email_template (tenant_id, subject, html) VALUES (?, ?, ?)',
+            newTenantId, 'Il tuo coupon', defaultTemplateHtml
+        );
+
         // Create first admin user (auth)
         const existingAdmin = await dbConn.get('SELECT id FROM auth_users WHERE username = ? AND tenant_id = ?', adminUsername, newTenantId);
         if (existingAdmin) {
@@ -1267,11 +1335,94 @@ app.get('/store-login', (req, res) => {
 app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
     try {
         const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
-        const html = `<p>Test Mailgun integrazione da CouponGen.</p>`;
+        
+        // Try to get custom sender name from user's tenant
+        let senderName = 'CouponGen';
+        if (req.session && req.session.user && req.session.user.tenantSlug) {
+            try {
+                const dbConn = await getDb();
+                const tenant = await dbConn.get('SELECT email_from_name FROM tenants WHERE slug = ?', req.session.user.tenantSlug);
+                if (tenant && tenant.email_from_name) {
+                    senderName = tenant.email_from_name;
+                }
+            } catch (e) {
+                console.error('Error getting tenant sender name:', e);
+            }
+        }
+        
+        const html = `<p>Test email da ${senderName} - Mailgun integrazione da CouponGen.</p>`;
         const message = {
-            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
+            from: `${senderName} <no-reply@send.coupongen.it>`,
             to,
-            subject: 'Test Email - CouponGen',
+            subject: `Test Email - ${senderName}`,
+            html
+        };
+        const info = await transporter.sendMail(message);
+        res.json({ ok: true, info });
+    } catch (e) {
+        console.error('Test email error:', e);
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+});
+
+// Global: update email from name (for non-tenant mode)
+app.put('/api/admin/email-from-name', requireAdmin, async (req, res) => {
+    try {
+        const { emailFromName } = req.body || {};
+        if (!emailFromName || typeof emailFromName !== 'string' || emailFromName.trim().length === 0) {
+            return res.status(400).json({ error: 'Nome mittente email richiesto' });
+        }
+        
+        // Update the tenant's email_from_name if user has a tenant
+        if (req.session && req.session.user && req.session.user.tenantSlug) {
+            const dbConn = await getDb();
+            await dbConn.run('UPDATE tenants SET email_from_name = ? WHERE slug = ?', emailFromName.trim(), req.session.user.tenantSlug);
+            
+            // Log the action
+            await logAction(req, 'update', `Nome mittente email aggiornato: ${emailFromName.trim()}`, 'info');
+        }
+        
+        res.json({ ok: true, emailFromName: emailFromName.trim() });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Global: get current email from name (for non-tenant mode)
+app.get('/api/admin/email-from-name', requireAdmin, async (req, res) => {
+    try {
+        let emailFromName = 'CouponGen';
+        
+        // Get the tenant's email_from_name if user has a tenant
+        if (req.session && req.session.user && req.session.user.tenantSlug) {
+            const dbConn = await getDb();
+            const tenant = await dbConn.get('SELECT email_from_name FROM tenants WHERE slug = ?', req.session.user.tenantSlug);
+            emailFromName = tenant?.email_from_name || 'CouponGen';
+        }
+        
+        res.json({ emailFromName });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: test email with custom sender name
+app.get('/t/:tenantSlug/api/admin/test-email', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
+        
+        // Get the custom sender name from the tenant
+        const dbConn = await getDb();
+        const tenant = await dbConn.get('SELECT email_from_name FROM tenants WHERE id = ?', req.tenant.id);
+        const senderName = tenant?.email_from_name || 'CouponGen';
+        
+        const html = `<p>Test email da ${senderName} - Mailgun integrazione da CouponGen.</p>`;
+        const message = {
+            from: `${senderName} <no-reply@send.coupongen.it>`,
+            to,
+            subject: `Test Email - ${senderName}`,
             html
         };
         const info = await transporter.sendMail(message);
@@ -1297,11 +1448,12 @@ app.get('/api/admin/form-customization', requireAdmin, async (req, res) => {
     }
 });
 
-// Email template APIs (admin)
+// Email template APIs (admin) - multitenant
 app.get('/api/admin/email-template', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        const row = await dbConn.get('SELECT subject, html, updated_at FROM email_template WHERE id = 1');
+        const tenantId = req.session.user.tenantId;
+        const row = await dbConn.get('SELECT subject, html, updated_at FROM email_template WHERE tenant_id = ?', tenantId);
         if (!row) {
             return res.json({ subject: 'Il tuo coupon', html: '', updated_at: null });
         }
@@ -1319,12 +1471,25 @@ app.post('/api/admin/email-template', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Subject e html sono richiesti' });
         }
         const dbConn = await getDb();
-        await dbConn.run(
-            `INSERT INTO email_template (id, subject, html, updated_at)
-             VALUES (1, ?, ?, datetime('now'))
-             ON CONFLICT(id) DO UPDATE SET subject = excluded.subject, html = excluded.html, updated_at = excluded.updated_at`,
-            subject, html
-        );
+        const tenantId = req.session.user.tenantId;
+        
+        // Check if template exists for this tenant
+        const existing = await dbConn.get('SELECT id FROM email_template WHERE tenant_id = ?', tenantId);
+        
+        if (existing) {
+            // Update existing template
+            await dbConn.run(
+                'UPDATE email_template SET subject = ?, html = ?, updated_at = datetime("now") WHERE tenant_id = ?',
+                subject, html, tenantId
+            );
+        } else {
+            // Create new template for tenant
+            await dbConn.run(
+                'INSERT INTO email_template (tenant_id, subject, html, updated_at) VALUES (?, ?, ?, datetime("now"))',
+                tenantId, subject, html
+            );
+        }
+        
         res.json({ success: true });
     } catch (e) {
         console.error('Errore save email template:', e);
@@ -1557,12 +1722,15 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
 
         const discountText = discountType === 'percent' ? `uno sconto del ${discountValue}%` : 
                             discountType === 'fixed' ? `uno sconto di &euro;${discountValue}` : discountValue;
-        // Load email template
+        // Load email template (multitenant)
         let templateSubject = process.env.MAIL_SUBJECT || 'Il tuo coupon';
         let templateHtml = '';
         try {
-            const t = await dbConn.get('SELECT subject, html FROM email_template WHERE id = 1');
-            if (t) { templateSubject = t.subject || templateSubject; templateHtml = t.html || templateHtml; }
+            const tenantId = req.tenant?.id || req.session?.user?.tenantId;
+            if (tenantId) {
+                const t = await dbConn.get('SELECT subject, html FROM email_template WHERE tenant_id = ?', tenantId);
+                if (t) { templateSubject = t.subject || templateSubject; templateHtml = t.html || templateHtml; }
+            }
         } catch (e) { /* ignore, fallback below */ }
 
         // Fallback template if DB empty
@@ -1685,8 +1853,11 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
         let templateSubject = process.env.MAIL_SUBJECT || 'Il tuo coupon';
         let templateHtml = '';
         try {
-            const t = await dbConn.get('SELECT subject, html FROM email_template WHERE id = 1');
-            if (t) { templateSubject = t.subject || templateSubject; templateHtml = t.html || templateHtml; }
+            const tenantId = req.tenant?.id || req.session?.user?.tenantId;
+            if (tenantId) {
+                const t = await dbConn.get('SELECT subject, html FROM email_template WHERE tenant_id = ?', tenantId);
+                if (t) { templateSubject = t.subject || templateSubject; templateHtml = t.html || templateHtml; }
+            }
         } catch (e) {}
         if (!templateHtml) {
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
@@ -2779,6 +2950,55 @@ if (ENFORCE_TENANT_PREFIX) {
 app.get('/admin/email-template', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
 });
+// Tenant-scoped email template APIs
+app.get('/t/:tenantSlug/api/admin/email-template', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const tenantId = req.tenant.id;
+        const row = await dbConn.get('SELECT subject, html, updated_at FROM email_template WHERE tenant_id = ?', tenantId);
+        if (!row) {
+            return res.json({ subject: 'Il tuo coupon', html: '', updated_at: null });
+        }
+        res.json(row);
+    } catch (e) {
+        console.error('Errore get email template (tenant):', e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.post('/t/:tenantSlug/api/admin/email-template', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { subject, html } = req.body || {};
+        if (!subject || !html) {
+            return res.status(400).json({ error: 'Subject e html sono richiesti' });
+        }
+        const dbConn = await getDb();
+        const tenantId = req.tenant.id;
+        
+        // Check if template exists for this tenant
+        const existing = await dbConn.get('SELECT id FROM email_template WHERE tenant_id = ?', tenantId);
+        
+        if (existing) {
+            // Update existing template
+            await dbConn.run(
+                'UPDATE email_template SET subject = ?, html = ?, updated_at = datetime("now") WHERE tenant_id = ?',
+                subject, html, tenantId
+            );
+        } else {
+            // Create new template for tenant
+            await dbConn.run(
+                'INSERT INTO email_template (tenant_id, subject, html, updated_at) VALUES (?, ?, ?, datetime("now"))',
+                tenantId, subject, html
+            );
+        }
+        
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Errore save email template (tenant):', e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
 app.get('/t/:tenantSlug/admin/email-template', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
 });
