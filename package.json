@@ -16,8 +16,6 @@
     "express": "^4.19.2",
     "express-basic-auth": "^1.2.1",
     "express-session": "^1.18.2",
-    "connect-redis": "^7.1.1",
-    "redis": "^4.6.13",
     "form-data": "^4.0.0",
     "mailgun.js": "^12.1.1",
     "nanoid": "^5.0.7",

@@ -1,0 +1,18 @@
+# Nixpacks configuration for Railway deployment
+# This file configures the build process for FLYCouponGen
+
+[phases.setup]
+nixPkgs = ["nodejs-18_x", "npm-9_x"]
+
+[phases.install]
+cmds = ["npm ci --omit=dev"]
+
+[phases.build]
+cmds = ["echo 'Build completed'"]
+
+[start]
+cmd = "node server.js"
+
+[variables]
+NODE_ENV = "production"
+PORT = "3000"

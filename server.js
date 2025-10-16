@@ -6,8 +6,6 @@ const fs = require('fs');
 const express = require('express');
 const basicAuth = require('express-basic-auth');
 const session = require('express-session');
-const RedisStore = require('connect-redis').default;
-const { createClient: createRedisClient } = require('redis');
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const QRCode = require('qrcode');
@@ -46,6 +44,15 @@ app.use((error, req, res, next) => {
     }
     next();
 });
+
+// Serve uploads from configurable directory before general static
+const UPLOADS_BASE_DIR = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.join(__dirname, 'static', 'uploads');
+if (!fs.existsSync(UPLOADS_BASE_DIR)) {
+    fs.mkdirSync(UPLOADS_BASE_DIR, { recursive: true });
+}
+app.use('/static/uploads', express.static(UPLOADS_BASE_DIR));
 
 app.use('/static', express.static(path.join(__dirname, 'static')));
 
@@ -344,23 +351,14 @@ let sessionOptions = {
         path: '/'
     }
 };
-if (process.env.NODE_ENV === 'production' && process.env.REDIS_URL) {
-    try {
-        const redisClient = createRedisClient({ url: process.env.REDIS_URL });
-        redisClient.connect().catch(err => {
-            console.error('Redis connection failed, falling back to memory store:', err.message);
-        });
-        sessionOptions.store = new RedisStore({ client: redisClient, prefix: 'sess:' });
-    } catch (error) {
-        console.error('Redis setup failed, using memory store:', error.message);
-    }
-}
 app.use(session(sessionOptions));
 
 // Super admin page will be defined before /admin middleware
 
-// Ensure data directory exists
-const DATA_DIR = path.join(__dirname, 'data');
+// Ensure data directory exists (configurable for PaaS like Railway)
+const DATA_DIR = process.env.DATA_DIR
+    ? path.resolve(process.env.DATA_DIR)
+    : path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR);
 }
@@ -1548,7 +1546,7 @@ app.post('/api/admin/upload-image', requireAdmin, async (req, res) => {
         const ext = mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
         // Ensure uploads dir exists
         const tenantSlug = (req.session && req.session.user && req.session.user.tenantSlug) || DEFAULT_TENANT_SLUG;
-        const uploadsDir = path.join(__dirname, 'static', 'uploads', tenantSlug);
+        const uploadsDir = path.join(UPLOADS_BASE_DIR, tenantSlug);
         if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
         const filename = `header-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const filePath = path.join(uploadsDir, filename);
@@ -1581,7 +1579,7 @@ app.post('/t/:tenantSlug/api/admin/upload-image', tenantLoader, requireSameTenan
             return res.status(400).json({ error: 'File troppo grande' });
         }
         const ext = mime.includes('png') ? 'png' : mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
-        const uploadsDir = path.join(__dirname, 'static', 'uploads', req.tenant.slug);
+        const uploadsDir = path.join(UPLOADS_BASE_DIR, req.tenant.slug);
         if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
         const filename = `header-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const filePath = path.join(uploadsDir, filename);
@@ -1761,7 +1759,7 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
             <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
             <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="cid:couponqr.png" alt="QR Code" /></p>
+            <p><img src="cid:couponqr" alt="QR Code" /></p>
             <p>Grazie!</p>`;
         }
 
@@ -1886,7 +1884,7 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
             <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
             <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="cid:couponqr.png" alt="QR Code" /></p>
+            <p><img src="cid:couponqr" alt="QR Code" /></p>
             <p>Grazie!</p>`;
         }
         const html = templateHtml

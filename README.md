@@ -53,11 +53,13 @@ npm start
 
 ### Variabili d'Ambiente (principali)
 
-Copia `env.example` in `.env` e configura:
+Copia `env.example` in `.env` e configura (su Railway puoi impostarle dal dashboard):
 
 ```env
 # Server
 PORT=3000
+DATA_DIR=/app/data
+UPLOADS_DIR=/app/data/uploads
 SESSION_SECRET=change-me
 DEFAULT_TENANT_SLUG=default
 ENFORCE_TENANT_PREFIX=false
@@ -69,8 +71,8 @@ MAILGUN_API_KEY=your_key
 MAILGUN_DOMAIN=your_domain.mailgun.org
 MAILGUN_FROM=CouponGen <no-reply@send.coupongen.it>
 
-# Redis (prod)
-REDIS_URL=redis://redis:6379
+# Sessions
+# Usa lo store in-memory (predefinito). Redis non è più necessario.
 ```
 
 ### Provider Email Supportati
