@@ -363,6 +363,15 @@ async function getDb() {
         filename: path.join(DATA_DIR, 'coupons.db'),
         driver: sqlite3.Database
     });
+    
+    // Configure database timeouts and performance settings
+    await db.exec(`
+        PRAGMA busy_timeout = 30000;  -- 30 seconds timeout for locked database
+        PRAGMA journal_mode = WAL;    -- Write-Ahead Logging for better concurrency
+        PRAGMA synchronous = NORMAL;  -- Balance between safety and performance
+        PRAGMA cache_size = 10000;    -- Increase cache size for better performance
+        PRAGMA temp_store = MEMORY;   -- Store temp tables in memory
+    `);
     // First, create tables without foreign keys to avoid migration issues
     await db.exec(`
         PRAGMA foreign_keys = OFF;
@@ -821,7 +830,8 @@ function buildTransport() {
         const mg = mailgun.client({
             username: 'api',
             key: process.env.MAILGUN_API_KEY,
-            url: (process.env.MAILGUN_REGION || 'eu') === 'us' ? 'https://api.mailgun.net' : 'https://api.eu.mailgun.net'
+            url: (process.env.MAILGUN_REGION || 'eu') === 'us' ? 'https://api.mailgun.net' : 'https://api.eu.mailgun.net',
+            timeout: 30000  // 30 seconds timeout for Mailgun API calls
         });
         // Wrap Mailgun client in a Nodemailer-like interface used below
         return {
@@ -854,7 +864,16 @@ function buildTransport() {
                     data['h:Reply-To'] = process.env.MAILGUN_REPLY_TO;
                 }
                 const domain = process.env.MAILGUN_DOMAIN;
-                const result = await mg.messages.create(domain, data);
+                
+                // Add timeout wrapper for Mailgun API call
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Mailgun API timeout')), 30000)
+                );
+                
+                const result = await Promise.race([
+                    mg.messages.create(domain, data),
+                    timeoutPromise
+                ]);
                 return { id: result.id };
             },
             options: { provider: 'mailgun' }
@@ -869,7 +888,16 @@ function buildTransport() {
             auth: process.env.SMTP_USER ? {
                 user: process.env.SMTP_USER,
                 pass: process.env.SMTP_PASS
-            } : undefined
+            } : undefined,
+            // Add timeout configurations for SMTP
+            connectionTimeout: 30000,  // 30 seconds to establish connection
+            greetingTimeout: 30000,    // 30 seconds for SMTP greeting
+            socketTimeout: 30000,      // 30 seconds for socket operations
+            pool: true,                // Enable connection pooling
+            maxConnections: 5,         // Max concurrent connections
+            maxMessages: 100,          // Max messages per connection
+            rateDelta: 20000,          // Rate limiting: 1 message per 20 seconds
+            rateLimit: 5               // Max 5 messages per rateDelta
         });
     }
     // Fallback to JSON transport (logs emails to console)
@@ -3673,10 +3701,22 @@ app.use((req, res) => {
     res.status(404).sendFile(path.join(__dirname, 'views', '404.html'));
 });
 
-// Start server
-app.listen(PORT, async () => {
+// Start server with proper timeout configurations
+const server = app.listen(PORT, async () => {
     await getDb();
     console.log(`CouponGen avviato su http://localhost:${PORT}`);
 });
+
+// Configure server timeouts to prevent connection issues
+server.keepAliveTimeout = 65000; // 65 seconds (same as nginx default)
+server.headersTimeout = 66000;   // 66 seconds (slightly higher than keepAliveTimeout)
+server.requestTimeout = 30000;   // 30 seconds for request processing
+server.timeout = 30000;          // 30 seconds overall timeout
+
+console.log('Server timeouts configured:');
+console.log(`- Keep-Alive: ${server.keepAliveTimeout}ms`);
+console.log(`- Headers: ${server.headersTimeout}ms`);
+console.log(`- Request: ${server.requestTimeout}ms`);
+console.log(`- Overall: ${server.timeout}ms`);
 
 
