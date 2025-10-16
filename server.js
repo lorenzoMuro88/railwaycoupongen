@@ -468,7 +468,78 @@ async function getDb() {
         const currentVersion = '2025-10-mt-a2';
         const hasVersion = await db.get('SELECT 1 FROM schema_migrations WHERE version = ?', currentVersion);
 
-        // Ensure default tenant exists
+        // STEP 1: Create all base tables FIRST (before any ALTER statements)
+        console.log('Creating base tables...');
+        
+        // Create auth_users table if it doesn't exist
+        const authUsersTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'");
+        if (authUsersTable.length === 0) {
+            console.log('Creating auth_users table...');
+            await db.exec(`
+                CREATE TABLE auth_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    user_type TEXT NOT NULL CHECK (user_type IN ('superadmin', 'admin', 'store')),
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_login DATETIME,
+                    tenant_id INTEGER,
+                    first_name TEXT,
+                    last_name TEXT,
+                    email TEXT
+                );
+            `);
+        }
+
+        // Create form_customization table if it doesn't exist
+        const formCustomizationTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='form_customization'");
+        if (formCustomizationTable.length === 0) {
+            console.log('Creating form_customization table...');
+            await db.exec(`
+                CREATE TABLE form_customization (
+                    id INTEGER PRIMARY KEY,
+                    config_data TEXT NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+        }
+
+        // Create products table if it doesn't exist
+        const productsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='products'");
+        if (productsTable.length === 0) {
+            console.log('Creating products table...');
+            await db.exec(`
+                CREATE TABLE products (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    value REAL NOT NULL,
+                    margin_price REAL NOT NULL,
+                    sku TEXT UNIQUE,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+        }
+
+        // Create campaign_products table if it doesn't exist
+        const campaignProductsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='campaign_products'");
+        if (campaignProductsTable.length === 0) {
+            console.log('Creating campaign_products table...');
+            await db.exec(`
+                CREATE TABLE campaign_products (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    campaign_id INTEGER NOT NULL,
+                    product_id INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    UNIQUE(campaign_id, product_id)
+                );
+            `);
+        }
+
+        // STEP 2: Ensure default tenant exists
         const existingDefaultTenant = await db.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
         let defaultTenantId = existingDefaultTenant ? existingDefaultTenant.id : null;
         if (!defaultTenantId) {
@@ -643,6 +714,23 @@ async function getDb() {
             `);
         }
 
+        // Ensure auth_users table exists BEFORE attempting to alter it
+        const hasAuthUsersTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'");
+        if (hasAuthUsersTable.length === 0) {
+            console.log('Creating auth_users table (missing before alteration step)...');
+            await db.exec(`
+                CREATE TABLE auth_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    user_type TEXT NOT NULL CHECK (user_type IN ('superadmin', 'admin', 'store')),
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_login DATETIME
+                );
+            `);
+        }
+
         // Ensure auth_users has tenant_id and default records are tenant-scoped
         const authUserCols = await db.all("PRAGMA table_info(auth_users)");
         const authUserColNames = authUserCols.map(c => c.name);
@@ -731,39 +819,11 @@ async function getDb() {
             }
         }
 
-        // Check if form_customization table exists
-        const formCustomizationTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='form_customization'");
-        if (formCustomizationTable.length === 0) {
-            console.log('Creating form_customization table...');
-            await db.exec(`
-                CREATE TABLE form_customization (
-                    id INTEGER PRIMARY KEY,
-                    config_data TEXT NOT NULL,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-            `);
-        }
         
-        // Check if auth_users table exists
-        const authUsersTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'");
-        if (authUsersTable.length === 0) {
-            console.log('Creating auth_users table...');
-            await db.exec(`
-                CREATE TABLE auth_users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT NOT NULL UNIQUE,
-                    password_hash TEXT NOT NULL,
-                    user_type TEXT NOT NULL CHECK (user_type IN ('superadmin', 'admin', 'store')),
-                    is_active BOOLEAN DEFAULT 1,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    last_login DATETIME,
-                    first_name TEXT,
-                    last_name TEXT,
-                    email TEXT
-                );
-            `);
-            
-            // Create default superadmin user if no users exist
+        // Create default users if auth_users table is empty
+        const userCount = await db.get('SELECT COUNT(*) as count FROM auth_users');
+        if (userCount.count === 0) {
+            console.log('Creating default users...');
             const defaultSuperAdminPassword = process.env.SUPERADMIN_PASSWORD || 'admin123';
             const defaultStorePassword = process.env.STORE_PASSWORD || 'store123';
             
@@ -772,47 +832,13 @@ async function getDb() {
             const storeHash = Buffer.from(defaultStorePassword).toString('base64');
             
             await db.run(`
-                INSERT INTO auth_users (username, password_hash, user_type) 
-                VALUES ('admin', ?, 'superadmin'), ('store', ?, 'store')
-            `, superAdminHash, storeHash);
+                INSERT INTO auth_users (username, password_hash, user_type, tenant_id) 
+                VALUES ('admin', ?, 'superadmin', ?), ('store', ?, 'store', ?)
+            `, superAdminHash, defaultTenantId, storeHash, defaultTenantId);
             
             console.log('Default users created:');
             console.log('- SuperAdmin: username=admin, password=' + defaultSuperAdminPassword);
             console.log('- Store: username=store, password=' + defaultStorePassword);
-        }
-        
-        // Check if products table exists
-        const productsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='products'");
-        if (productsTable.length === 0) {
-            console.log('Creating products table...');
-            await db.exec(`
-                CREATE TABLE products (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    value REAL NOT NULL,
-                    margin_price REAL NOT NULL,
-                    sku TEXT UNIQUE,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-            `);
-        }
-        
-        // Check if campaign_products table exists
-        const campaignProductsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='campaign_products'");
-        if (campaignProductsTable.length === 0) {
-            console.log('Creating campaign_products table...');
-            await db.exec(`
-                CREATE TABLE campaign_products (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    campaign_id INTEGER NOT NULL,
-                    product_id INTEGER NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
-                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-                    UNIQUE(campaign_id, product_id)
-                );
-            `);
         }
         
         // Re-enable foreign keys after migration
