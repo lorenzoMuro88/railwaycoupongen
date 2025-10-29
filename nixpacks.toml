@@ -1,5 +1,5 @@
 # Nixpacks configuration for Railway deployment
-# This file configures the build process for FLYCouponGen
+# This file configures the build process for CouponGen
 
 [phases.setup]
 nixPkgs = ["nodejs-18_x", "npm-9_x"]

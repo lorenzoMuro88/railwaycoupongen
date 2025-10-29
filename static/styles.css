@@ -550,7 +550,7 @@ code {
 .gap-1 { gap: 1rem; }
 .gap-2 { gap: 2rem; }
 
-/* Universal Button Styles - Allineati con "Aggiungi Campo" */
+/* Universal Button Styles - Apple-like refinement */
 .refresh-btn,
 .modal-btn,
 .burn-btn,
@@ -563,78 +563,138 @@ code {
 .clear-all-btn,
 .link-btn,
 .add-field-btn {
-  background: var(--gradient-primary);
-  color: var(--white);
-  border: none;
-  padding: 0.8rem 1.5rem;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.9rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.95rem;
   font-weight: 600;
-  transition: all 0.3s ease;
-  box-shadow: var(--shadow-light);
-  text-decoration: none;
+  letter-spacing: 0.2px;
+  text-transform: none;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 16px rgba(0,0,0,0.06);
+  background-clip: padding-box;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  position: relative;
-  overflow: hidden;
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
 }
 
-/* Universal Hover Effect - Stile "Aggiungi Campo" */
+/* Primary/neutral defaults remain gradient; neutrals are overridden below */
+.refresh-btn,
+.modal-btn,
+.save-button,
+.save-btn,
+.link-btn,
+.add-field-btn {
+  background: var(--gradient-primary);
+  color: var(--white);
+  border-color: rgba(45,90,61,0.18);
+}
+
+/* Neutral buttons */
+.clear-btn,
+.clear-all-btn {
+  background: #ffffff;
+  color: var(--text-dark);
+  border-color: var(--border-light);
+}
+
+/* Hover/active/focus states */
 .refresh-btn:hover,
 .modal-btn:hover,
 .save-button:hover,
 .save-btn:hover,
-.clear-btn:hover,
-.clear-all-btn:hover,
 .link-btn:hover,
 .add-field-btn:hover {
-  box-shadow: var(--shadow-medium);
-  color: var(--white);
-  background: var(--gradient-primary);
-  text-decoration: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.10);
+  transform: translateY(-1px);
 }
 
-/* Bottoni di azione con colori specifici */
+.clear-btn:hover,
+.clear-all-btn:hover {
+  background: #f7f9f8;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+.refresh-btn:active,
+.modal-btn:active,
+.save-button:active,
+.save-btn:active,
+.clear-btn:active,
+.clear-all-btn:active,
+.link-btn:active,
+.add-field-btn:active,
+.burn-btn:active,
+.activate-btn:active,
+.deactivate-btn:active,
+.delete-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 6px 12px rgba(0,0,0,0.08);
+}
+
+.refresh-btn:focus-visible,
+.modal-btn:focus-visible,
+.save-button:focus-visible,
+.save-btn:focus-visible,
+.clear-btn:focus-visible,
+.clear-all-btn:focus-visible,
+.link-btn:focus-visible,
+.add-field-btn:focus-visible,
+.burn-btn:focus-visible,
+.activate-btn:focus-visible,
+.deactivate-btn:focus-visible,
+.delete-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(45, 90, 61, 0.12), 0 2px 6px rgba(0,0,0,0.06);
+}
+
+/* Bottoni di azione con colori specifici - tonalità più delicate */
 .burn-btn {
-  background: #e74c3c;
+  background: #ff6b6b;
+  color: #fff;
+  border-color: rgba(255, 107, 107, 0.2);
 }
 
 .burn-btn:hover {
-  background: #c0392b;
-  box-shadow: var(--shadow-medium);
-  color: var(--white);
+  background: #ff5252;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(255,107,107,0.2), 0 12px 24px rgba(255,107,107,0.15);
 }
 
 .activate-btn {
-  background: #27ae60;
+  background: #51cf66;
+  color: #fff;
+  border-color: rgba(81, 207, 102, 0.2);
 }
 
 .activate-btn:hover {
-  background: #229954;
-  box-shadow: var(--shadow-medium);
-  color: var(--white);
+  background: #40c057;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(81,207,102,0.2), 0 12px 24px rgba(81,207,102,0.15);
 }
 
 .deactivate-btn {
-  background: #f39c12;
+  background: #ffd43b;
+  color: #2c3e50;
+  border-color: rgba(255, 212, 59, 0.2);
 }
 
 .deactivate-btn:hover {
-  background: #e67e22;
-  box-shadow: var(--shadow-medium);
-  color: var(--white);
+  background: #ffcc02;
+  color: #2c3e50;
+  box-shadow: 0 2px 6px rgba(255,212,59,0.2), 0 12px 24px rgba(255,212,59,0.15);
 }
 
 .delete-btn {
-  background: #e74c3c;
+  background: #ff8787;
+  color: #fff;
+  border-color: rgba(255, 135, 135, 0.2);
 }
 
 .delete-btn:hover {
-  background: #c0392b;
-  box-shadow: var(--shadow-medium);
-  color: var(--white);
+  background: #ff6b6b;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(255,135,135,0.2), 0 12px 24px rgba(255,135,135,0.15);
 }
 
 .refresh-btn .btn-text {

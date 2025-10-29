@@ -407,6 +407,7 @@ async function getDb() {
             discount_type TEXT NOT NULL DEFAULT 'percent',
             discount_value TEXT NOT NULL,
             form_config TEXT DEFAULT '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}, "phone": {"visible": false, "required": false}, "address": {"visible": false, "required": false}, "allergies": {"visible": false, "required": false}, "customFields": []}', -- JSON config for form fields
+            expiry_date DATETIME, -- Data limite di utilizzo della campagna
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             tenant_id INTEGER
         );
@@ -875,14 +876,25 @@ function buildTransport() {
                 };
                 // Attachments (QR inline)
                 if (Array.isArray(message.attachments) && message.attachments.length > 0) {
-                    data.attachment = message.attachments.map(att => ({
-                        filename: att.filename,
-                        data: att.content,
-                        knownLength: att.content?.length
-                    }));
-                    // For inline image, set inline too
-                    const inline = message.attachments.filter(a => a.cid).map(att => ({ filename: att.filename, data: att.content, knownLength: att.content?.length }));
-                    if (inline.length) data.inline = inline;
+                    // Separate inline and regular attachments
+                    const regularAttachments = message.attachments.filter(a => !a.cid);
+                    const inlineAttachments = message.attachments.filter(a => a.cid);
+                    
+                    if (regularAttachments.length > 0) {
+                        data.attachment = regularAttachments.map(att => ({
+                            filename: att.filename,
+                            data: att.content,
+                            knownLength: att.content?.length
+                        }));
+                    }
+                    
+                    if (inlineAttachments.length > 0) {
+                        data.inline = inlineAttachments.map(att => ({
+                            filename: att.filename,
+                            data: att.content,
+                            knownLength: att.content?.length
+                        }));
+                    }
                 }
                 // Tracking options
                 if (process.env.MAILGUN_TRACKING === 'false') {
@@ -1186,7 +1198,7 @@ app.post('/api/signup', async (req, res) => {
                             </div>
                             <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
                                 <p style="font-size: 14px; color: #666666; margin: 0 0 15px 0;">Scansiona il QR Code</p>
-                                <img src="cid:couponqr" alt="QR Code" style="max-width: 200px; height: auto; border: 1px solid #ddd; border-radius: 8px; display: block; margin: 0 auto;">
+                                <img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto; border: 1px solid #ddd; border-radius: 8px; display: block; margin: 0 auto;">
                             </div>
                             <p style="font-size: 16px; color: #333333; margin: 20px 0;">Mostra questo codice in negozio oppure usa il link qui sotto:</p>
                             <div style="text-align: center; margin: 30px 0;">
@@ -1700,10 +1712,18 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
         if (campaign_id) {
             specificCampaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ?', campaign_id);
             if (specificCampaign) {
-                // Check if campaign is active
+                // Check if campaign is active and not expired
                 if (!specificCampaign.is_active) {
                     return res.status(400).send('Questo coupon non esiste o è scaduto');
                 }
+                
+                // Check if campaign has expired
+                if (specificCampaign.expiry_date && new Date(specificCampaign.expiry_date) < new Date()) {
+                    // Auto-deactivate expired campaign
+                    await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', specificCampaign.id);
+                    return res.status(400).send('Questo coupon non esiste o è scaduto');
+                }
+                
                 discountType = specificCampaign.discount_type;
                 discountValue = specificCampaign.discount_value;
                 campaignId = specificCampaign.id;
@@ -1767,7 +1787,7 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
             <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
             <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="cid:couponqr" alt="QR Code" /></p>
+            <p><img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto;" /></p>
             <p>Grazie!</p>`;
         }
 
@@ -1776,21 +1796,15 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
             .replaceAll('{{lastName}}', lastName || '')
             .replaceAll('{{code}}', couponCode)
             .replaceAll('{{discountText}}', discountText)
-            .replaceAll('{{redemptionUrl}}', redemptionUrl);
+            .replaceAll('{{redemptionUrl}}', redemptionUrl)
+            .replaceAll('{{qrDataUrl}}', qrDataUrl);
 
         const message = {
             from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
             to: email,
             subject: templateSubject,
-            html,
-            attachments: [
-                {   // inline QR (Mailgun risolve per filename)
-                    filename: 'couponqr.png',
-                    cid: 'couponqr',
-                    content: Buffer.from(qrDataUrl.split(',')[1], 'base64'),
-                    contentType: 'image/png'
-                }
-            ]
+            html
+            // QR code is now embedded directly in HTML as data URL
         };
 
         try {
@@ -1833,6 +1847,14 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
                 if (!specificCampaign.is_active) {
                     return res.status(400).send('Questo coupon non esiste o è scaduto');
                 }
+                
+                // Check if campaign has expired
+                if (specificCampaign.expiry_date && new Date(specificCampaign.expiry_date) < new Date()) {
+                    // Auto-deactivate expired campaign
+                    await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', specificCampaign.id);
+                    return res.status(400).send('Questo coupon non esiste o è scaduto');
+                }
+                
                 discountType = specificCampaign.discount_type;
                 discountValue = specificCampaign.discount_value;
                 campaignId = specificCampaign.id;
@@ -1892,7 +1914,7 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
             <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
             <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="cid:couponqr" alt="QR Code" /></p>
+            <p><img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto;" /></p>
             <p>Grazie!</p>`;
         }
         const html = templateHtml
@@ -1900,16 +1922,15 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             .replaceAll('{{lastName}}', lastName || '')
             .replaceAll('{{code}}', couponCode)
             .replaceAll('{{discountText}}', discountText)
-            .replaceAll('{{redemptionUrl}}', redemptionUrl);
+            .replaceAll('{{redemptionUrl}}', redemptionUrl)
+            .replaceAll('{{qrDataUrl}}', qrDataUrl);
 
         const message = {
             from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
             to: email,
             subject: templateSubject,
-            html,
-            attachments: [
-                { filename: 'couponqr.png', cid: 'couponqr', content: Buffer.from(qrDataUrl.split(',')[1], 'base64'), contentType: 'image/png' }
-            ]
+            html
+            // QR code is now embedded directly in HTML as data URL
         };
         try { await transporter.sendMail(message); } catch (emailErr) { console.error('Email error:', emailErr); }
 
@@ -2213,6 +2234,16 @@ app.get('/api/admin/campaigns', async (req, res) => {
     try {
         const dbConn = await getDb();
         const campaigns = await dbConn.all('SELECT * FROM campaigns ORDER BY created_at DESC');
+        
+        // Auto-deactivate expired campaigns
+        const now = new Date();
+        for (const campaign of campaigns) {
+            if (campaign.expiry_date && new Date(campaign.expiry_date) < now && campaign.is_active) {
+                await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+                campaign.is_active = 0; // Update local object for response
+            }
+        }
+        
         res.json(campaigns);
     } catch (e) {
         console.error(e);
@@ -2223,6 +2254,16 @@ app.get('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAsS
     try {
         const dbConn = await getDb();
         const campaigns = await dbConn.all('SELECT * FROM campaigns WHERE tenant_id = ? ORDER BY created_at DESC', req.tenant.id);
+        
+        // Auto-deactivate expired campaigns
+        const now = new Date();
+        for (const campaign of campaigns) {
+            if (campaign.expiry_date && new Date(campaign.expiry_date) < now && campaign.is_active) {
+                await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+                campaign.is_active = 0; // Update local object for response
+            }
+        }
+        
         res.json(campaigns);
     } catch (e) {
         console.error(e);
@@ -2233,7 +2274,7 @@ app.get('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAsS
 // Tenant-scoped: create campaign
 app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
     try {
-        const { name, description, discount_type, discount_value } = req.body || {};
+        const { name, description, discount_type, discount_value, expiry_date } = req.body || {};
         if (!name || !discount_type || !discount_value) {
             return res.status(400).json({ error: 'Nome, tipo sconto e valore richiesti' });
         }
@@ -2255,8 +2296,8 @@ app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAs
             customFields: []
         });
         const result = await dbConn.run(
-            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, tenant_id, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
-            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, req.tenant.id
+            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, tenant_id, is_active, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)',
+            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, req.tenant.id, expiry_date || null
         );
         res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
     } catch (e) {
@@ -2328,9 +2369,16 @@ app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => 
         if (!campaign) {
             return res.status(404).json({ error: 'Campagna non trovata' });
         }
-        // Check if campaign is active
+        // Check if campaign is active and not expired
         if (!campaign.is_active) {
             return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Check if campaign has expired
+        if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
+            // Auto-deactivate expired campaign
+            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+            return res.status(404).json({ error: 'Campagna scaduta' });
         }
         
         // Parse form config
@@ -2352,9 +2400,16 @@ app.get('/api/campaigns/:code', async (req, res) => {
         if (!campaign) {
             return res.status(404).json({ error: 'Campagna non trovata' });
         }
-        // Check if campaign is active
+        // Check if campaign is active and not expired
         if (!campaign.is_active) {
             return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Check if campaign has expired
+        if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
+            // Auto-deactivate expired campaign
+            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+            return res.status(404).json({ error: 'Campagna scaduta' });
         }
         
         // Parse form config
@@ -2370,7 +2425,7 @@ app.get('/api/campaigns/:code', async (req, res) => {
 
 app.post('/api/admin/campaigns', async (req, res) => {
     try {
-        const { name, description, discount_type, discount_value } = req.body;
+        const { name, description, discount_type, discount_value, expiry_date } = req.body;
         if (typeof name !== 'string' || !name.trim()) {
             return res.status(400).json({ error: 'Nome non valido' });
         }
@@ -2397,8 +2452,8 @@ app.post('/api/admin/campaigns', async (req, res) => {
             customFields: []
         });
         const result = await dbConn.run(
-            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config) VALUES (?, ?, ?, ?, ?, ?)',
-            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig
+            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, expiry_date || null
         );
         res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
     } catch (e) {
@@ -2951,10 +3006,10 @@ app.get('/t/:tenantSlug/custom-fields', tenantLoader, requireSameTenantAsSession
 
 // New canonical route for aesthetic personalization
 app.get('/form-design', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'form-setup.html'));
+    res.sendFile(path.join(__dirname, 'views', 'form-design.html'));
 });
 app.get('/t/:tenantSlug/form-design', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'form-setup.html'));
+    res.sendFile(path.join(__dirname, 'views', 'form-design.html'));
 });
 
 // Legacy/Direct file URL redirects to canonical route

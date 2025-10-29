@@ -142,6 +142,38 @@
             box-sizing: border-box;
         }
         
+        /* Checkbox field styling */
+        .checkbox-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .checkbox-container input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+            margin-top: 0.2rem;
+            flex-shrink: 0;
+        }
+        
+        .checkbox-label {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: var(--text-dark);
+            cursor: pointer;
+            margin: 0;
+        }
+        
+        .checkbox-label a {
+            color: #007bff;
+            text-decoration: underline;
+        }
+        
+        .checkbox-label a:hover {
+            color: #0056b3;
+        }
+        
         @media (max-width: 768px) {
             .form-row {
                 grid-template-columns: 1fr;
@@ -468,27 +500,57 @@
                     const fieldGroup = document.createElement('div');
                     fieldGroup.className = 'form-group custom-field';
                     
-                    const label = document.createElement('label');
-                    label.setAttribute('for', field.id);
-                    label.innerHTML = `${field.name}${field.required ? ' *' : ''}`;
-                    
-                    let input;
-                    if (field.type === 'number') {
-                        input = document.createElement('input');
-                        input.type = 'number';
-                        input.placeholder = 'Inserisci un numero';
+                    if (field.type === 'checkbox') {
+                        // Create checkbox field
+                        const checkboxContainer = document.createElement('div');
+                        checkboxContainer.className = 'checkbox-container';
+                        
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.id = field.id;
+                        checkbox.name = field.id;
+                        checkbox.required = field.required;
+                        
+                        const label = document.createElement('label');
+                        label.setAttribute('for', field.id);
+                        label.className = 'checkbox-label';
+                        
+                        // Create checkbox text with privacy link if provided
+                        let checkboxText = field.checkboxText || field.name;
+                        if (field.privacyLink && checkboxText.includes('privacy')) {
+                            // Replace "privacy" text with a link
+                            checkboxText = checkboxText.replace(/privacy/i, `<a href="${field.privacyLink}" target="_blank" style="color: #007bff; text-decoration: underline;">privacy</a>`);
+                        }
+                        
+                        label.innerHTML = checkboxText + (field.required ? ' *' : '');
+                        
+                        checkboxContainer.appendChild(checkbox);
+                        checkboxContainer.appendChild(label);
+                        fieldGroup.appendChild(checkboxContainer);
                     } else {
-                        input = document.createElement('input');
-                        input.type = 'text';
-                        input.placeholder = `Inserisci ${field.name.toLowerCase()}`;
+                        // Create regular input field
+                        const label = document.createElement('label');
+                        label.setAttribute('for', field.id);
+                        label.innerHTML = `${field.name}${field.required ? ' *' : ''}`;
+                        
+                        let input;
+                        if (field.type === 'number') {
+                            input = document.createElement('input');
+                            input.type = 'number';
+                            input.placeholder = 'Inserisci un numero';
+                        } else {
+                            input = document.createElement('input');
+                            input.type = 'text';
+                            input.placeholder = `Inserisci ${field.name.toLowerCase()}`;
+                        }
+                        
+                        input.id = field.id;
+                        input.name = field.id;
+                        input.required = field.required;
+                        
+                        label.appendChild(input);
+                        fieldGroup.appendChild(label);
                     }
-                    
-                    input.id = field.id;
-                    input.name = field.id;
-                    input.required = field.required;
-                    
-                    label.appendChild(input);
-                    fieldGroup.appendChild(label);
                     
                     // Insert before submit button
                     form.insertBefore(fieldGroup, submitButton);

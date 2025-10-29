@@ -258,9 +258,11 @@
             background: var(--light-green);
             border: 2px solid var(--accent-green);
             border-radius: 12px;
-            padding: 1.5rem;
+            padding: 2rem;
             margin-bottom: 1rem;
             transition: all 0.3s ease;
+            overflow: visible;
+            min-height: 150px;
         }
 
         .field-item:hover {
@@ -302,18 +304,43 @@
             grid-template-columns: 1fr 1fr;
             gap: 1.5rem;
             margin-bottom: 1rem;
+            padding: 1.5rem;
+            background: var(--light-green);
+            border-radius: 8px;
+            min-height: 120px;
+        }
+
+        .checkbox-config {
+            background: var(--cream);
+            border: 2px solid var(--gold-accent);
+            margin-top: 1rem;
+        }
+
+        .checkbox-config .field-input label {
+            color: var(--primary-green);
+            font-weight: 600;
         }
 
         .field-input {
             display: flex;
             flex-direction: column;
+            padding: 1rem;
+            min-height: 120px;
+            justify-content: flex-start;
+            align-items: stretch;
         }
 
         .field-input label {
             font-weight: 600;
             color: var(--text-dark);
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
             font-size: 0.9rem;
+            line-height: 1.4;
+            padding: 0.75rem 0 0.25rem 0;
+            height: auto;
+            min-height: 2rem;
+            display: block;
+            width: 100%;
         }
 
         .field-input input,
@@ -329,6 +356,8 @@
             box-sizing: border-box;
             background: var(--white);
             color: var(--text-dark);
+            width: 100%;
+            margin-top: 0;
         }
 
         .field-input select {
@@ -413,7 +442,6 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            width: 100%;
             margin-top: 1.5rem;
             box-shadow: var(--shadow-light);
         }
@@ -536,6 +564,11 @@
                 <div style="font-size: 0.9rem; color: var(--dark-gray); margin-bottom: 20px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid var(--accent-color);">
                     <strong>Limite:</strong> Puoi creare al massimo 5 campi personalizzati per campagna. Questo garantisce performance ottimali e un'esperienza utente migliore.
                 </div>
+                <div style="font-size: 0.9rem; color: var(--primary-green); margin-bottom: 20px; padding: 15px; background: var(--light-green); border-radius: 8px; border-left: 4px solid var(--accent-green);">
+                    <strong>💡 Suggerimento per Checkbox Privacy:</strong><br>
+                    Per creare campi checkbox per il consenso privacy, seleziona "Checkbox" come tipo campo e inserisci il testo completo nel campo "Testo Checkbox". 
+                    Se includi la parola "privacy" nel testo e aggiungi un link nel campo "Link Privacy", il link sarà automaticamente cliccabile nel form.
+                </div>
                 <div id="customFieldsList">
                     <div class="no-fields">
                         Seleziona una campagna per gestire i campi personalizzati
@@ -610,7 +643,7 @@
                 renderCustomFields();
             } catch (error) {
                 console.error('Errore nel caricamento dei campi custom:', error);
-                showModal('Errore', 'Errore nel caricamento dei campi custom', 'error');
+                alert('Errore: Errore nel caricamento dei campi custom');
             }
         }
 
@@ -655,9 +688,22 @@
                             <select onchange="updateFieldType(${index}, this.value)">
                                 <option value="text" ${field.type === 'text' ? 'selected' : ''}>Testo</option>
                                 <option value="number" ${field.type === 'number' ? 'selected' : ''}>Numero</option>
+                                <option value="checkbox" ${field.type === 'checkbox' ? 'selected' : ''}>Checkbox</option>
                             </select>
                         </div>
                     </div>
+                    ${field.type === 'checkbox' ? `
+                    <div class="field-config checkbox-config">
+                        <div class="field-input">
+                            <label>Testo Checkbox</label>
+                            <input type="text" value="${field.checkboxText || ''}" placeholder="es. Ho letto l'Informativa privacy e voglio ricevere comunicazioni" onchange="updateCheckboxText(${index}, this.value)">
+                        </div>
+                        <div class="field-input">
+                            <label>Link Privacy (opzionale)</label>
+                            <input type="url" value="${field.privacyLink || ''}" placeholder="https://example.com/privacy" onchange="updatePrivacyLink(${index}, this.value)">
+                        </div>
+                    </div>
+                    ` : ''}
                     <div class="field-toggles">
                         <div class="toggle-group">
                             <span>Nascosto</span>
@@ -677,13 +723,13 @@
         // Aggiunge un nuovo campo custom
         function addCustomField() {
             if (!currentCampaignId) {
-                showModal('Errore', 'Seleziona prima una campagna', 'error');
+                alert('Errore: Seleziona prima una campagna');
                 return;
             }
 
             // Controlla il limite di 5 campi
             if (customFields.length >= 5) {
-                showModal('Limite Raggiunto', 'Puoi creare al massimo 5 campi custom per campagna', 'warning');
+                alert('Limite Raggiunto: Puoi creare al massimo 5 campi custom per campagna');
                 return;
             }
 
@@ -692,7 +738,9 @@
                 name: 'Nuovo Campo',
                 type: 'text',
                 visible: true,
-                required: false
+                required: false,
+                checkboxText: '',
+                privacyLink: ''
             };
 
             customFields.push(newField);
@@ -707,6 +755,28 @@
         // Aggiorna il tipo del campo
         function updateFieldType(index, value) {
             customFields[index].type = value;
+            
+            // Initialize checkbox-specific properties if switching to checkbox
+            if (value === 'checkbox') {
+                if (!customFields[index].checkboxText) {
+                    customFields[index].checkboxText = '';
+                }
+                if (!customFields[index].privacyLink) {
+                    customFields[index].privacyLink = '';
+                }
+            }
+            
+            renderCustomFields();
+        }
+
+        // Aggiorna il testo del checkbox
+        function updateCheckboxText(index, value) {
+            customFields[index].checkboxText = value;
+        }
+
+        // Aggiorna il link privacy
+        function updatePrivacyLink(index, value) {
+            customFields[index].privacyLink = value;
         }
 
         // Toggle delle proprietà del campo
@@ -738,12 +808,32 @@
         }
 
         // Salva i campi custom
-        async function saveCustomFields() {
+        function saveCustomFields() {
+            console.log('=== SAVE CUSTOM FIELDS FUNCTION CALLED ===');
+            console.log('Current campaign ID:', currentCampaignId);
+            console.log('Custom fields:', customFields);
+            
             if (!currentCampaignId) {
-                showModal('Errore', 'Seleziona prima una campagna', 'error');
+                console.log('No campaign selected, showing error alert');
+                alert('Errore: Seleziona prima una campagna');
                 return;
             }
 
+            console.log('Showing confirmation alert');
+            const confirmed = confirm('Sei sicuro di voler salvare la configurazione dei campi personalizzati?');
+            console.log('User confirmed:', confirmed);
+            
+            if (confirmed) {
+                confirmSave();
+            }
+        }
+
+        // Conferma il salvataggio
+        async function confirmSave() {
+            console.log('=== SAVE CUSTOM FIELDS START ===');
+            console.log('Current campaign ID:', currentCampaignId);
+            console.log('Custom fields to save:', customFields);
+            
             try {
                 const response = await fetch(`/api/admin/campaigns/${currentCampaignId}/custom-fields`, {
                     method: 'PUT',
@@ -753,19 +843,36 @@
                     body: JSON.stringify({ customFields })
                 });
 
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+
                 if (response.ok) {
-                    showModal('Successo', 'Campi custom salvati con successo!', 'success');
+                    console.log('Success! Showing success alert');
+                    alert('Successo: Campi custom salvati con successo!');
                 } else {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
                     throw new Error('Errore nel salvataggio');
                 }
             } catch (error) {
                 console.error('Errore nel salvataggio:', error);
-                showModal('Errore', 'Errore nel salvataggio dei campi custom', 'error');
+                alert('Errore: Errore nel salvataggio dei campi custom');
             }
+            console.log('=== SAVE CUSTOM FIELDS END ===');
         }
 
         // Mostra modal (aligned)
         function showModal(title, message, type = 'info', showCancel = false, onConfirm = null) {
+            console.log('=== SHOW MODAL CALLED ===');
+            console.log('Modal params:', { title, message, type, showCancel });
+            
+            // Remove any existing modal first
+            const existingModal = document.getElementById('modalOverlay');
+            if (existingModal) {
+                console.log('Removing existing modal');
+                existingModal.remove();
+            }
+            
             const html = `
                 <div class="modal-overlay" id="modalOverlay">
                     <div class="modal ${type}">
@@ -782,10 +889,38 @@
                         </div>
                     </div>
                 </div>`;
+            
+            console.log('Inserting modal HTML');
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(()=>document.getElementById('modalOverlay').classList.add('show'),10);
-            window.closeModal = () => { const m=document.getElementById('modalOverlay'); if(m){ m.classList.remove('show'); setTimeout(()=>m.remove(),300);} };
-            window.confirmModal = () => { if(onConfirm) onConfirm(); closeModal(); };
+            
+            // Force reflow and then show modal
+            const modal = document.getElementById('modalOverlay');
+            if (modal) {
+                console.log('Modal element found, adding show class');
+                // Force a reflow
+                modal.offsetHeight;
+                // Add show class
+                modal.classList.add('show');
+                console.log('Modal classes:', modal.className);
+                console.log('Modal computed style:', window.getComputedStyle(modal));
+            } else {
+                console.error('Modal element not found!');
+            }
+            
+            window.closeModal = () => { 
+                console.log('Closing modal');
+                const m = document.getElementById('modalOverlay'); 
+                if (m) { 
+                    m.classList.remove('show'); 
+                    setTimeout(() => m.remove(), 300);
+                } 
+            };
+            window.confirmModal = () => { 
+                console.log('Confirming modal');
+                if (onConfirm) onConfirm(); 
+                closeModal(); 
+            };
+            console.log('=== SHOW MODAL COMPLETED ===');
         }
 
         function getModalIcon(type){

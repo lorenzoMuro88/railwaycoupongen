@@ -159,10 +159,15 @@
             border-radius: 8px;
             margin-bottom: 1rem;
             background: var(--light-green);
+            min-height: 60px;
         }
         
         .field-info {
             flex: 1;
+            min-height: 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         
         .field-controls {
@@ -189,11 +194,14 @@
             font-weight: bold;
             color: var(--primary-green);
             margin-bottom: 0.25rem;
+            line-height: 1.4;
+            font-size: 1rem;
         }
         
         .field-description {
             color: var(--text-medium);
             font-size: 0.9rem;
+            line-height: 1.3;
         }
         
         .field-toggle {
@@ -569,6 +577,8 @@
                         showCancel: false
                     });
                 } else {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
                     throw new Error('Errore nel salvataggio');
                 }
             } catch (error) {
@@ -584,6 +594,12 @@
 
         // Modal system (aligned with Admin/Store)
         function showModal({ title, message, type = 'info', showCancel = false, onConfirm = null }) {
+            // Remove any existing modal first
+            const existingModal = document.getElementById('modalOverlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
             const html = `
                 <div class="modal-overlay" id="modalOverlay">
                     <div class="modal ${type}">
@@ -600,10 +616,29 @@
                         </div>
                     </div>
                 </div>`;
+            
             document.body.insertAdjacentHTML('beforeend', html);
-            setTimeout(()=>document.getElementById('modalOverlay').classList.add('show'),10);
-            window.closeModal = () => { const m=document.getElementById('modalOverlay'); if(m){ m.classList.remove('show'); setTimeout(()=>m.remove(),300);} };
-            window.confirmModal = () => { if(onConfirm) onConfirm(); closeModal(); };
+            
+            // Force reflow and then show modal
+            const modal = document.getElementById('modalOverlay');
+            if (modal) {
+                // Force a reflow
+                modal.offsetHeight;
+                // Add show class
+                modal.classList.add('show');
+            }
+            
+            window.closeModal = () => { 
+                const m = document.getElementById('modalOverlay'); 
+                if (m) { 
+                    m.classList.remove('show'); 
+                    setTimeout(() => m.remove(), 300);
+                } 
+            };
+            window.confirmModal = () => { 
+                if (onConfirm) onConfirm(); 
+                closeModal(); 
+            };
         }
 
         function getModalIcon(type){

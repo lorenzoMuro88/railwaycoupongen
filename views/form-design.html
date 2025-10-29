@@ -1306,10 +1306,14 @@
             // Add modal to body
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             
-            // Show modal with animation
-            setTimeout(() => {
-                document.getElementById('modalOverlay').classList.add('show');
-            }, 10);
+            // Force reflow and then show modal
+            const modal = document.getElementById('modalOverlay');
+            if (modal) {
+                // Force a reflow
+                modal.offsetHeight;
+                // Add show class
+                modal.classList.add('show');
+            }
             
             // Store callbacks
             window.modalCallbacks = { onConfirm, onCancel };

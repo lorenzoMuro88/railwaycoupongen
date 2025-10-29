@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# FLYCouponGen Deploy Script for Railway
+# CouponGen Deploy Script for Railway
 # Unified deployment script for production and staging environments
 
 # Colori per output
@@ -29,11 +29,11 @@ fi
 
 # Configurazione ambiente
 if [[ "$ENVIRONMENT" == "staging" ]]; then
-    PROJECT_NAME="flycoupongen-staging"
-    URL="https://flycoupongen-staging-production.up.railway.app"
+    PROJECT_NAME="coupongen-staging"
+    URL="https://coupongen-staging-production.up.railway.app"
 else
-    PROJECT_NAME="flycoupongen"
-    URL="https://flycoupongen-production.up.railway.app"
+    PROJECT_NAME="coupongen"
+    URL="https://coupongen-production.up.railway.app"
 fi
 
 # Verifica prerequisiti
@@ -144,7 +144,7 @@ verify_deployment() {
 
 # Main execution
 main() {
-    log_info "🚀 Deploy FLYCouponGen su Railway - Ambiente: $ENVIRONMENT"
+    log_info "🚀 Deploy CouponGen su Railway - Ambiente: $ENVIRONMENT"
     log_info "Branch: $BRANCH"
     log_info "URL finale: $URL"
     

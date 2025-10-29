@@ -175,17 +175,24 @@
 
         function themeColors(){
             return {
-                primary: getCss('--primary-green') || '#1f8a70',
-                secondary: getCss('--light-green') || '#21bf73',
-                info: '#17a2b8',
-                warning: '#ffc107',
-                danger: '#dc3545',
-                purple: '#6f42c1',
-                blue: '#007bff',
-                blueDark: '#0056b3',
-                green: '#28a745',
-                greenDark: '#1e7e34',
-                border: getCss('--border-light') || '#e5e7eb'
+                primary: '#51cf66',
+                secondary: '#40c057',
+                info: '#74c0fc',
+                warning: '#ffd43b',
+                danger: '#ff6b6b',
+                purple: '#b197fc',
+                blue: '#74c0fc',
+                blueDark: '#339af0',
+                green: '#51cf66',
+                greenDark: '#40c057',
+                orange: '#ffa94d',
+                pink: '#ff8cc8',
+                teal: '#63e6be',
+                indigo: '#91a7ff',
+                border: '#e9ecef',
+                background: '#f8f9fa',
+                text: '#495057',
+                textLight: '#6c757d'
             };
         }
 
@@ -256,18 +263,44 @@
                     labels: ['Bruciati', 'Non bruciati'],
                     datasets: [{
                         data: [summaryData.totalCouponsRedeemed, summaryData.totalCouponsIssued - summaryData.totalCouponsRedeemed],
-                        backgroundColor: [colors.green, colors.warning],
-                        borderWidth: 2,
-                        borderColor: '#fff'
+                        backgroundColor: [colors.green, colors.orange],
+                        borderWidth: 0,
+                        hoverBorderWidth: 3,
+                        hoverBorderColor: '#fff'
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    cutout: '60%',
                     plugins: {
                         legend: {
-                            position: 'bottom'
+                            position: 'bottom',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20,
+                                font: {
+                                    size: 13,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            cornerRadius: 8,
+                            displayColors: true,
+                            padding: 12
                         }
+                    },
+                    animation: {
+                        animateRotate: true,
+                        animateScale: true,
+                        duration: 1000,
+                        easing: 'easeOutQuart'
                     }
                 }
             });
@@ -291,29 +324,76 @@
                     datasets: [{
                         label: 'Emessi',
                         data: campaignsData.map(c => c.issued),
-                        backgroundColor: colors.blue,
-                        borderColor: colors.blueDark,
-                        borderWidth: 1
+                        backgroundColor: colors.blue + '80',
+                        borderColor: colors.blue,
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false
                     }, {
                         label: 'Bruciati',
                         data: campaignsData.map(c => c.redeemed),
-                        backgroundColor: colors.green,
-                        borderColor: colors.greenDark,
-                        borderWidth: 1
+                        backgroundColor: colors.green + '80',
+                        borderColor: colors.green,
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
+                        },
                         y: {
-                            beginAtZero: true
+                            beginAtZero: true,
+                            grid: {
+                                color: colors.border,
+                                drawBorder: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
                         }
                     },
                     plugins: {
                         legend: {
-                            position: 'top'
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20,
+                                font: {
+                                    size: 13,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            cornerRadius: 8,
+                            displayColors: true,
+                            padding: 12
                         }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeOutQuart'
                     }
                 }
             });
@@ -337,24 +417,47 @@
                     datasets: [{
                         label: 'Margine Lordo',
                         data: campaignsData.map(c => c.estGrossMarginRedeemed),
-                        backgroundColor: colors.info,
-                        borderColor: '#138496',
-                        borderWidth: 1
+                        backgroundColor: colors.info + '80',
+                        borderColor: colors.info,
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false
                     }, {
                         label: 'Margine Netto',
                         data: campaignsData.map(c => c.estNetMarginAfterDiscount),
-                        backgroundColor: colors.purple,
-                        borderColor: '#5a32a3',
-                        borderWidth: 1
+                        backgroundColor: colors.purple + '80',
+                        borderColor: colors.purple,
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
+                        },
                         y: {
                             beginAtZero: true,
+                            grid: {
+                                color: colors.border,
+                                drawBorder: false
+                            },
                             ticks: {
+                                font: {
+                                    size: 12,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                },
                                 callback: function(value) {
                                     return euro(value);
                                 }
@@ -363,8 +466,35 @@
                     },
                     plugins: {
                         legend: {
-                            position: 'top'
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20,
+                                font: {
+                                    size: 13,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            cornerRadius: 8,
+                            displayColors: true,
+                            padding: 12,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + euro(context.parsed.y);
+                                }
+                            }
                         }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeOutQuart'
                     }
                 }
             });
@@ -388,24 +518,47 @@
                     datasets: [{
                         label: 'Sconti Applicati',
                         data: campaignsData.map(c => c.estDiscountRedeemed),
-                        backgroundColor: colors.danger,
-                        borderColor: '#c82333',
-                        borderWidth: 1
+                        backgroundColor: colors.danger + '80',
+                        borderColor: colors.danger,
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false
                     }, {
                         label: 'Margine Netto',
                         data: campaignsData.map(c => c.estNetMarginAfterDiscount),
-                        backgroundColor: colors.green,
-                        borderColor: colors.greenDark,
-                        borderWidth: 1
+                        backgroundColor: colors.green + '80',
+                        borderColor: colors.green,
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        borderSkipped: false
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
+                        },
                         y: {
                             beginAtZero: true,
+                            grid: {
+                                color: colors.border,
+                                drawBorder: false
+                            },
                             ticks: {
+                                font: {
+                                    size: 12,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                },
                                 callback: function(value) {
                                     return euro(value);
                                 }
@@ -414,8 +567,35 @@
                     },
                     plugins: {
                         legend: {
-                            position: 'top'
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20,
+                                font: {
+                                    size: 13,
+                                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            cornerRadius: 8,
+                            displayColors: true,
+                            padding: 12,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + euro(context.parsed.y);
+                                }
+                            }
                         }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeOutQuart'
                     }
                 }
             });
@@ -499,28 +679,52 @@
                                 data: data.map(d => d.issued),
                                 borderColor: colors.blue,
                                 backgroundColor: colors.blue + '20',
+                                borderWidth: 3,
                                 tension: 0.4,
+                                pointRadius: 6,
+                                pointHoverRadius: 8,
+                                pointBackgroundColor: colors.blue,
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
                                 yAxisID: 'y'
                             }, {
                                 label: 'Coupon Bruciati',
                                 data: data.map(d => d.redeemed),
                                 borderColor: colors.green,
                                 backgroundColor: colors.green + '20',
+                                borderWidth: 3,
                                 tension: 0.4,
+                                pointRadius: 6,
+                                pointHoverRadius: 8,
+                                pointBackgroundColor: colors.green,
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
                                 yAxisID: 'y'
                             }, {
                                 label: 'Sconti Applicati (€)',
                                 data: data.map(d => d.discount_applied || 0),
                                 borderColor: colors.danger,
                                 backgroundColor: colors.danger + '20',
+                                borderWidth: 3,
                                 tension: 0.4,
+                                pointRadius: 6,
+                                pointHoverRadius: 8,
+                                pointBackgroundColor: colors.danger,
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
                                 yAxisID: 'y1'
                             }, {
                                 label: 'Margine Lordo (€)',
                                 data: data.map(d => d.gross_margin || 0),
                                 borderColor: colors.info,
                                 backgroundColor: colors.info + '20',
+                                borderWidth: 3,
                                 tension: 0.4,
+                                pointRadius: 6,
+                                pointHoverRadius: 8,
+                                pointBackgroundColor: colors.info,
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
                                 yAxisID: 'y1'
                             }]
                         },
@@ -534,37 +738,100 @@
                             scales: {
                                 x: {
                                     display: true,
+                                    grid: {
+                                        color: colors.border,
+                                        drawBorder: false
+                                    },
+                                    ticks: {
+                                        font: {
+                                            size: 12,
+                                            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                        }
+                                    },
                                     title: {
                                         display: true,
-                                        text: groupBy === 'week' ? 'Settimana' : 'Data'
+                                        text: groupBy === 'week' ? 'Settimana' : 'Data',
+                                        font: {
+                                            size: 13,
+                                            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                        }
                                     }
                                 },
                                 y: {
                                     type: 'linear',
                                     display: true,
                                     position: 'left',
+                                    grid: {
+                                        color: colors.border,
+                                        drawBorder: false
+                                    },
+                                    ticks: {
+                                        font: {
+                                            size: 12,
+                                            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                        }
+                                    },
                                     title: {
                                         display: true,
-                                        text: 'Numero Coupon'
+                                        text: 'Numero Coupon',
+                                        font: {
+                                            size: 13,
+                                            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                        }
                                     }
                                 },
                                 y1: {
                                     type: 'linear',
                                     display: true,
                                     position: 'right',
-                                    title: {
-                                        display: true,
-                                        text: 'Valore (€)'
-                                    },
                                     grid: {
                                         drawOnChartArea: false,
                                     },
                                     ticks: {
+                                        font: {
+                                            size: 12,
+                                            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                        },
                                         callback: function(value) {
                                             return euro(value);
                                         }
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: 'Valore (€)',
+                                        font: {
+                                            size: 13,
+                                            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                        }
                                     }
                                 }
+                            },
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: {
+                                        usePointStyle: true,
+                                        padding: 20,
+                                        font: {
+                                            size: 13,
+                                            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                                        }
+                                    }
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(0,0,0,0.8)',
+                                    titleColor: '#fff',
+                                    bodyColor: '#fff',
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    borderWidth: 1,
+                                    cornerRadius: 8,
+                                    displayColors: true,
+                                    padding: 12
+                                }
+                            },
+                            animation: {
+                                duration: 1000,
+                                easing: 'easeOutQuart'
                             }
                         }
                     });

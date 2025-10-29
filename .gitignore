@@ -13,6 +13,8 @@ yarn-error.log*
 
 # Database files (keep directory but ignore database files)
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/*.sqlite
 data/*.sqlite3
 !data/.gitkeep

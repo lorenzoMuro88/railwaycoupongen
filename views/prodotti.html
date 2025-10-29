@@ -258,6 +258,88 @@
                 flex-direction: column;
             }
         }
+
+        /* Actions three-dots + sliding bar (aligned with admin) */
+        .actions-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .actions-btn {
+            background: var(--white);
+            color: var(--text-dark);
+            border: 2px solid var(--border-light);
+            padding: 0.4rem;
+            border-radius: 6px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+        }
+        .actions-btn::after {
+            content: '⋮';
+            font-size: 1.2rem;
+            font-weight: bold;
+            line-height: 1;
+        }
+        .actions-btn:hover {
+            background: var(--light-green);
+            border-color: var(--accent-green);
+            color: var(--primary-green);
+        }
+        .actions-bar {
+            position: absolute;
+            top: 50%;
+            right: 40px;
+            transform: translateY(-50%) translateX(8px);
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.25rem;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 160ms ease, transform 160ms ease;
+        }
+        .actions-bar.show {
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+            pointer-events: auto;
+        }
+        .actions-bar button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border: none;
+            background: transparent;
+            color: var(--text-dark);
+            border-radius: 10px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 120ms ease, color 120ms ease;
+        }
+        .actions-bar button:hover {
+            background: rgba(0,0,0,0.06);
+            color: var(--primary-green);
+        }
+        .actions-bar .delete-action:hover {
+            background: rgba(231, 76, 60, 0.08);
+            color: var(--error-red);
+        }
+        .actions-bar button svg {
+            width: 16px; height: 16px;
+            flex-shrink: 0;
+            opacity: 0.8;
+        }
     </style>
     
 </head>
@@ -450,9 +532,27 @@
                     </td>
                     <td>${new Date(product.created_at).toLocaleDateString('it-IT')}</td>
                     <td>
-                        <div class="product-actions">
-                            <button class="edit-btn" onclick="openEditModal(${product.id})">Modifica</button>
-                            <button class="delete-btn" onclick="deleteProduct(${product.id})">Elimina</button>
+                        <div class="actions-dropdown">
+                            <button class="actions-btn" onclick="toggleProductActionsBar(${product.id})" title="Azioni"></button>
+                            <div class="actions-bar" id="product-actions-${product.id}">
+                                <button onclick="openEditModal(${product.id})">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M12 20h9"/>
+                                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                                    </svg>
+                                    Modifica
+                                </button>
+                                <button class="delete-action" onclick="deleteProduct(${product.id})">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M3 6h18"/>
+                                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                        <line x1="10" y1="11" x2="10" y2="17"/>
+                                        <line x1="14" y1="11" x2="14" y2="17"/>
+                                    </svg>
+                                    Elimina
+                                </button>
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -471,6 +571,9 @@
             document.getElementById('editProductMargin').value = product.margin_price;
             
             document.getElementById('editModal').style.display = 'flex';
+            // close any open action bars
+            const allBars = document.querySelectorAll('.actions-bar');
+            allBars.forEach(bar => bar.classList.remove('show'));
         }
         
         // Close edit modal
@@ -558,10 +661,30 @@
             }
         }
         
+        // Toggle product actions bar
+        function toggleProductActionsBar(productId) {
+            const allBars = document.querySelectorAll('.actions-bar');
+            allBars.forEach(bar => {
+                if (bar.id !== `product-actions-${productId}`) {
+                    bar.classList.remove('show');
+                }
+            });
+            const current = document.getElementById(`product-actions-${productId}`);
+            if (current) current.classList.toggle('show');
+        }
+        
         // Close modal on overlay click
         document.addEventListener('click', function(e) {
             if (e.target.classList.contains('modal-overlay')) {
                 closeEditModal();
+            }
+        });
+        
+        // Close action bars when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.actions-dropdown')) {
+                const allBars = document.querySelectorAll('.actions-bar');
+                allBars.forEach(bar => bar.classList.remove('show'));
             }
         });
         

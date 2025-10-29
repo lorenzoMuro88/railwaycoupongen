@@ -384,6 +384,141 @@
             align-items: center;
         }
         
+        .expired {
+            opacity: 0.7;
+            background-color: rgba(231, 76, 60, 0.05);
+        }
+        
+        .expired td {
+            color: var(--text-light);
+        }
+        
+        /* Actions Dropdown Styles */
+        .actions-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .actions-btn {
+            background: var(--white);
+            color: var(--text-dark);
+            border: 2px solid var(--border-light);
+            padding: 0.4rem;
+            border-radius: 6px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+        }
+        
+        .actions-btn::after {
+            content: '⋮';
+            font-size: 1.2rem;
+            font-weight: bold;
+            line-height: 1;
+        }
+        
+        .actions-btn:hover {
+            background: var(--light-green);
+            border-color: var(--accent-green);
+            color: var(--primary-green);
+        }
+        
+        .actions-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            background: rgba(255, 255, 255, 0.72);
+            -webkit-backdrop-filter: saturate(180%) blur(14px);
+            backdrop-filter: saturate(180%) blur(14px);
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+            z-index: 1000;
+            min-width: 180px;
+            display: block;
+            opacity: 0;
+            transform: translateY(-6px) scale(0.98);
+            pointer-events: none;
+            transition: opacity 160ms ease, transform 160ms ease;
+            overflow: hidden;
+        }
+        
+        .actions-menu::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            right: 12px;
+            width: 12px;
+            height: 12px;
+            background: inherit;
+            border-left: 1px solid rgba(0,0,0,0.06);
+            border-top: 1px solid rgba(0,0,0,0.06);
+            transform: rotate(45deg);
+            -webkit-backdrop-filter: inherit;
+            backdrop-filter: inherit;
+        }
+        
+        .actions-menu.show {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+        
+        .actions-menu button {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: none;
+            background: transparent;
+            color: var(--text-dark);
+            font-size: 0.92rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 120ms ease, color 120ms ease;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-align: left;
+        }
+        
+        .actions-menu button svg {
+            flex-shrink: 0;
+            opacity: 0.8;
+        }
+        
+        .actions-menu button + button {
+            border-top: 1px solid rgba(0,0,0,0.06);
+        }
+        
+        .actions-menu button:hover {
+            background: rgba(0,0,0,0.06);
+            color: var(--primary-green);
+        }
+        
+        .actions-menu button:first-child {
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+        }
+        
+        .actions-menu button:last-child {
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+        
+        .actions-menu button.delete-action {
+            color: var(--error-red);
+        }
+        
+        .actions-menu button.delete-action:hover {
+            background: rgba(231, 76, 60, 0.08);
+            color: var(--error-red);
+        }
+        
         .campaign-count {
             background: var(--primary-green);
             color: white;
@@ -611,6 +746,56 @@
     }
         
     
+        /* Sliding Actions Bar */
+        .actions-bar {
+            position: absolute;
+            top: 50%;
+            right: 40px; /* sits left of the three-dots button */
+            transform: translateY(-50%) translateX(8px);
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.25rem;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 160ms ease, transform 160ms ease;
+        }
+        .actions-bar.show {
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+            pointer-events: auto;
+        }
+        .actions-bar button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border: none;
+            background: transparent;
+            color: var(--text-dark);
+            border-radius: 10px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 120ms ease, color 120ms ease;
+        }
+        .actions-bar button:hover {
+            background: rgba(0,0,0,0.06);
+            color: var(--primary-green);
+        }
+        .actions-bar .delete-action:hover {
+            background: rgba(231, 76, 60, 0.08);
+            color: var(--error-red);
+        }
+        .actions-bar button svg {
+            width: 16px; height: 16px;
+            flex-shrink: 0;
+            opacity: 0.8;
+        }
     </style>
     </head>
 <body>
@@ -670,6 +855,14 @@
                         </label>
                     </div>
                     <div class="form-row">
+                        <label>Data limite di utilizzo (opzionale)
+                            <input type="datetime-local" id="campaignExpiryDate" placeholder="Seleziona data e ora di scadenza" />
+                            <small style="color: var(--text-light); font-size: 0.85rem; margin-top: 0.25rem; display: block;">
+                                La campagna scadrà automaticamente alla data selezionata
+                            </small>
+                        </label>
+                    </div>
+                    <div class="form-row">
                         <label>Prodotti associati (opzionale)
                             <div class="products-selection">
                                 <div class="products-modal-trigger" onclick="openProductsModal()">
@@ -701,6 +894,7 @@
                             <th>Descrizione</th>
                             <th>Tipo</th>
                             <th>Valore</th>
+                            <th>Scadenza</th>
                             <th>Stato</th>
                             <th>Azioni</th>
                         </tr>
@@ -1252,6 +1446,10 @@
                 return;
             }
             
+            // Chiudi il menu
+            const menu = document.getElementById(`actions-${campaignId}`);
+            if (menu) menu.classList.remove('show');
+            
             const baseUrl = window.location.origin;
             const formUrl = `${baseUrl}/?campaign=${campaignCode}`;
             
@@ -1301,6 +1499,7 @@
             const name = document.getElementById('campaignName').value;
             const description = document.getElementById('campaignDescription').value;
             const discountType = currentDiscountType;
+            const expiryDate = document.getElementById('campaignExpiryDate').value;
             
             // Ensure the input is visible and accessible
             const discountValueElement = document.getElementById('discountValue');
@@ -1329,7 +1528,7 @@
                 const r = await fetch('/api/admin/campaigns', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description, discount_type: discountType, discount_value: discountValue })
+                    body: JSON.stringify({ name, description, discount_type: discountType, discount_value: discountValue, expiry_date: expiryDate || null })
                 });
                 if(!r.ok){
                     const error = await r.json();
@@ -1382,12 +1581,12 @@
                 const r = await fetch('/api/admin/campaigns');
                 const tbody = document.getElementById('campaignsTable');
                 if(!r.ok){
-                    tbody.innerHTML = '<tr><td colspan="6">Errore nel caricamento</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8">Errore nel caricamento</td></tr>';
                     return;
                 }
                 const campaigns = await r.json();
                 if(campaigns.length === 0){
-                    tbody.innerHTML = '<tr><td colspan="7">Nessuna campagna</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8">Nessuna campagna</td></tr>';
                     return;
                 }
                 // Count active campaigns
@@ -1397,35 +1596,95 @@
                     countElement.textContent = `(${activeCount} attive)`;
                 }
                 
-                tbody.innerHTML = campaigns.map(camp => `
-                    <tr>
+                tbody.innerHTML = campaigns.map(camp => {
+                    const expiryDate = camp.expiry_date ? new Date(camp.expiry_date).toLocaleString('it-IT') : '-';
+                    const isExpired = camp.expiry_date && new Date(camp.expiry_date) < new Date();
+                    const expiryClass = isExpired ? 'expired' : '';
+                    
+                    return `
+                    <tr class="${expiryClass}">
                         <td><strong>${camp.name}</strong></td>
                         <td><code style="background: var(--light-green); padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.8rem;">${camp.campaign_code || 'N/A'}</code></td>
                         <td>${camp.description || '-'}</td>
-                        <td>${camp.discount_type === 'percent' ? 'Percentuale' : 'Testo'}</td>
+                        <td>${camp.discount_type === 'percent' ? 'Percentuale' : camp.discount_type === 'fixed' ? 'Fisso' : 'Testo'}</td>
                         <td><strong>${camp.discount_value}</strong></td>
+                        <td>${expiryDate} ${isExpired ? '<span style="color: var(--error-red); font-size: 0.8rem;">(SCADUTA)</span>' : ''}</td>
                         <td>${camp.is_active ? '<span class="status-active">ATTIVA</span>' : '<span style="color: var(--text-light);">Inattiva</span>'}</td>
                         <td>
-                            <div class="campaign-actions">
-                                ${camp.is_active ? 
-                                    `<button class="deactivate-btn" onclick="deactivateCampaign(${camp.id})">Disattiva</button>` : 
-                                    `<button class="activate-btn" onclick="activateCampaign(${camp.id})">Attiva</button>`
-                                }
-                                <button class="link-btn" onclick="generateFormLink(${camp.id}, '${camp.name}', '${camp.campaign_code || ''}')" title="Genera link form">Link</button>
-                                <button class="delete-btn" onclick="deleteCampaign(${camp.id})">Elimina</button>
+                            <div class="actions-dropdown">
+                                <button class="actions-btn" onclick="toggleActionsMenu(${camp.id})" title="Azioni">
+                                </button>
+                                <div class="actions-bar" id="actions-${camp.id}">
+                                    <button onclick="generateFormLink(${camp.id}, '${camp.name}', '${camp.campaign_code || ''}')">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                        </svg>
+                                        Link
+                                    </button>
+                                    <button onclick="${camp.is_active ? 'deactivateCampaign' : 'activateCampaign'}(${camp.id})">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M9 12l2 2 4-4"/>
+                                        </svg>
+                                        ${camp.is_active ? 'Disattiva' : 'Attiva'}
+                                    </button>
+                                    <button class="delete-action" onclick="deleteCampaign(${camp.id})">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M3 6h18"/>
+                                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                            <line x1="10" y1="11" x2="10" y2="17"/>
+                                            <line x1="14" y1="11" x2="14" y2="17"/>
+                                        </svg>
+                                        Elimina
+                                    </button>
+                                </div>
                             </div>
                         </td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
             } catch(e) {
-                document.getElementById('campaignsTable').innerHTML = '<tr><td colspan="7">Errore nel caricamento</td></tr>';
+                document.getElementById('campaignsTable').innerHTML = '<tr><td colspan="8">Errore nel caricamento</td></tr>';
             }
         }
+        
+        // Toggle actions menu
+        function toggleActionsMenu(campaignId) {
+            // Chiudi tutti gli altri menu/barre aperte
+            const allMenus = document.querySelectorAll('.actions-menu, .actions-bar');
+            allMenus.forEach(menu => {
+                if (menu.id !== `actions-${campaignId}`) {
+                    menu.classList.remove('show');
+                }
+            });
+            
+            // Toggle della barra corrente
+            const currentMenu = document.getElementById(`actions-${campaignId}`);
+            if (currentMenu) {
+                currentMenu.classList.toggle('show');
+            }
+        }
+        
+        // Chiudi tutti i menu/barre quando si clicca fuori
+        document.addEventListener('click', function(event) {
+            if (!event.target.closest('.actions-dropdown')) {
+                const allMenus = document.querySelectorAll('.actions-menu, .actions-bar');
+                allMenus.forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
         
         async function activateCampaign(id){
             try {
                 const r = await fetch(`/api/admin/campaigns/${id}/activate`, { method: 'PUT' });
                 if(!r.ok) throw new Error();
+                
+                // Chiudi il menu
+                const menu = document.getElementById(`actions-${id}`);
+                if (menu) menu.classList.remove('show');
+                
                 showModal({
                     title: 'Successo',
                     message: 'La campagna è stata attivata con successo! Ora puoi avere più campagne attive contemporaneamente.',
@@ -1453,6 +1712,11 @@
                     try {
                         const r = await fetch(`/api/admin/campaigns/${id}/deactivate`, { method: 'PUT' });
                         if(!r.ok) throw new Error();
+                        
+                        // Chiudi il menu
+                        const menu = document.getElementById(`actions-${id}`);
+                        if (menu) menu.classList.remove('show');
+                        
                         showModal({
                             title: 'Successo',
                             message: 'La campagna è stata disattivata con successo!',

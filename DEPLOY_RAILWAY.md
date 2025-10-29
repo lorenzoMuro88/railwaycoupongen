@@ -1,4 +1,4 @@
-# Deploy FLYCouponGen su Railway
+# Deploy CouponGen su Railway
 
 ## Panoramica
 Deploy dell'applicazione multi-tenant CouponGen su Railway con database PostgreSQL incluso, SSL automatico e gestione file uploads.
@@ -40,7 +40,7 @@ railway login
 1. Vai su [railway.app](https://railway.app)
 2. Clicca "New Project"
 3. Seleziona "Deploy from GitHub repo"
-4. Scegli il repository FLYCouponGen
+4. Scegli il repository CouponGen
 5. Railway rileverà automaticamente Node.js e farà il deploy
 
 ### 4) Deploy Manuale (Script)
