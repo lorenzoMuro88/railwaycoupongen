@@ -1,23 +1,21 @@
 # CouponGen Runbook
 
 ## Environments
-- Production: single Droplet (Node app + Redis via docker-compose) behind Nginx
-- Staging: mirror of production with separate `.env`
+- Production: Railway service (Node app) with persistent volume for data/uploads
+- Staging: Railway service separato con `.env` dedicato
 
-## Deploy (Docker Compose)
-1. Copy repo and `.env` (from `env.example`)
-2. Set `SESSION_SECRET`, `DEFAULT_TENANT_SLUG`, `MAIL_*`, `ENFORCE_TENANT_PREFIX=true`
-3. `docker compose up -d --build`
-4. Configure Nginx with `nginx.conf.example` and TLS (Let’s Encrypt)
-5. Verify `/healthz` returns `{ ok: true }`
+## Deploy (Railway)
+1. Collega il repo a Railway o usa `railway up`
+2. Imposta variabili: `SESSION_SECRET`, `DEFAULT_TENANT_SLUG`, `MAIL_*`, `ENFORCE_TENANT_PREFIX=true`
+3. Verifica `/healthz` restituisce `{ ok: true }`
 
 ## Migrations
 - On app start, schema is migrated idempotently via `schema_migrations`
 - Zero-downtime: migrations are additive; data backfill runs automatically
 
 ## Sessions
-- In production, sessions use Redis (`REDIS_URL`)
-- Cookie flags: `secure` (when behind HTTPS), `httpOnly`, `sameSite=lax`
+- Su Railway, Redis è OPZIONALE. Usalo se vuoi persistenza sessioni tra deploy o scaling multi-instance (`REDIS_URL`).
+- Cookie flags: `secure` (dietro HTTPS), `httpOnly`, `sameSite=lax`
 
 ## Backups (SQLite)
 - Files to back up: `data/coupons.db`

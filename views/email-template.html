@@ -34,6 +34,16 @@
         .tool-btn:hover { background: var(--light-green); }
         textarea.text-block { width: 100%; min-height: 70px; border: 2px solid var(--border-light); border-radius: 8px; padding: .6rem .8rem; }
 
+        /* Font alignment with project defaults */
+        body, input, textarea, button { font-family: var(--font-family, Segoe UI, Arial, sans-serif); }
+        .sun-editor, .se-toolbar, .se-resizing-bar, .se-container, .se-wrapper { 
+            font-family: inherit; 
+        }
+        input[type="text"], input[type="color"], input[type="email"], textarea.text-block { 
+            font-family: inherit; 
+            font-size: 1rem; 
+        }
+
         /* Disabled buttons visual state */
         .btn[disabled], .refresh-btn[disabled] {
             opacity: .6;
@@ -47,6 +57,24 @@
             border: none;
         }
 
+        /* Align action buttons with project style */
+        .refresh-btn {
+            background: var(--gradient-primary);
+            color: var(--white);
+            border: none;
+            padding: 0.9rem 1.8rem;
+            border-radius: 10px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            box-shadow: 0 6px 20px rgba(45, 90, 61, 0.3);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .refresh-btn:hover { box-shadow: 0 10px 28px rgba(45, 90, 61, 0.35); }
+        .refresh-btn.gold-btn { background: var(--gradient-gold); color: var(--text-dark); box-shadow: 0 6px 20px rgba(244, 208, 63, 0.3); }
+        .refresh-btn.gold-btn:hover { box-shadow: 0 10px 28px rgba(244, 208, 63, 0.35); }
+
         /* Accordion styles (coerenti con pagina form-setup) */
         .setup-section { background: transparent; border-radius: 8px; margin-bottom: .8rem; border: 1px solid var(--border-light); }
         .section-title { font-size: 1rem; font-weight: 600; color: var(--primary-green); padding: .8rem 1rem; display:flex; align-items:center; justify-content:space-between; cursor:pointer; background: var(--light-green); border-radius: 8px; user-select:none; }
@@ -56,6 +84,11 @@
         .section-title.active .dropdown-arrow { transform: rotate(180deg); }
         .section-content { display:none; padding: 1rem; }
         .section-content.show { display:block; }
+        
+        /* Color inputs with preview swatch */
+        .color-inline { display:flex; align-items:center; gap:.6rem; }
+        .color-swatch { width: 42px; height: 28px; border: 2px solid var(--border-light); border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.04) inset; }
+        input[type="color"] { width: 48px; height: 32px; padding: 0; border: 2px solid var(--border-light); border-radius: 6px; background: var(--white); }
         
     </style>
 </head>
@@ -122,7 +155,7 @@
                             <button type="button" id="saveSenderBtn" class="refresh-btn" onclick="saveEmailSenderName()">
                                 <span class="btn-text">Salva Configurazione</span>
                             </button>
-                            <button type="button" class="refresh-btn" onclick="testEmailFromName()" style="background: var(--gradient-gold);">
+                            <button type="button" class="refresh-btn gold-btn" onclick="testEmailFromName()">
                                 <span class="btn-text">Test Email</span>
                             </button>
                         </div>
@@ -141,31 +174,49 @@
                         <div class="row-2">
                             <div class="form-group">
                                 <label>Colore primario</label>
-                                <input type="color" id="primaryColor" value="#2d5a3d" />
+                                <div class="color-inline">
+                                    <input type="color" id="primaryColor" value="#2d5a3d" />
+                                    <span id="swatch-primaryColor" class="color-swatch"></span>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>Colore secondario</label>
-                                <input type="color" id="accentColor" value="#4a7c59" />
+                                <div class="color-inline">
+                                    <input type="color" id="accentColor" value="#4a7c59" />
+                                    <span id="swatch-accentColor" class="color-swatch"></span>
+                                </div>
                             </div>
                         </div>
                         <div class="row-2">
                             <div class="form-group">
                                 <label>Colore sfondo</label>
-                                <input type="color" id="backgroundColor" value="#faf8f3" />
+                                <div class="color-inline">
+                                    <input type="color" id="backgroundColor" value="#faf8f3" />
+                                    <span id="swatch-backgroundColor" class="color-swatch"></span>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>Colore testo</label>
-                                <input type="color" id="textColor" value="#2c3e50" />
+                                <div class="color-inline">
+                                    <input type="color" id="textColor" value="#2c3e50" />
+                                    <span id="swatch-textColor" class="color-swatch"></span>
+                                </div>
                             </div>
                         </div>
                         <div class="row-2">
                             <div class="form-group">
                                 <label>Colore bottone</label>
-                                <input type="color" id="buttonColor" value="#2d5a3d" />
+                                <div class="color-inline">
+                                    <input type="color" id="buttonColor" value="#2d5a3d" />
+                                    <span id="swatch-buttonColor" class="color-swatch"></span>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>Colore testo bottone</label>
-                                <input type="color" id="buttonTextColor" value="#ffffff" />
+                                <div class="color-inline">
+                                    <input type="color" id="buttonTextColor" value="#ffffff" />
+                                    <span id="swatch-buttonTextColor" class="color-swatch"></span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -291,7 +342,7 @@
             const tmpDiv = document.createElement('div'); tmpDiv.innerHTML = rawGreeting;
             const greeting = (tmpDiv.textContent || tmpDiv.innerText || 'Ciao').replace(/\s+/g, ' ').trim();
             const introText = (window.sunEditors?.intro?.getContents() || document.getElementById('introText').value || 'Ecco il tuo coupon personale');
-            const mechanicsText = (document.getElementById('mechanicsText').value || 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.');
+            const mechanicsText = (window.sunEditors?.mechanics?.getContents() || document.getElementById('mechanicsText').value || 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.');
             const footerText = (window.sunEditors?.footer?.getContents() || document.getElementById('footerText').value || 'Grazie per averci scelto');
 
             // Email HTML responsive semplice, con tabelle e stili inline
@@ -399,7 +450,8 @@
             else document.getElementById('introText').value = 'Ecco il tuo coupon personale';
             if (window.sunEditors?.footer) window.sunEditors.footer.setContents('Grazie per averci scelto');
             else document.getElementById('footerText').value = 'Grazie per averci scelto';
-            document.getElementById('mechanicsText').value = 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.';
+            if (window.sunEditors?.mechanics) window.sunEditors.mechanics.setContents('Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.');
+            else document.getElementById('mechanicsText').value = 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.';
 
             // disabilita i piccoli salva
             ['saveGreeting','saveIntro','saveFooter','saveMechanics'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = true; });
@@ -420,6 +472,7 @@
             window.sunEditors.intro = SUNEDITOR.create(document.getElementById('introText'), common);
             window.sunEditors.footer = SUNEDITOR.create(document.getElementById('footerText'), common);
             window.sunEditors.greeting = SUNEDITOR.create(document.getElementById('greeting'), common);
+            window.sunEditors.mechanics = SUNEDITOR.create(document.getElementById('mechanicsText'), common);
             // Prima render dopo init
             setTimeout(buildAndPreview, 100);
 
@@ -427,7 +480,8 @@
             const map = [
                 { ed: 'greeting', btn: 'saveGreeting' },
                 { ed: 'intro', btn: 'saveIntro' },
-                { ed: 'footer', btn: 'saveFooter' }
+                { ed: 'footer', btn: 'saveFooter' },
+                { ed: 'mechanics', btn: 'saveMechanics' }
             ];
             map.forEach(({ ed, btn }) => {
                 const editor = window.sunEditors[ed];
@@ -440,13 +494,7 @@
                 }
             });
 
-            // Abilita il Salva del testo meccanica (textarea normale)
-            const mech = document.getElementById('mechanicsText');
-            const mechBtn = document.getElementById('saveMechanics');
-            if (mech && mechBtn) {
-                const enableMech = () => { mechBtn.disabled = false; buildAndPreview(); };
-                ['input','change','keyup'].forEach(ev => mech.addEventListener(ev, enableMech));
-            }
+            // L'abilitazione del Salva per "meccanica" è gestita dagli handler dell'editor
         }
 
         function saveSection(section){
@@ -461,8 +509,9 @@
             loadTemplate();
             loadEmailSenderName();
             ['emailSubject','brandName','logoUrl','primaryColor','accentColor','backgroundColor','textColor','buttonColor','buttonTextColor','greeting','buttonLabel','mechanicsText']
-                .forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', buildAndPreview); });
+                .forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', () => { buildAndPreview(); updateSwatches(); }); });
             initEditors();
+            updateSwatches();
             
             // Chiudi modale cliccando fuori
             document.getElementById('testEmailModal').addEventListener('click', function(e) {
@@ -478,6 +527,15 @@
                 }
             });
         });
+
+        function updateSwatches(){
+            const map = ['primaryColor','accentColor','backgroundColor','textColor','buttonColor','buttonTextColor'];
+            map.forEach(function(id){
+                var input = document.getElementById(id);
+                var sw = document.getElementById('swatch-' + id);
+                if (input && sw) { sw.style.background = input.value || ''; }
+            });
+        }
 
         function toggleAccSection(el){
             const active = el.classList.contains('active');

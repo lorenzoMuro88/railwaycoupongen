@@ -16,7 +16,7 @@
         .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: .8rem; border-bottom: 1px solid var(--light-gray); text-align: left; }
-        th { background: var(--light-green); color: var(--primary-green); }
+        th { background: var(--primary-green); color: var(--white); }
         .tag { display:inline-block; padding:.15rem .5rem; border-radius:12px; font-size:.8rem; background:var(--light-green); color:var(--primary-green); }
         .muted { color: var(--text-light); font-size: .9rem; }
         /* Action buttons - aligned with project style */
@@ -167,11 +167,19 @@
 
     <script>
         // Load navigation
-        document.addEventListener('DOMContentLoaded', function() {
+        let currentUserType = null;
+        document.addEventListener('DOMContentLoaded', async function() {
             fetch('/static/navigation.html')
                 .then(r => r.text())
                 .then(html => { document.getElementById('navigation-container').innerHTML = html; })
                 .catch(console.error);
+            try {
+                const profRes = await fetch('/api/account/profile');
+                if (profRes.ok) {
+                    const prof = await profRes.json();
+                    currentUserType = prof && prof.userType;
+                }
+            } catch(_){}
             loadAuthUsers();
         });
 
@@ -201,11 +209,14 @@
                     
                     let actionsHtml = '';
                     if (u.userType === 'admin') {
-                        if (isFirstAdmin) {
+                        // Solo Superadmin può gestire gli admin (UI)
+                        if (currentUserType !== 'superadmin') {
+                            actionsHtml = '<span class="muted">Solo Superadmin</span>';
+                        } else if (isFirstAdmin) {
                             // First admin cannot be modified
                             actionsHtml = '<span class="muted">Primo admin (non modificabile)</span>';
                         } else {
-                            // Other admins can be managed by first admin
+                            // Superadmin actions su admin
                             actionsHtml = `
                                 <button class="action-btn" style="background: ${u.isActive ? '#f39c12' : '#27ae60'}; color: white;" onclick="toggleActive(${u.id}, ${u.isActive?0:1})">${u.isActive? 'Disattiva':'Attiva'}</button>
                                 <button class="action-btn" style="background: var(--accent-green); color: white;" onclick="changeRole(${u.id}, 'store')">Rendi Store</button>
@@ -215,9 +226,10 @@
                         }
                     } else {
                         // Non-admin users (store, etc.)
+                        const canPromoteToAdmin = currentUserType === 'superadmin';
                         actionsHtml = `
                             <button class="action-btn" style="background: ${u.isActive ? '#f39c12' : '#27ae60'}; color: white;" onclick="toggleActive(${u.id}, ${u.isActive?0:1})">${u.isActive? 'Disattiva':'Attiva'}</button>
-                            <button class="action-btn" style="background: var(--accent-green); color: white;" onclick="changeRole(${u.id}, 'admin')">Rendi Admin</button>
+                            ${canPromoteToAdmin ? `<button class=\"action-btn\" style=\"background: var(--accent-green); color: white;\" onclick=\"changeRole(${u.id}, 'admin')\">Rendi Admin</button>` : '<span class=\"muted\">Promozione a Admin riservata al Superadmin</span>'}
                             <button class="action-btn" style="background: var(--primary-green); color: white;" onclick="resetPassword(${u.id})">Reset PW</button>
                             <button class="danger-btn" onclick="removeAuthUser(${u.id})">Elimina</button>
                         `;

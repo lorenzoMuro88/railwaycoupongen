@@ -9,18 +9,47 @@ window.__tenantBase = (function() {
     } catch (_) { return ''; }
 })();
 
-// Load tenant information and update navigation
+// Load tenant information and update navigation and theme
 async function loadTenantInfo() {
     try {
         const base = window.__tenantBase;
-        if (!base) return; // Not in tenant context
-        
-        const response = await fetch(`${base}/api/tenant-info`);
-        if (response.ok) {
-            const tenantInfo = await response.json();
+        const requests = [];
+        if (base) {
+            requests.push(fetch(`${base}/api/tenant-info`));
+            requests.push(fetch(`${base}/api/brand-settings`));
+        } else {
+            // Legacy routes (no /t/:slug): skip tenant-info, but fetch brand via admin endpoint
+            requests.push(Promise.resolve(null));
+            requests.push(fetch(`/api/admin/brand-settings`));
+        }
+        const [infoResp, brandRespFirst] = await Promise.all(requests);
+
+        if (infoResp && infoResp.ok) {
+            const tenantInfo = await infoResp.json();
             const brandElement = document.getElementById('tenantBrand');
-            if (brandElement && tenantInfo.name) {
-                brandElement.textContent = `${tenantInfo.name} Admin`;
+            if (brandElement && tenantInfo.name) brandElement.textContent = `${tenantInfo.name} Admin`;
+        }
+
+        let brandResp = brandRespFirst;
+        // Fallback: if legacy admin endpoint fails (403), try store endpoint
+        if (!base && brandResp && !brandResp.ok) {
+            try { brandResp = await fetch(`/api/store/brand-settings`); } catch (_) {}
+        }
+        if (brandResp && brandResp.ok) {
+            const theme = await brandResp.json();
+            if (theme && Object.keys(theme).length > 0) {
+                const root = document.documentElement;
+                if (theme.primary_color) root.style.setProperty('--primary-green', theme.primary_color);
+                if (theme.accent_color) root.style.setProperty('--accent-green', theme.accent_color);
+                if (theme.light_color) root.style.setProperty('--light-green', theme.light_color);
+                if (theme.background_color) root.style.setProperty('--cream', theme.background_color);
+                if (theme.text_dark_color) root.style.setProperty('--text-dark', theme.text_dark_color);
+                // Update gradient based on primary/accent
+                if (theme.primary_color || theme.accent_color) {
+                    const p = theme.primary_color || getComputedStyle(root).getPropertyValue('--primary-green').trim();
+                    const a = theme.accent_color || getComputedStyle(root).getPropertyValue('--accent-green').trim();
+                    root.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${p} 0%, ${a} 100%)`);
+                }
             }
         }
     } catch (error) {

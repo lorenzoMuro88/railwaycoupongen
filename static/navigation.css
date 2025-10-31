@@ -19,12 +19,25 @@
   --gradient-gold: linear-gradient(135deg, var(--gold-accent) 0%, #f4d03f 100%);
 }
 
-/* Navigation Bar */
+/* Navigation Bar - Enhanced Professional Look */
 .navbar {
     background: var(--gradient-primary);
     padding: 1rem 0;
     margin-bottom: 2rem;
-    box-shadow: var(--shadow-medium);
+    box-shadow: 
+        0 2px 8px rgba(45, 90, 61, 0.15),
+        0 4px 16px rgba(45, 90, 61, 0.1);
+    position: relative;
+}
+
+.navbar::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
 }
 
         .navbar-container {
@@ -39,17 +52,19 @@
 
 .navbar-brand {
     color: var(--white);
-    font-size: 1.8rem;
-    font-weight: 300;
+    font-size: 1.875rem;
+    font-weight: 600;
     text-decoration: none;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
+    transition: opacity 0.2s ease;
 }
 
 .navbar-brand:hover {
     color: var(--light-green);
+    opacity: 0.9;
 }
 
 .navbar-nav {
@@ -67,16 +82,17 @@
         .nav-link {
             color: var(--white);
             text-decoration: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            font-weight: 400;
+            padding: 0.875rem 1.5rem;
+            border-radius: 10px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            font-weight: 500;
             display: flex;
             align-items: center;
             gap: 0.5rem;
             font-size: 0.95rem;
             min-width: 100px;
             justify-content: center;
+            letter-spacing: -0.01em;
         }
 
 /* Small inline icons for top navbar */
@@ -89,19 +105,21 @@
 }
 
 .nav-link:hover {
-    background: rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.18);
     color: var(--light-green);
 }
 
 .nav-link.active {
     background: var(--gold-accent);
     color: var(--text-dark);
-    font-weight: 500;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);
 }
 
 .nav-link.active:hover {
     background: #f4d03f;
     color: var(--text-dark);
+    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.4);
 }
 
 .navbar-actions {
@@ -186,11 +204,15 @@
     width: 300px;
     height: 100%;
     background: var(--white);
-    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 
+        -8px 0 24px rgba(0, 0, 0, 0.12),
+        -4px 0 12px rgba(0, 0, 0, 0.08);
     z-index: 1000;
-    transition: right 0.3s ease;
+    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
 }
 
 .sidebar.show {
@@ -238,16 +260,18 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1rem 1.5rem;
+    padding: 1.125rem 1.5rem;
     color: var(--text-dark);
     text-decoration: none;
-    transition: all 0.3s ease;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     border: none;
     background: none;
     width: 100%;
     text-align: left;
     font-size: 1rem;
     cursor: pointer;
+    font-weight: 500;
+    letter-spacing: -0.01em;
 }
 
 .sidebar-link:hover {

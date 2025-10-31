@@ -320,6 +320,23 @@
             font-family: 'Courier New', monospace;
             font-size: 0.9rem;
             color: var(--text-medium);
+            text-transform: uppercase;
+        }
+
+        .copy-hex-btn {
+            border: 1px solid var(--border-light);
+            background: var(--white);
+            color: var(--primary-green);
+            border-radius: 6px;
+            padding: 0.35rem 0.6rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .copy-hex-btn:hover {
+            background: var(--light-green);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
         }
 
         .preview-section {
@@ -595,9 +612,9 @@
                 <button id="saveHeaderBtn" class="btn btn-secondary" type="button" onclick="saveHeaderConfig()" disabled>Salva configurazione</button>
                 <span id="headerUploadStatus" style="color: var(--text-medium);"></span>
             </div>
-            <div id="headerPreview" style="margin-top:1rem; border:1px dashed var(--border-light); border-radius:12px; background:#fafafa; overflow:hidden; height:260px; position:relative;">
+            <div id="headerPreview" style="margin-top:1rem; border:1px dashed var(--border-light); border-radius:12px; background: var(--gradient-primary); overflow:hidden; height:260px; position:relative;">
                 <img id="headerImage" src="" alt="Header" style="width:100%; height:100%; display:none; object-fit:cover; object-position:center;"/>
-                <div id="headerPlaceholder" style="color: var(--text-light);">Nessuna immagine caricata</div>
+                <div id="headerPlaceholder" style="color: var(--white); position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:600; text-shadow:0 1px 2px rgba(0,0,0,.25);">Nessuna immagine caricata</div>
             </div>
 
             <div id="focalControls" style="display:block; margin-top: .75rem;">
@@ -637,7 +654,8 @@
                         <div class="color-picker">
                             <input type="color" id="primaryColor" value="#2d5a3d">
                         </div>
-                        <span class="color-value" id="primaryColorValue">#2d5a3d</span>
+                        <span class="color-value" id="primaryColorValue">#2D5A3D</span>
+                        <button type="button" class="copy-hex-btn" onclick="copyColorHex('primaryColor')">Copia</button>
                     </div>
                 </div>
 
@@ -647,7 +665,8 @@
                         <div class="color-picker">
                             <input type="color" id="accentColor" value="#4a7c59">
                         </div>
-                        <span class="color-value" id="accentColorValue">#4a7c59</span>
+                        <span class="color-value" id="accentColorValue">#4A7C59</span>
+                        <button type="button" class="copy-hex-btn" onclick="copyColorHex('accentColor')">Copia</button>
                     </div>
                 </div>
 
@@ -657,7 +676,8 @@
                         <div class="color-picker">
                             <input type="color" id="backgroundColor" value="#faf8f3">
                         </div>
-                        <span class="color-value" id="backgroundColorValue">#faf8f3</span>
+                        <span class="color-value" id="backgroundColorValue">#FAF8F3</span>
+                        <button type="button" class="copy-hex-btn" onclick="copyColorHex('backgroundColor')">Copia</button>
                     </div>
                 </div>
 
@@ -667,7 +687,8 @@
                         <div class="color-picker">
                             <input type="color" id="textColor" value="#2c3e50">
                         </div>
-                        <span class="color-value" id="textColorValue">#2c3e50</span>
+                        <span class="color-value" id="textColorValue">#2C3E50</span>
+                        <button type="button" class="copy-hex-btn" onclick="copyColorHex('textColor')">Copia</button>
                     </div>
                 </div>
                 </div>
@@ -845,6 +866,8 @@
             setupEventListeners();
             // Carica configurazione immediatamente dal localStorage
             loadConfiguration();
+            // Inizializza gestione immagine header (onload/onerror)
+            initHeaderImageHandlers();
         });
 
         function setupEventListeners() {
@@ -915,7 +938,7 @@
                 colorInput.addEventListener('input', function() {
                     const valueSpan = document.getElementById(this.id + 'Value');
                     if (valueSpan) {
-                        valueSpan.textContent = this.value;
+                        valueSpan.textContent = (this.value || '').toUpperCase();
                     }
                 });
             });
@@ -1029,6 +1052,14 @@
             } else {
                 preview.style.boxShadow = 'none';
             }
+
+            // Fallback header gradient se non è presente un'immagine
+            const hdr = document.getElementById('previewHeader');
+            if (hdr && (!hdr.style.backgroundImage || hdr.style.backgroundImage === 'none')) {
+                hdr.style.background = `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`;
+                hdr.style.backgroundSize = 'cover';
+                hdr.style.backgroundPosition = '50% 50%';
+            }
         }
 
         function toggleShadow() {
@@ -1103,7 +1134,7 @@
                     if (element.type === 'color') {
                         const valueElement = document.getElementById(key + 'Value');
                         if (valueElement) {
-                            valueElement.textContent = config[key];
+                                valueElement.textContent = String(config[key] || '').toUpperCase();
                         }
                     }
                 }
@@ -1132,9 +1163,34 @@
                                 hdr.style.backgroundPosition = Math.round(headerX*100)+'% '+Math.round(headerY*100)+'%';
                             }
                         }
+                    } else {
+                        // Nessuna immagine: usa gradiente dai colori configurati
+                        const primaryColor = document.getElementById('primaryColor')?.value || '#2d5a3d';
+                        const accentColor = document.getElementById('accentColor')?.value || '#4a7c59';
+                        const hdr = document.getElementById('previewHeader');
+                        if (hdr){
+                            hdr.style.backgroundImage = '';
+                            hdr.style.background = `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`;
+                            hdr.style.backgroundSize = 'cover';
+                            hdr.style.backgroundPosition = '50% 50%';
+                        }
                     }
                 }).catch(()=>{});
             } catch(e) {}
+        }
+
+        async function copyColorHex(inputId){
+            try{
+                const el = document.getElementById(inputId);
+                const span = document.getElementById(inputId + 'Value');
+                const hex = (el?.value || '').toUpperCase();
+                await navigator.clipboard.writeText(hex);
+                if (span){
+                    const original = span.textContent;
+                    span.textContent = 'Copiato!';
+                    setTimeout(()=>{ span.textContent = hex; }, 900);
+                }
+            }catch(e){ /* no-op */ }
         }
 
         async function saveConfiguration() {
@@ -1418,6 +1474,23 @@
             updateSaveButton();
         }
 
+        function initHeaderImageHandlers(){
+            const img = document.getElementById('headerImage');
+            const ph = document.getElementById('headerPlaceholder');
+            if (!img || !ph) return;
+            // Mostra immagine solo se caricata correttamente
+            img.addEventListener('load', () => {
+                img.style.display = 'block';
+                ph.style.display = 'none';
+            });
+            // In caso di errore, torna al fallback
+            img.addEventListener('error', () => {
+                img.style.display = 'none';
+                img.removeAttribute('src');
+                ph.style.display = 'flex';
+            });
+        }
+
         async function uploadHeaderImage(){
             const input = document.getElementById('headerUpload');
             const status = document.getElementById('headerUploadStatus');
@@ -1432,7 +1505,10 @@
                     const j = await r.json();
                     const img = document.getElementById('headerImage');
                     const ph = document.getElementById('headerPlaceholder');
-                    img.src = j.url; img.style.display = 'block'; ph.style.display = 'none';
+                    // assegna solo la src, la visibilità verrà gestita da onload/onerror
+                    ph.style.display = 'flex';
+                    img.style.display = 'none';
+                    img.src = j.url;
                     status.textContent = 'Immagine caricata.';
                     markDirty();
                     // Merge and salva nella configurazione admin
@@ -1456,7 +1532,10 @@
                 if (cfg.headerImageUrl){
                     const img = document.getElementById('headerImage');
                     const ph = document.getElementById('headerPlaceholder');
-                    img.src = cfg.headerImageUrl; img.style.display = 'block'; ph.style.display = 'none';
+                    // lascia gestire onload/onerror
+                    ph.style.display = 'flex';
+                    img.style.display = 'none';
+                    img.src = cfg.headerImageUrl;
                     // Apply focal if present
                     if (typeof cfg.headerFocalX === 'number' && typeof cfg.headerFocalY === 'number') {
                         document.getElementById('focalX').value = Math.round(cfg.headerFocalX*100);

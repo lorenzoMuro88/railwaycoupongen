@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Super Admin - Brand Tenant</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/navigation.css" />
+</head>
+<body>
+    <div class="superadmin-container" style="padding: 2rem; max-width: 900px; margin: 0 auto;">
+        <div class="superadmin-header" style="margin-bottom: 1.5rem;">
+            <h1 style="margin: 0 0 .25rem 0;">Personalizzazione Brand</h1>
+            <p id="tenantHeader" style="margin: 0;">Tenant: -</p>
+            <div class="mt-1">
+                <a id="backLink" href="/superadmin" class="refresh-button" style="text-decoration:none;">← Torna ai tenant</a>
+            </div>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+        <div class="success-message" id="successMessage"></div>
+
+        <form class="card" id="brandForm" style="display: grid; gap: 1.25rem;">
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem;">
+                <label>
+                    Colore Primario
+                    <input type="color" id="primary" value="#2d5a3d" />
+                </label>
+                <label>
+                    Colore Accent
+                    <input type="color" id="accent" value="#4a7c59" />
+                </label>
+                <label>
+                    Colore Chiaro
+                    <input type="color" id="light" value="#e8f5e8" />
+                </label>
+                <label>
+                    Sfondo
+                    <input type="color" id="background" value="#faf8f3" />
+                </label>
+                <label style="grid-column: 1 / -1;">
+                    Testo Principale
+                    <input type="color" id="textdark" value="#2c3e50" />
+                </label>
+            </div>
+
+            <div class="card">
+                <div style="font-weight:600; margin-bottom:.5rem;">Anteprima</div>
+                <div id="preview" style="padding: 1rem; border: 1px solid var(--border-light); border-radius: 12px;">
+                    <div style="display:flex; gap:.5rem; flex-wrap: wrap;">
+                        <button class="refresh-btn" type="button"><span class="btn-text">Bottone Primario</span></button>
+                        <button class="clear-btn" type="button">Bottone Neutro</button>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:.75rem; justify-content:space-between; align-items:center;">
+                <button type="button" class="clear-btn" id="btnReset">Ripristina default</button>
+                <div style="display:flex; gap:.75rem;">
+                    <button type="button" class="modal-btn modal-btn-secondary" id="btnCancel">Annulla</button>
+                    <button type="button" class="modal-btn modal-btn-primary" id="btnSave">Salva</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function qs(sel){ return document.querySelector(sel); }
+        function showError(msg){ const el=qs('#errorMessage'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),5000); }
+        function showSuccess(msg){ const el=qs('#successMessage'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),5000); }
+
+        function getTenantIdFromPath(){
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            const idx = parts.indexOf('tenants');
+            if (idx>=0 && parts[idx+1]) return Number(parts[idx+1]);
+            return null;
+        }
+
+        function applyPreview(){
+            const preview = qs('#preview');
+            if (!preview) return;
+            const p = qs('#primary').value;
+            const a = qs('#accent').value;
+            const l = qs('#light').value;
+            const b = qs('#background').value;
+            const t = qs('#textdark').value;
+            preview.style.setProperty('--primary-green', p);
+            preview.style.setProperty('--accent-green', a);
+            preview.style.setProperty('--light-green', l);
+            preview.style.setProperty('--cream', b);
+            preview.style.setProperty('--text-dark', t);
+            preview.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${p} 0%, ${a} 100%)`);
+        }
+
+        async function loadData(){
+            const tenantId = getTenantIdFromPath();
+            if (!tenantId) { showError('Tenant non valido'); return; }
+            // Header and back link
+            qs('#backLink').href = '/superadmin';
+            // Imposta intestazione con nome tenant
+            try {
+                const tenantsResp = await fetch('/api/superadmin/tenants');
+                if (tenantsResp.ok){
+                    const tenants = await tenantsResp.json();
+                    const current = Array.isArray(tenants) ? tenants.find(t => Number(t.id) === tenantId) : null;
+                    if (current){
+                        const label = current.name || current.slug || String(current.id);
+                        qs('#tenantHeader').textContent = `Tenant: ${label}`;
+                    } else {
+                        qs('#tenantHeader').textContent = `Tenant: ${tenantId}`;
+                    }
+                } else {
+                    qs('#tenantHeader').textContent = `Tenant: ${tenantId}`;
+                }
+            } catch(e){
+                qs('#tenantHeader').textContent = `Tenant: ${tenantId}`;
+            }
+            // Carica brand
+            try {
+                const r = await fetch(`/api/superadmin/tenants/${tenantId}/brand`);
+                if (r.ok){
+                    const cfg = await r.json();
+                    if (cfg && Object.keys(cfg).length){
+                        qs('#primary').value = cfg.primary_color || '#2d5a3d';
+                        qs('#accent').value = cfg.accent_color || '#4a7c59';
+                        qs('#light').value = cfg.light_color || '#e8f5e8';
+                        qs('#background').value = cfg.background_color || '#faf8f3';
+                        qs('#textdark').value = cfg.text_dark_color || '#2c3e50';
+                    }
+                }
+            } catch(e){ console.error(e); }
+            applyPreview();
+        }
+
+        async function save(){
+            const tenantId = getTenantIdFromPath();
+            if (!tenantId) { showError('Tenant non valido'); return; }
+            const btn = qs('#btnSave'); const old = btn.textContent; btn.disabled = true; btn.textContent = 'Salvataggio...';
+            try{
+                const payload = {
+                    primary_color: qs('#primary').value,
+                    accent_color: qs('#accent').value,
+                    light_color: qs('#light').value,
+                    background_color: qs('#background').value,
+                    text_dark_color: qs('#textdark').value
+                };
+                const r = await fetch(`/api/superadmin/tenants/${tenantId}/brand`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                if (r.ok){ showSuccess('Impostazioni salvate'); }
+                else { const err = await r.json().catch(()=>({})); showError(err.error || 'Errore salvataggio'); }
+            } catch(e){ showError('Errore di connessione'); }
+            finally{ btn.disabled = false; btn.textContent = old; }
+        }
+
+        async function resetDefaults(){
+            const tenantId = getTenantIdFromPath();
+            if (!tenantId) { showError('Tenant non valido'); return; }
+            const btn = qs('#btnReset'); const old = btn.textContent; btn.disabled = true; btn.textContent = 'Ripristino...';
+            try{
+                // POST senza corpo: il server applica i default
+                const r = await fetch(`/api/superadmin/tenants/${tenantId}/brand`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
+                if (r.ok){
+                    // Ricarica valori default nel form
+                    qs('#primary').value = '#2d5a3d';
+                    qs('#accent').value = '#4a7c59';
+                    qs('#light').value = '#e8f5e8';
+                    qs('#background').value = '#faf8f3';
+                    qs('#textdark').value = '#2c3e50';
+                    applyPreview();
+                    showSuccess('Impostazioni ripristinate ai default');
+                } else {
+                    const err = await r.json().catch(()=>({}));
+                    showError(err.error || 'Errore ripristino');
+                }
+            } catch(e){ showError('Errore di connessione'); }
+            finally{ btn.disabled = false; btn.textContent = old; }
+        }
+
+        ['#primary','#accent','#light','#background','#textdark'].forEach(id=>{
+            document.addEventListener('input', (e)=>{ if (e.target && ('#'+e.target.id)===id) applyPreview(); });
+        });
+
+        qs('#btnSave').addEventListener('click', save);
+        qs('#btnReset').addEventListener('click', resetDefaults);
+        qs('#btnCancel').addEventListener('click', ()=>{ window.location.href='/superadmin'; });
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>
+
+

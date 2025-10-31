@@ -32,12 +32,22 @@ async function openDb() {
   return db;
 }
 
+const ALLOWED_TABLES = new Set(['users','campaigns','coupons','system_logs','auth_users','products','user_custom_data','campaign_products']);
+
+function assertAllowedTable(tableName) {
+  if (!ALLOWED_TABLES.has(tableName)) {
+    throw new Error(`Table not allowed: ${tableName}`);
+  }
+}
+
 async function selectIdsToKeep(db, tableName, limit) {
+  assertAllowedTable(tableName);
   const rows = await db.all(`SELECT id FROM ${tableName} ORDER BY id DESC LIMIT ?`, limit);
   return rows.map(r => r.id);
 }
 
 async function deleteBeyondKeepIds(db, tableName, idsToKeep) {
+  assertAllowedTable(tableName);
   if (idsToKeep.length === 0) {
     await db.run(`DELETE FROM ${tableName}`);
     return;

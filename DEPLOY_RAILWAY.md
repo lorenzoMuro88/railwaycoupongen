@@ -1,11 +1,11 @@
 # Deploy CouponGen su Railway
 
 ## Panoramica
-Deploy dell'applicazione multi-tenant CouponGen su Railway con database PostgreSQL incluso, SSL automatico e gestione file uploads.
+Deploy dell'applicazione multi-tenant CouponGen su Railway con SSL automatico, gestione file uploads e volume persistente. Il database di default è SQLite su volume; PostgreSQL è opzionale.
 
 ## Vantaggi di Railway
 - ✅ **Deploy in 30 secondi**: Connessione GitHub → Deploy automatico
-- ✅ **Database PostgreSQL incluso**: Gratuito nel piano base
+- ✅ **Database opzionale**: SQLite su volume (default) o PostgreSQL se necessario
 - ✅ **SSL automatico**: Certificati gestiti automaticamente
 - ✅ **Volume persistente**: Storage automatico per file e database
 - ✅ **Backup automatico**: Snapshot del database
@@ -70,8 +70,9 @@ NODE_ENV=production
 PORT=3000
 SESSION_SECRET=your-secret-key-change-in-production
 
-# Database (automatico con Railway PostgreSQL)
-DATABASE_URL=postgresql://user:pass@host:port/db
+# Database (OPZIONALE)
+# Per default usa SQLite su volume. Se migri a PostgreSQL, imposta:
+# DATABASE_URL=postgresql://user:pass@host:port/db
 
 # Email (Mailgun)
 MAIL_PROVIDER=mailgun
@@ -85,8 +86,9 @@ DEFAULT_TENANT_NAME=Default Tenant
 ENFORCE_TENANT_PREFIX=false
 ```
 
-### Database PostgreSQL
-Railway crea automaticamente un database PostgreSQL. La variabile `DATABASE_URL` viene impostata automaticamente.
+### Database
+- Default: SQLite su volume `/app/data` (nessuna configurazione extra).
+- Opzionale: PostgreSQL come servizio Railway (imposta `DATABASE_URL` e adatta il codice se necessario).
 
 ## Gestione File Uploads
 

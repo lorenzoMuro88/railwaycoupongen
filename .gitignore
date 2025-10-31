@@ -124,3 +124,8 @@ deploy/fix-email-template-issues.ps1
 *secret*
 *password*
 *credential*
+
+# Backups and archives
+data/backups/
+backup*.db
+*uploads-backup*.tar.gz

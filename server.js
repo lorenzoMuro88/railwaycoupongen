@@ -4,12 +4,12 @@ require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
-const basicAuth = require('express-basic-auth');
 const session = require('express-session');
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
+const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 // Mailgun SDK
 const formData = require('form-data');
@@ -45,16 +45,26 @@ app.use((error, req, res, next) => {
     next();
 });
 
-// Serve uploads from configurable directory before general static
+// Serve uploads from configurable directory (served via protected endpoint, not public static)
 const UPLOADS_BASE_DIR = process.env.UPLOADS_DIR
     ? path.resolve(process.env.UPLOADS_DIR)
     : path.join(__dirname, 'static', 'uploads');
 if (!fs.existsSync(UPLOADS_BASE_DIR)) {
     fs.mkdirSync(UPLOADS_BASE_DIR, { recursive: true });
 }
-app.use('/static/uploads', express.static(UPLOADS_BASE_DIR));
+// Uploads are served via /api/uploads/:tenantSlug/:filename endpoint below
 
-app.use('/static', express.static(path.join(__dirname, 'static')));
+// Serve static files with cache control
+const staticOptions = {
+    setHeaders: (res, filePath) => {
+        // Disable cache for CSS and JS in development to see changes immediately
+        if (filePath.endsWith('.css') || filePath.endsWith('.js')) {
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+        }
+    }
+};
+app.use('/static', express.static(path.join(__dirname, 'static'), staticOptions));
 
 // Public signup page
 app.get('/access', (req, res) => {
@@ -197,6 +207,57 @@ function recordEmailSubmit(emailKey) {
     submitAttemptsByEmail.set(emailKey, entry);
 }
 
+// Cleanup expired entries from rate limiter Maps to prevent memory leaks
+function cleanupRateLimiters() {
+    const now = Date.now();
+    let cleaned = 0;
+    
+    // Clean login attempts: remove entries that are unlocked and past window
+    for (const [ip, entry] of loginAttempts.entries()) {
+        if (!entry.lockedUntil && (now - entry.first > LOGIN_WINDOW_MS * 2)) {
+            loginAttempts.delete(ip);
+            cleaned++;
+        } else if (entry.lockedUntil && (now > entry.lockedUntil + LOGIN_LOCK_MS)) {
+            // Remove entries that have been locked but lock expired
+            loginAttempts.delete(ip);
+            cleaned++;
+        }
+    }
+    
+    // Clean submit attempts by IP: remove entries past window
+    for (const [ip, entry] of submitAttemptsByIp.entries()) {
+        if (!entry.lockedUntil && (now - entry.first > SUBMIT_WINDOW_MS * 2)) {
+            submitAttemptsByIp.delete(ip);
+            cleaned++;
+        } else if (entry.lockedUntil && (now > entry.lockedUntil + SUBMIT_LOCK_MS)) {
+            submitAttemptsByIp.delete(ip);
+            cleaned++;
+        }
+    }
+    
+    // Clean submit attempts by email: remove entries past daily window
+    for (const [emailKey, entry] of submitAttemptsByEmail.entries()) {
+        if (!entry.lockedUntil && (now - entry.first > EMAIL_DAILY_WINDOW_MS * 2)) {
+            submitAttemptsByEmail.delete(emailKey);
+            cleaned++;
+        } else if (entry.lockedUntil && (now > entry.lockedUntil + EMAIL_LOCK_MS)) {
+            submitAttemptsByEmail.delete(emailKey);
+            cleaned++;
+        }
+    }
+    
+    if (cleaned > 0) {
+        console.log(`[rate-limiter] Cleaned ${cleaned} expired entries`);
+    }
+}
+
+// Run cleanup every 5 minutes to prevent memory leaks
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const cleanupInterval = setInterval(cleanupRateLimiters, CLEANUP_INTERVAL_MS);
+// Cleanup on shutdown
+process.on('SIGTERM', () => clearInterval(cleanupInterval));
+process.on('SIGINT', () => clearInterval(cleanupInterval));
+
 function checkSubmitRateLimit(req, res, next) {
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const email = req.body?.email;
@@ -338,9 +399,22 @@ function requireRole(role) {
     }
 }
 
-// Session configuration (Redis in production)
+// Session configuration (in-memory store; Redis optional for scaling/multi-instance)
+// Generate secure random session secret if not provided
+const generateSecureSecret = () => {
+    return crypto.randomBytes(64).toString('hex');
+};
+
+let sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret || sessionSecret === 'your-secret-key-change-in-production' || sessionSecret === 'coupon-gen-secret-key-change-in-production') {
+    sessionSecret = generateSecureSecret();
+    console.warn('⚠️  SECURITY WARNING: SESSION_SECRET not set or using default value.');
+    console.warn('⚠️  A random session secret has been generated, but you MUST set SESSION_SECRET in .env for production!');
+    console.warn('⚠️  Generated secret (for this session only):', sessionSecret.substring(0, 16) + '...');
+}
+
 let sessionOptions = {
-    secret: process.env.SESSION_SECRET || 'coupon-gen-secret-key-change-in-production',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -518,9 +592,61 @@ async function getDb() {
                     margin_price REAL NOT NULL,
                     sku TEXT UNIQUE,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    tenant_id INTEGER
                 );
             `);
+        } else {
+            // Ensure products has tenant_id
+            const productCols = await db.all("PRAGMA table_info(products)");
+            const hasTenantOnProducts = productCols.some(c => c.name === 'tenant_id');
+            if (!hasTenantOnProducts) {
+                console.log('Adding tenant_id column to products...');
+                await db.exec('ALTER TABLE products ADD COLUMN tenant_id INTEGER');
+                // Backfill tenant_id for existing products:
+                // 1) If a product is associated to campaigns, inherit the campaign tenant
+                await db.exec(`
+                    UPDATE products
+                    SET tenant_id = (
+                        SELECT c.tenant_id
+                        FROM campaign_products cp
+                        JOIN campaigns c ON c.id = cp.campaign_id
+                        WHERE cp.product_id = products.id
+                        LIMIT 1
+                    )
+                    WHERE tenant_id IS NULL
+                `);
+                // 2) Fallback: set remaining NULLs to defaultTenantId if available
+                if (defaultTenantId) {
+                    await db.run('UPDATE products SET tenant_id = ? WHERE tenant_id IS NULL', defaultTenantId);
+                }
+                console.log('Backfill tenant_id on products completed');
+            }
+            // Ensure a trigger exists to prevent NULL tenant_id inserts/updates
+            const triggerRows = await db.all("SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('trg_products_tenant_ins','trg_products_tenant_upd')");
+            const triggerNames = triggerRows.map(r => r.name);
+            if (!triggerNames.includes('trg_products_tenant_ins')) {
+                await db.exec(`
+                    CREATE TRIGGER trg_products_tenant_ins
+                    BEFORE INSERT ON products
+                    FOR EACH ROW
+                    WHEN NEW.tenant_id IS NULL
+                    BEGIN
+                        SELECT RAISE(ABORT, 'tenant_id required for products');
+                    END;
+                `);
+            }
+            if (!triggerNames.includes('trg_products_tenant_upd')) {
+                await db.exec(`
+                    CREATE TRIGGER trg_products_tenant_upd
+                    BEFORE UPDATE ON products
+                    FOR EACH ROW
+                    WHEN NEW.tenant_id IS NULL
+                    BEGIN
+                        SELECT RAISE(ABORT, 'tenant_id required for products');
+                    END;
+                `);
+            }
         }
 
         // Create campaign_products table if it doesn't exist
@@ -713,6 +839,18 @@ async function getDb() {
                 CREATE INDEX IF NOT EXISTS idx_user_custom_data_user_id ON user_custom_data(user_id);
                 CREATE INDEX IF NOT EXISTS idx_user_custom_data_field_name ON user_custom_data(field_name);
             `);
+        } else {
+            // Table exists, check if it has tenant_id column and add it if missing
+            const userCustomDataCols = await db.all("PRAGMA table_info(user_custom_data)");
+            const userCustomDataColNames = userCustomDataCols.map(c => c.name);
+            if (!userCustomDataColNames.includes('tenant_id')) {
+                console.log('Adding tenant_id column to user_custom_data table...');
+                await db.exec('ALTER TABLE user_custom_data ADD COLUMN tenant_id INTEGER');
+                // Set default tenant_id for existing records
+                if (defaultTenantId) {
+                    await db.run('UPDATE user_custom_data SET tenant_id = ? WHERE tenant_id IS NULL', defaultTenantId);
+                }
+            }
         }
 
         // Ensure auth_users table exists BEFORE attempting to alter it
@@ -802,26 +940,78 @@ async function getDb() {
             }
         }
 
+        // Create tenant_brand_settings table if it doesn't exist
+        const brandSettingsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='tenant_brand_settings'");
+        if (brandSettingsTable.length === 0) {
+            console.log('Creating tenant_brand_settings table...');
+            await db.exec(`
+                CREATE TABLE tenant_brand_settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id INTEGER NOT NULL UNIQUE,
+                    primary_color TEXT DEFAULT '#2d5a3d',
+                    accent_color TEXT DEFAULT '#4a7c59',
+                    light_color TEXT DEFAULT '#e8f5e8',
+                    background_color TEXT DEFAULT '#faf8f3',
+                    text_dark_color TEXT DEFAULT '#2c3e50',
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+                );
+            `);
+        }
+
         
         // Create default users if auth_users table is empty
         const userCount = await db.get('SELECT COUNT(*) as count FROM auth_users');
         if (userCount.count === 0) {
             console.log('Creating default users...');
-            const defaultSuperAdminPassword = process.env.SUPERADMIN_PASSWORD || 'admin123';
-            const defaultStorePassword = process.env.STORE_PASSWORD || 'store123';
             
-            // Simple password hashing (in production, use bcrypt)
-            const superAdminHash = Buffer.from(defaultSuperAdminPassword).toString('base64');
-            const storeHash = Buffer.from(defaultStorePassword).toString('base64');
+            // Generate secure random passwords if not provided in environment
+            const generateSecurePassword = (length = 16) => {
+                const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+                const bytes = crypto.randomBytes(length);
+                let password = '';
+                for (let i = 0; i < length; i++) {
+                    password += charset[bytes[i] % charset.length];
+                }
+                // Ensure at least one uppercase, lowercase, digit, and special char
+                if (!/[a-z]/.test(password)) password = password.slice(0, -1) + 'a';
+                if (!/[A-Z]/.test(password)) password = password.slice(0, -1) + 'A';
+                if (!/\d/.test(password)) password = password.slice(0, -1) + '1';
+                if (!/[!@#$%^&*]/.test(password)) password = password.slice(0, -1) + '!';
+                return password;
+            };
+            
+            const defaultSuperAdminPassword = process.env.SUPERADMIN_PASSWORD || generateSecurePassword(20);
+            const defaultStorePassword = process.env.STORE_PASSWORD || generateSecurePassword(20);
+            
+            // Security warning if using generated passwords
+            if (!process.env.SUPERADMIN_PASSWORD || !process.env.STORE_PASSWORD) {
+                console.warn('⚠️  SECURITY WARNING: SUPERADMIN_PASSWORD and/or STORE_PASSWORD not set in .env!');
+                console.warn('⚠️  Random secure passwords have been generated for initial setup.');
+                console.warn('⚠️  Set SUPERADMIN_PASSWORD and STORE_PASSWORD in .env file for production!');
+                console.warn('⚠️  Generated passwords are NOT logged for security reasons.');
+            }
+            
+            // Secure password hashing using bcrypt
+            const superAdminHash = await hashPassword(defaultSuperAdminPassword);
+            const storeHash = await hashPassword(defaultStorePassword);
             
             await db.run(`
                 INSERT INTO auth_users (username, password_hash, user_type, tenant_id) 
                 VALUES ('admin', ?, 'superadmin', ?), ('store', ?, 'store', ?)
             `, superAdminHash, defaultTenantId, storeHash, defaultTenantId);
             
-            console.log('Default users created:');
-            console.log('- SuperAdmin: username=admin, password=' + defaultSuperAdminPassword);
-            console.log('- Store: username=store, password=' + defaultStorePassword);
+            console.log('✅ Default users created:');
+            console.log('   SuperAdmin: username=admin');
+            console.log('   Store:      username=store');
+            
+            if (!process.env.SUPERADMIN_PASSWORD || !process.env.STORE_PASSWORD) {
+                console.warn('⚠️  IMPORTANT: Configure SUPERADMIN_PASSWORD and STORE_PASSWORD in .env file!');
+                console.warn('⚠️  Contact system administrator to retrieve initial passwords if needed.');
+                console.warn('═══════════════════════════════════════════════════════════════');
+            } else {
+                console.log('✅ Passwords loaded from environment variables.');
+            }
         }
         
         // Re-enable foreign keys after migration
@@ -851,6 +1041,25 @@ async function getDb() {
         await db.exec('PRAGMA foreign_keys = ON');
     }
     return db;
+}
+
+// Helper: resolve tenantId for API requests even when not tenant-prefixed
+async function getTenantIdForApi(req) {
+    const sess = req.session && req.session.user;
+    if (req.tenant && typeof req.tenant.id === 'number') return req.tenant.id;
+    // Try to infer from Referer: /t/:tenantSlug/...
+    try {
+        const ref = req.headers && (req.headers.referer || req.headers.referrer);
+        if (ref) {
+            const m = ref.match(/\/t\/([^\/]+)/);
+            if (m && m[1]) {
+                const dbConn = await getDb();
+                const t = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', m[1]);
+                if (t && typeof t.id === 'number') return t.id;
+            }
+        }
+    } catch (_) {}
+    return (sess && typeof sess.tenantId === 'number') ? sess.tenantId : null;
 }
 
 // Email transport
@@ -889,11 +1098,19 @@ function buildTransport() {
                     }
                     
                     if (inlineAttachments.length > 0) {
-                        data.inline = inlineAttachments.map(att => ({
-                            filename: att.filename,
-                            data: att.content,
-                            knownLength: att.content?.length
-                        }));
+                        // Mailgun inline attachments: CID must match filename (without extension)
+                        // For filename "coupon-qr.png", use cid:coupon-qr in HTML
+                        data.inline = inlineAttachments.map(att => {
+                            const filename = att.filename;
+                            // Mailgun uses filename without extension as CID reference
+                            // So "coupon-qr.png" becomes cid:coupon-qr
+                            return {
+                                filename: filename,
+                                data: att.content,
+                                contentType: 'image/png',
+                                knownLength: att.content?.length
+                            };
+                        });
                     }
                 }
                 // Tracking options
@@ -912,11 +1129,23 @@ function buildTransport() {
                     setTimeout(() => reject(new Error('Mailgun API timeout')), 30000)
                 );
                 
-                const result = await Promise.race([
-                    mg.messages.create(domain, data),
-                    timeoutPromise
-                ]);
-                return { id: result.id };
+                try {
+                    const result = await Promise.race([
+                        mg.messages.create(domain, data),
+                        timeoutPromise
+                    ]);
+                    console.log('[email] Mailgun message sent successfully:', result.id);
+                    return { id: result.id };
+                } catch (err) {
+                    console.error('[email] Mailgun API error:', {
+                        message: err.message,
+                        status: err.status,
+                        details: err.details || err.body || 'No details',
+                        domain: domain,
+                        to: message.to
+                    });
+                    throw err; // Re-throw per permettere gestione errori a monte
+                }
             },
             options: { provider: 'mailgun' }
         };
@@ -947,6 +1176,15 @@ function buildTransport() {
 }
 
 const transporter = buildTransport();
+
+// Startup visibility: log which email transport is active
+try {
+    const transportLabel =
+        (transporter && transporter.options && transporter.options.provider)
+            || (transporter && transporter.options && transporter.options.jsonTransport ? 'json' : null)
+            || (transporter && transporter.options && transporter.options.host ? `smtp:${transporter.options.host}` : 'unknown');
+    console.log('[email] transport active:', transportLabel);
+} catch (_) {}
 
 // Utilities
 function toSlug(input) {
@@ -1025,13 +1263,20 @@ function requireStore(req, res, next) {
     }
 }
 
-// Simple password verification (in production, use bcrypt)
-function verifyPassword(password, hash) {
+// Secure password hashing using bcrypt with backward compatibility for Base64 hashes
+async function verifyPassword(password, hash) {
+    // If hash looks like bcrypt (starts with $2a$, $2b$, or $2y$), use bcrypt
+    if (hash && (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$'))) {
+        return await bcrypt.compare(password, hash);
+    }
+    // Legacy Base64 hashing for backward compatibility
     return Buffer.from(password).toString('base64') === hash;
 }
 
-function hashPassword(password) {
-    return Buffer.from(password).toString('base64');
+async function hashPassword(password) {
+    // Use bcrypt with cost factor 10 (good balance between security and performance)
+    const saltRounds = 10;
+    return await bcrypt.hash(password, saltRounds);
 }
 
 // Helper function to check if a user is the first admin of their tenant
@@ -1068,9 +1313,27 @@ app.post('/api/login', async (req, res) => {
             username, userType
         );
         
-        if (!user || !verifyPassword(password, user.password_hash)) {
+        if (!user) {
             recordLoginFailure(ip);
             return res.status(401).json({ error: 'Credenziali non valide' });
+        }
+        
+        // Verify password (with backward compatibility for Base64)
+        const isValid = await verifyPassword(password, user.password_hash);
+        if (!isValid) {
+            recordLoginFailure(ip);
+            return res.status(401).json({ error: 'Credenziali non valide' });
+        }
+        
+        // If using legacy Base64 hash, upgrade to bcrypt on successful login
+        if (!user.password_hash.startsWith('$2a$') && !user.password_hash.startsWith('$2b$') && !user.password_hash.startsWith('$2y$')) {
+            try {
+                const newHash = await hashPassword(password);
+                await dbConn.run('UPDATE auth_users SET password_hash = ? WHERE id = ?', newHash, user.id);
+            } catch (upgradeError) {
+                console.error('Error upgrading password hash:', upgradeError);
+                // Continue with login even if upgrade fails
+            }
         }
         
         recordLoginSuccess(ip);
@@ -1101,14 +1364,7 @@ app.post('/api/login', async (req, res) => {
             isSuperAdmin
         };
         
-        // Debug: Log session creation
-        console.log('Session created:', req.session.user);
-        console.log('Session ID:', req.sessionID);
-        console.log('Request headers:', req.headers);
-        console.log('Request secure:', req.secure);
-        console.log('Request protocol:', req.protocol);
-        
-        // Determine redirect URL (simplified for debugging)
+        // Determine redirect URL
         let redirectUrl;
         if (userType === 'admin') {
             redirectUrl = '/admin';
@@ -1129,10 +1385,6 @@ app.post('/api/login', async (req, res) => {
             console.error('Failed to log login action:', logError);
             // Continue with login even if logging fails
         }
-        
-        // Debug: Log cookie headers
-        console.log('Response headers being set:', res.getHeaders());
-        console.log('Session cookie should be set with secure flag');
         
         res.json({ 
             success: true, 
@@ -1229,9 +1481,10 @@ app.post('/api/signup', async (req, res) => {
         if (existingAdmin) {
             return res.status(409).json({ error: 'Username già in uso per questo tenant' });
         }
+        const adminPasswordHash = await hashPassword(adminPassword);
         await dbConn.run(
             'INSERT INTO auth_users (username, password_hash, user_type, is_active, tenant_id) VALUES (?, ?, ?, 1, ?)',
-            adminUsername, hashPassword(adminPassword), 'admin', newTenantId
+            adminUsername, adminPasswordHash, 'admin', newTenantId
         );
 
         // Login session
@@ -1389,6 +1642,58 @@ app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
         res.json({ ok: true, info });
     } catch (e) {
         console.error('Test email error:', e);
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+});
+
+// Local-only: test coupon email with QR inline/allegato (no auth)
+app.get('/api/test-coupon-email', async (req, res) => {
+    try {
+        if ((process.env.NODE_ENV || 'development') === 'production') {
+            return res.status(403).json({ ok: false, error: 'Disabled in production' });
+        }
+        const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
+        const firstName = req.query.firstName || 'Lorenzo';
+        const lastName = req.query.lastName || 'Muro';
+        const couponCode = 'TEST' + Math.random().toString(36).slice(2, 8).toUpperCase();
+        const discountText = 'uno sconto del 20%';
+        const redemptionUrl = `${req.protocol}://${req.get('host')}/redeem/${couponCode}`;
+
+        const qrDataUrl = await QRCode.toDataURL(redemptionUrl, { width: 300, margin: 2 });
+        const qrPngBuffer = await QRCode.toBuffer(redemptionUrl, { width: 300, margin: 2, type: 'png' });
+
+        // Basic sample template
+        const templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
+            <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
+            <p>Puoi usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
+            <div style="padding:16px; background:#f8f9fa; border-radius:10px; text-align:center;">
+                <div style="font-weight:600; margin-bottom:8px;">Scansiona il QR Code</div>
+                <img src="cid:coupon-qr" alt="QR Code" style="max-width: 220px; height: auto; border: 1px solid #e5e7eb; border-radius: 10px;" />
+            </div>
+            <p style="color:#666; font-size:12px;">Grazie per averci scelto</p>`;
+
+        const html = templateHtml
+            .replaceAll('{{firstName}}', firstName)
+            .replaceAll('{{lastName}}', lastName)
+            .replaceAll('{{code}}', couponCode)
+            .replaceAll('{{discountText}}', discountText)
+            .replaceAll('{{redemptionUrl}}', redemptionUrl)
+            .replaceAll('{{qrDataUrl}}', 'cid:coupon-qr.png');
+
+        const message = {
+            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
+            to,
+            subject: 'Test Coupon – QR inline',
+            html,
+            attachments: [
+                { filename: 'coupon-qr.png', content: qrPngBuffer, cid: 'coupon-qr.png' }
+            ]
+        };
+
+        const info = await transporter.sendMail(message);
+        res.json({ ok: true, info });
+    } catch (e) {
+        console.error('Test coupon email error:', e);
         res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
 });
@@ -1571,7 +1876,8 @@ app.post('/api/admin/upload-image', requireAdmin, async (req, res) => {
         const filename = `header-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const filePath = path.join(uploadsDir, filename);
         fs.writeFileSync(filePath, buffer);
-        const publicUrl = `/static/uploads/${tenantSlug}/${filename}`;
+        // Use protected endpoint instead of public static
+        const publicUrl = `/api/uploads/${tenantSlug}/${filename}`;
         res.json({ url: publicUrl });
     } catch (e) {
         console.error('Upload image error:', e);
@@ -1604,11 +1910,129 @@ app.post('/t/:tenantSlug/api/admin/upload-image', tenantLoader, requireSameTenan
         const filename = `header-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const filePath = path.join(uploadsDir, filename);
         fs.writeFileSync(filePath, buffer);
-        const publicUrl = `/static/uploads/${req.tenant.slug}/${filename}`;
+        // Use protected endpoint instead of public static
+        const publicUrl = `/api/uploads/${req.tenant.slug}/${filename}`;
         res.json({ url: publicUrl });
     } catch (e) {
         console.error('Upload image error:', e);
         res.status(500).json({ error: 'Errore durante il caricamento immagine' });
+    }
+});
+
+// Legacy redirect endpoint for backward compatibility with old /static/uploads URLs
+app.get('/static/uploads/:tenantSlug/:filename', async (req, res) => {
+    const { tenantSlug, filename } = req.params;
+    // Redirect to protected endpoint
+    res.redirect(301, `/api/uploads/${tenantSlug}/${filename}`);
+});
+
+// Protected upload serving endpoint (public but with tenant validation)
+// Serves uploads with security checks: tenant validation and directory traversal prevention
+app.get('/api/uploads/:tenantSlug/:filename', async (req, res) => {
+    try {
+        const { tenantSlug, filename } = req.params;
+        
+        // Validate tenant slug format (alphanumeric, dash, underscore)
+        if (!/^[a-zA-Z0-9_-]+$/.test(tenantSlug)) {
+            return res.status(400).json({ error: 'Tenant slug non valido' });
+        }
+        
+        // Validate filename format and prevent directory traversal
+        if (!/^[a-zA-Z0-9._-]+$/.test(filename) || filename.includes('..') || filename.startsWith('/')) {
+            return res.status(400).json({ error: 'Nome file non valido' });
+        }
+        
+        // Verify tenant exists
+        const db = await getDb();
+        const tenant = await db.get('SELECT id, slug FROM tenants WHERE slug = ?', tenantSlug);
+        if (!tenant) {
+            return res.status(404).json({ error: 'Tenant non trovato' });
+        }
+        
+        // Build safe file path
+        const filePath = path.join(UPLOADS_BASE_DIR, tenantSlug, filename);
+        
+        // Additional security: ensure file path is within uploads directory (prevent path traversal)
+        const resolvedPath = path.resolve(filePath);
+        const resolvedBase = path.resolve(UPLOADS_BASE_DIR);
+        if (!resolvedPath.startsWith(resolvedBase)) {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'File non trovato' });
+        }
+        
+        // Determine content type from extension
+        const ext = path.extname(filename).toLowerCase();
+        const mimeTypes = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.webp': 'image/webp'
+        };
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+        
+        // Set headers for caching (1 day for images)
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        
+        // Serve file
+        res.sendFile(resolvedPath);
+    } catch (error) {
+        console.error('Error serving upload:', error);
+        res.status(500).json({ error: 'Errore durante il servizio del file' });
+    }
+});
+
+// Tenant-scoped version (same logic)
+app.get('/t/:tenantSlug/api/uploads/:filename', tenantLoader, async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const tenantSlug = req.tenant?.slug || req.params.tenantSlug;
+        
+        // Validate filename format and prevent directory traversal
+        if (!/^[a-zA-Z0-9._-]+$/.test(filename) || filename.includes('..') || filename.startsWith('/')) {
+            return res.status(400).json({ error: 'Nome file non valido' });
+        }
+        
+        // Build safe file path
+        const filePath = path.join(UPLOADS_BASE_DIR, tenantSlug, filename);
+        
+        // Additional security: ensure file path is within uploads directory
+        const resolvedPath = path.resolve(filePath);
+        const resolvedBase = path.resolve(UPLOADS_BASE_DIR);
+        if (!resolvedPath.startsWith(resolvedBase)) {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'File non trovato' });
+        }
+        
+        // Determine content type from extension
+        const ext = path.extname(filename).toLowerCase();
+        const mimeTypes = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.webp': 'image/webp'
+        };
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+        
+        // Set headers for caching (1 day for images)
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        
+        // Serve file
+        res.sendFile(resolvedPath);
+    } catch (error) {
+        console.error('Error serving upload:', error);
+        res.status(500).json({ error: 'Errore durante il servizio del file' });
     }
 });
 
@@ -1645,13 +2069,6 @@ app.get('/api/form-customization', async (req, res) => {
 // Endpoint pubblico per salvare la configurazione del form (per la pagina di personalizzazione)
 app.post('/api/form-customization', async (req, res) => {
     try {
-        console.log('=== RICHIESTA FORM-CUSTOMIZATION ===');
-        console.log('Headers ricevuti:', req.headers);
-        console.log('Content-Type:', req.get('Content-Type'));
-        console.log('Body ricevuto:', req.body);
-        console.log('Tipo del body:', typeof req.body);
-        console.log('=====================================');
-        
         // Verifica che il body sia un oggetto valido
         if (!req.body || typeof req.body !== 'object') {
             console.error('Body non valido o vuoto');
@@ -1710,6 +2127,7 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
         
         // Check if specific campaign is requested
         if (campaign_id) {
+            // Resolve campaign by code (use tenant from campaign to scope user/coupon)
             specificCampaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ?', campaign_id);
             if (specificCampaign) {
                 // Check if campaign is active and not expired
@@ -1734,14 +2152,15 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
             return res.status(400).send('Questo coupon non esiste o è scaduto');
         }
 
-        const user = await dbConn.get('SELECT * FROM users WHERE email = ?', email);
+        // Users MUST be tenant-scoped by campaign tenant
+        const user = await dbConn.get('SELECT * FROM users WHERE email = ? AND tenant_id = ?', email, specificCampaign.tenant_id);
         let userId;
         if (user) {
             userId = user.id;
         } else {
             const result = await dbConn.run(
-                'INSERT INTO users (email, first_name, last_name) VALUES (?, ?, ?)',
-                email, firstName || null, lastName || null
+                'INSERT INTO users (email, first_name, last_name, tenant_id) VALUES (?, ?, ?, ?)',
+                email, firstName || null, lastName || null, specificCampaign.tenant_id
             );
             userId = result.lastID;
         }
@@ -1753,21 +2172,23 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
                 const fieldValue = customFields[customField.id];
                 if (fieldValue !== undefined && fieldValue !== '') {
                     await dbConn.run(
-                        'INSERT INTO user_custom_data (user_id, field_name, field_value) VALUES (?, ?, ?)',
-                        userId, customField.id, fieldValue
+                        'INSERT INTO user_custom_data (user_id, field_name, field_value, tenant_id) VALUES (?, ?, ?, ?)',
+                        userId, customField.id, fieldValue, specificCampaign.tenant_id
                     );
                 }
             }
         }
 
         await dbConn.run(
-            'INSERT INTO coupons (code, user_id, campaign_id, discount_type, discount_value, status) VALUES (?, ?, ?, ?, ?, ?)',
-            couponCode, userId, campaignId, discountType, discountValue, 'active'
+            'INSERT INTO coupons (code, user_id, campaign_id, discount_type, discount_value, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            couponCode, userId, campaignId, discountType, discountValue, 'active', specificCampaign.tenant_id
         );
 
         // Redemption URL per staff cassa; il QR deve puntare a questa pagina
         const redemptionUrl = `${req.protocol}://${req.get('host')}/redeem/${couponCode}`;
+        // Generate QR both as DataURL (for web preview) and as PNG buffer for email inline attachment
         const qrDataUrl = await QRCode.toDataURL(redemptionUrl, { width: 300, margin: 2 });
+        const qrPngBuffer = await QRCode.toBuffer(redemptionUrl, { width: 300, margin: 2, type: 'png' });
 
         const discountText = discountType === 'percent' ? `uno sconto del ${discountValue}%` : 
                             discountType === 'fixed' ? `uno sconto di &euro;${discountValue}` : discountValue;
@@ -1775,7 +2196,7 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
         let templateSubject = process.env.MAIL_SUBJECT || 'Il tuo coupon';
         let templateHtml = '';
         try {
-            const tenantId = req.tenant?.id || req.session?.user?.tenantId;
+            const tenantId = specificCampaign.tenant_id || req.tenant?.id || req.session?.user?.tenantId;
             if (tenantId) {
                 const t = await dbConn.get('SELECT subject, html FROM email_template WHERE tenant_id = ?', tenantId);
                 if (t) { templateSubject = t.subject || templateSubject; templateHtml = t.html || templateHtml; }
@@ -1787,24 +2208,30 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
             <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
             <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto;" /></p>
+            <p><img src="cid:coupon-qr" alt="QR Code" style="max-width: 200px; height: auto;" /></p>
             <p>Grazie!</p>`;
         }
 
-        const html = templateHtml
+        // Replace {{qrDataUrl}} with cid:coupon-qr for inline attachment (before other replacements)
+        // Mailgun uses filename without extension as CID reference
+        const htmlTemplate = templateHtml.replaceAll('{{qrDataUrl}}', 'cid:coupon-qr.png');
+        
+        const html = htmlTemplate
             .replaceAll('{{firstName}}', firstName || '')
             .replaceAll('{{lastName}}', lastName || '')
             .replaceAll('{{code}}', couponCode)
             .replaceAll('{{discountText}}', discountText)
-            .replaceAll('{{redemptionUrl}}', redemptionUrl)
-            .replaceAll('{{qrDataUrl}}', qrDataUrl);
+            .replaceAll('{{redemptionUrl}}', redemptionUrl);
 
         const message = {
             from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
             to: email,
             subject: templateSubject,
-            html
-            // QR code is now embedded directly in HTML as data URL
+            html,
+            // Only one inline attachment referenced via CID
+            attachments: [
+                { filename: 'coupon-qr.png', content: qrPngBuffer, cid: 'coupon-qr.png' }
+            ]
         };
 
         try {
@@ -1814,7 +2241,13 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
                 console.log('Email simulata:', info.message);
             }
         } catch (emailErr) {
-            console.error('Email error:', emailErr);
+            console.error('[email] Error sending coupon email:', {
+                message: emailErr?.message || 'Unknown error',
+                status: emailErr?.status,
+                details: emailErr?.details || emailErr?.body,
+                to: email,
+                stack: emailErr?.stack
+            });
             // Continue without failing the request
         }
 
@@ -1897,7 +2330,9 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
         );
 
         const redemptionUrl = `${req.protocol}://${req.get('host')}/t/${req.tenant.slug}/redeem/${couponCode}`;
+        // Generate QR for tenant flow as inline PNG buffer for email clients and keep DataURL as fallback
         const qrDataUrl = await QRCode.toDataURL(redemptionUrl, { width: 300, margin: 2 });
+        const qrPngBuffer = await QRCode.toBuffer(redemptionUrl, { width: 300, margin: 2, type: 'png' });
 
         const discountText = discountType === 'percent' ? `uno sconto del ${discountValue}%` : 
                             discountType === 'fixed' ? `uno sconto di &euro;${discountValue}` : discountValue;
@@ -1914,25 +2349,46 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
             <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
             <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto;" /></p>
+            <p><img src="cid:coupon-qr" alt="QR Code" style="max-width: 200px; height: auto;" /></p>
             <p>Grazie!</p>`;
         }
-        const html = templateHtml
+        // Replace {{qrDataUrl}} with cid:coupon-qr for inline attachment (before other replacements)
+        // Mailgun uses filename without extension as CID reference
+        const htmlTemplate = templateHtml.replaceAll('{{qrDataUrl}}', 'cid:coupon-qr.png');
+        
+        const html = htmlTemplate
             .replaceAll('{{firstName}}', firstName || '')
             .replaceAll('{{lastName}}', lastName || '')
             .replaceAll('{{code}}', couponCode)
             .replaceAll('{{discountText}}', discountText)
-            .replaceAll('{{redemptionUrl}}', redemptionUrl)
-            .replaceAll('{{qrDataUrl}}', qrDataUrl);
+            .replaceAll('{{redemptionUrl}}', redemptionUrl);
 
         const message = {
             from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
             to: email,
             subject: templateSubject,
-            html
-            // QR code is now embedded directly in HTML as data URL
+            html,
+            attachments: [
+                { filename: 'coupon-qr.png', content: qrPngBuffer, cid: 'coupon-qr.png' }
+            ]
         };
-        try { await transporter.sendMail(message); } catch (emailErr) { console.error('Email error:', emailErr); }
+        try {
+            const info = await transporter.sendMail(message);
+            if (transporter && transporter.options && transporter.options.jsonTransport) {
+                console.log('Email simulata (tenant):', info && info.message);
+            } else {
+                console.log('Email inviata (tenant):', info);
+            }
+        } catch (emailErr) {
+            console.error('[email] Error sending coupon email (tenant):', {
+                message: emailErr?.message || 'Unknown error',
+                status: emailErr?.status,
+                details: emailErr?.details || emailErr?.body,
+                to: email,
+                tenant: req.tenant?.slug,
+                stack: emailErr?.stack
+            });
+        }
 
         // Log coupon creation
         await logAction(req, 'create', `Coupon creato: ${couponCode}`, 'success', {
@@ -1990,7 +2446,7 @@ app.use('/t/:tenantSlug/api/admin', tenantLoader, requireSameTenantAsSession, re
 app.use('/t/:tenantSlug/store', tenantLoader, requireSameTenantAsSession, requireRole('store'));
 app.use('/t/:tenantSlug/api/store', tenantLoader, requireSameTenantAsSession, requireRole('store'));
 
-app.get('/store', (req, res) => {
+app.get('/store', requireStore, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'store.html'));
 });
 app.get('/t/:tenantSlug/store', tenantLoader, (req, res) => {
@@ -2171,7 +2627,7 @@ app.get('/t/:tenantSlug/api/store/coupons/search', tenantLoader, async (req, res
 });
 
 // Admin: search coupons by code (partial) or last name
-app.get('/api/admin/coupons/search', async (req, res) => {
+app.get('/api/admin/coupons/search', requireAdmin, async (req, res) => {
     try {
         const { q } = req.query;
         if (!q || q.trim().length < 2) {
@@ -2230,7 +2686,7 @@ app.post('/t/:tenantSlug/api/coupons/:code/redeem', tenantLoader, async (req, re
 // Note: Authentication is already applied above
 
 // Campaigns management
-app.get('/api/admin/campaigns', async (req, res) => {
+app.get('/api/admin/campaigns', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const campaigns = await dbConn.all('SELECT * FROM campaigns ORDER BY created_at DESC');
@@ -2302,6 +2758,32 @@ app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAs
         res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
     } catch (e) {
         console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: update campaign
+app.put('/t/:tenantSlug/api/admin/campaigns/:id', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { name, description, discount_type, discount_value, expiry_date } = req.body || {};
+        const fields = [];
+        const params = [];
+        if (typeof name === 'string') { fields.push('name = ?'); params.push(name); }
+        if (typeof description === 'string') { fields.push('description = ?'); params.push(description); }
+        if (typeof discount_type === 'string') { fields.push('discount_type = ?'); params.push(discount_type); }
+        if (typeof discount_value === 'string') { fields.push('discount_value = ?'); params.push(discount_value); }
+        if (typeof expiry_date === 'string' || expiry_date === null) { fields.push('expiry_date = ?'); params.push(expiry_date || null); }
+        if (fields.length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
+        const dbConn = await getDb();
+        params.push(req.params.id, req.tenant.id);
+        await dbConn.run(`UPDATE campaigns SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`, params);
+        const updated = await dbConn.get('SELECT * FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, req.tenant.id);
+        res.json(updated);
+    } catch (e) {
+        console.error('update campaign (tenant) error', e);
+        if (e && e.code === 'SQLITE_CONSTRAINT') {
+            return res.status(409).json({ error: 'Nome campagna già esistente' });
+        }
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2423,7 +2905,7 @@ app.get('/api/campaigns/:code', async (req, res) => {
     }
 });
 
-app.post('/api/admin/campaigns', async (req, res) => {
+app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
     try {
         const { name, description, discount_type, discount_value, expiry_date } = req.body;
         if (typeof name !== 'string' || !name.trim()) {
@@ -2462,7 +2944,33 @@ app.post('/api/admin/campaigns', async (req, res) => {
     }
 });
 
-app.put('/api/admin/campaigns/:id/activate', async (req, res) => {
+// Update campaign
+app.put('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
+    try {
+        const { name, description, discount_type, discount_value, expiry_date } = req.body || {};
+        const fields = [];
+        const params = [];
+        if (typeof name === 'string') { fields.push('name = ?'); params.push(name); }
+        if (typeof description === 'string') { fields.push('description = ?'); params.push(description); }
+        if (typeof discount_type === 'string') { fields.push('discount_type = ?'); params.push(discount_type); }
+        if (typeof discount_value === 'string') { fields.push('discount_value = ?'); params.push(discount_value); }
+        if (typeof expiry_date === 'string' || expiry_date === null) { fields.push('expiry_date = ?'); params.push(expiry_date || null); }
+        if (fields.length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
+        const dbConn = await getDb();
+        params.push(req.params.id);
+        await dbConn.run(`UPDATE campaigns SET ${fields.join(', ')} WHERE id = ?`, params);
+        const updated = await dbConn.get('SELECT * FROM campaigns WHERE id = ?', req.params.id);
+        res.json(updated);
+    } catch (e) {
+        console.error('update campaign error', e);
+        if (e && e.code === 'SQLITE_CONSTRAINT') {
+            return res.status(409).json({ error: 'Nome campagna già esistente' });
+        }
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.put('/api/admin/campaigns/:id/activate', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         // Simply activate the selected campaign (no need to deactivate others)
@@ -2474,7 +2982,7 @@ app.put('/api/admin/campaigns/:id/activate', async (req, res) => {
     }
 });
 
-app.put('/api/admin/campaigns/:id/deactivate', async (req, res) => {
+app.put('/api/admin/campaigns/:id/deactivate', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         // Deactivate the specific campaign
@@ -2486,7 +2994,7 @@ app.put('/api/admin/campaigns/:id/deactivate', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/campaigns/:id', async (req, res) => {
+app.delete('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         await dbConn.run('DELETE FROM campaigns WHERE id = ?', req.params.id);
@@ -2498,7 +3006,7 @@ app.delete('/api/admin/campaigns/:id', async (req, res) => {
 });
 
 // Form configuration APIs
-app.get('/api/admin/campaigns/:id/form-config', async (req, res) => {
+app.get('/api/admin/campaigns/:id/form-config', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ?', req.params.id);
@@ -2513,7 +3021,7 @@ app.get('/api/admin/campaigns/:id/form-config', async (req, res) => {
     }
 });
 
-app.put('/api/admin/campaigns/:id/form-config', async (req, res) => {
+app.put('/api/admin/campaigns/:id/form-config', requireAdmin, async (req, res) => {
     try {
         const { formConfig } = req.body;
         if (!formConfig || typeof formConfig !== 'object') {
@@ -2530,7 +3038,7 @@ app.put('/api/admin/campaigns/:id/form-config', async (req, res) => {
 });
 
 // API per recuperare tutte le campagne
-app.get('/api/admin/campaigns-list', async (req, res) => {
+app.get('/api/admin/campaigns-list', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const campaigns = await dbConn.all(`
@@ -2547,10 +3055,12 @@ app.get('/api/admin/campaigns-list', async (req, res) => {
 });
 
 // Database utenti API
-app.get('/api/admin/users', async (req, res) => {
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
         const { search, campaigns } = req.query;
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         let query = `
             SELECT 
@@ -2563,12 +3073,12 @@ app.get('/api/admin/users', async (req, res) => {
                 MIN(u.created_at) as first_coupon_date,
                 MAX(u.created_at) as last_coupon_date
             FROM users u
-            LEFT JOIN coupons co ON u.id = co.user_id
-            LEFT JOIN campaigns c ON co.campaign_id = c.id
+            LEFT JOIN coupons co ON u.id = co.user_id AND co.tenant_id = u.tenant_id
+            LEFT JOIN campaigns c ON co.campaign_id = c.id AND c.tenant_id = u.tenant_id
         `;
         
-        const params = [];
-        const conditions = [];
+        const params = [tenantId];
+        const conditions = ['u.tenant_id = ?'];
         
         if (search && search.trim()) {
             conditions.push(`u.last_name LIKE ?`);
@@ -2589,7 +3099,7 @@ app.get('/api/admin/users', async (req, res) => {
         }
         
         query += `
-            GROUP BY u.email, u.first_name, u.last_name
+            GROUP BY u.id
             ORDER BY last_coupon_date DESC
         `;
         
@@ -2598,8 +3108,8 @@ app.get('/api/admin/users', async (req, res) => {
         // Fetch custom fields for each user
         for (let user of users) {
             const customFields = await dbConn.all(
-                'SELECT field_name, field_value FROM user_custom_data WHERE user_id = ?',
-                user.id
+                'SELECT field_name, field_value FROM user_custom_data WHERE user_id = ? AND tenant_id = ?',
+                user.id, tenantId
             );
             user.customFields = customFields.reduce((acc, field) => {
                 acc[field.field_name] = field.field_value;
@@ -2614,13 +3124,107 @@ app.get('/api/admin/users', async (req, res) => {
     }
 });
 
-// Get user coupons
-app.get('/api/admin/users/:id/coupons', async (req, res) => {
+// Export users as CSV for current tenant
+app.get('/api/admin/users/export.csv', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).send('Tenant non valido');
+
+        let query = `
+            SELECT 
+                u.id,
+                u.email,
+                u.first_name,
+                u.last_name,
+                GROUP_CONCAT(DISTINCT c.name) as campaigns,
+                COUNT(DISTINCT co.id) as total_coupons,
+                MIN(u.created_at) as first_coupon_date,
+                MAX(u.created_at) as last_coupon_date
+            FROM users u
+            LEFT JOIN coupons co ON u.id = co.user_id AND co.tenant_id = u.tenant_id
+            LEFT JOIN campaigns c ON co.campaign_id = c.id AND c.tenant_id = u.tenant_id
+            WHERE u.tenant_id = ?
+            GROUP BY u.id
+            ORDER BY last_coupon_date DESC
+        `;
+
+        const users = await dbConn.all(query, tenantId);
+
+        // Collect custom fields and union of field names
+        const allCustomFieldNames = new Set();
+        for (let user of users) {
+            const customFields = await dbConn.all(
+                'SELECT field_name, field_value FROM user_custom_data WHERE user_id = ? AND tenant_id = ?',
+                user.id, tenantId
+            );
+            const mapped = customFields.reduce((acc, field) => {
+                acc[field.field_name] = field.field_value;
+                allCustomFieldNames.add(field.field_name);
+                return acc;
+            }, {});
+            user.customFields = mapped;
+        }
+
+        // Prepare CSV
+        const customFieldColumns = Array.from(allCustomFieldNames).sort();
+        const headers = [
+            'email',
+            'first_name',
+            'last_name',
+            'campaigns',
+            'total_coupons',
+            'first_coupon_date',
+            'last_coupon_date',
+            ...customFieldColumns
+        ];
+
+        const escapeCsv = (value) => {
+            if (value === null || value === undefined) return '';
+            const str = String(value);
+            if (/[",\n]/.test(str)) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        };
+
+        const rows = [];
+        rows.push(headers.join(','));
+        for (const u of users) {
+            const baseCols = [
+                u.email || '',
+                u.first_name || '',
+                u.last_name || '',
+                (u.campaigns || ''),
+                u.total_coupons || 0,
+                u.first_coupon_date || '',
+                u.last_coupon_date || ''
+            ];
+            const customCols = customFieldColumns.map(name => (u.customFields && u.customFields[name]) ? u.customFields[name] : '');
+            const line = [...baseCols, ...customCols].map(escapeCsv).join(',');
+            rows.push(line);
+        }
+
+        const csvContent = '\uFEFF' + rows.join('\n'); // BOM for Excel
+        const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="utenti-${timestamp}.csv"`);
+        return res.send(csvContent);
+    } catch (e) {
+        console.error(e);
+        res.status(500).send('Errore server');
+    }
+});
+
+// Get user coupons
+app.get('/api/admin/users/:id/coupons', requireAdmin, async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         // Check if user exists
-        const user = await dbConn.get('SELECT * FROM users WHERE id = ?', req.params.id);
+        const user = await dbConn.get('SELECT * FROM users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!user) {
             return res.status(404).json({ error: 'Utente non trovato' });
         }
@@ -2638,9 +3242,9 @@ app.get('/api/admin/users/:id/coupons', async (req, res) => {
                 camp.name as campaign_name
             FROM coupons c
             LEFT JOIN campaigns camp ON camp.id = c.campaign_id
-            WHERE c.user_id = ?
+            WHERE c.user_id = ? AND c.tenant_id = ?
             ORDER BY c.issued_at DESC
-        `, req.params.id);
+        `, req.params.id, tenantId);
         
         res.json(coupons);
     } catch (e) {
@@ -2650,7 +3254,7 @@ app.get('/api/admin/users/:id/coupons', async (req, res) => {
 });
 
 // Delete specific coupon
-app.delete('/api/admin/coupons/:id', async (req, res) => {
+app.delete('/api/admin/coupons/:id', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         
@@ -2671,18 +3275,20 @@ app.delete('/api/admin/coupons/:id', async (req, res) => {
 });
 
 // Delete user
-app.delete('/api/admin/users/:id', async (req, res) => {
+app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         // Check if user exists
-        const user = await dbConn.get('SELECT * FROM users WHERE id = ?', req.params.id);
+        const user = await dbConn.get('SELECT * FROM users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!user) {
             return res.status(404).json({ error: 'Utente non trovato' });
         }
         
         // Check if user has active coupons
-        const activeCouponCount = await dbConn.get('SELECT COUNT(*) as count FROM coupons WHERE user_id = ? AND status = "active"', req.params.id);
+        const activeCouponCount = await dbConn.get('SELECT COUNT(*) as count FROM coupons WHERE user_id = ? AND status = "active" AND tenant_id = ?', req.params.id, tenantId);
         if (activeCouponCount.count > 0) {
             return res.status(400).json({ 
                 error: 'Impossibile eliminare l\'utente: ha dei coupon attivi. Elimina prima i coupon attivi o cambia il loro stato.' 
@@ -2690,7 +3296,7 @@ app.delete('/api/admin/users/:id', async (req, res) => {
         }
         
         // Delete user (custom fields will be deleted automatically due to CASCADE)
-        await dbConn.run('DELETE FROM users WHERE id = ?', req.params.id);
+        await dbConn.run('DELETE FROM users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         
         res.json({ success: true, message: 'Utente eliminato con successo' });
     } catch (e) {
@@ -2700,18 +3306,20 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 });
 
 // Get single user by ID
-app.get('/api/admin/users/:id', async (req, res) => {
+app.get('/api/admin/users/:id', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        const user = await dbConn.get('SELECT * FROM users WHERE id = ?', req.params.id);
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        const user = await dbConn.get('SELECT * FROM users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!user) {
             return res.status(404).json({ error: 'Utente non trovato' });
         }
         
         // Fetch custom fields
         const customFields = await dbConn.all(
-            'SELECT field_name, field_value FROM user_custom_data WHERE user_id = ?',
-            user.id
+            'SELECT field_name, field_value FROM user_custom_data WHERE user_id = ? AND tenant_id = ?',
+            user.id, tenantId
         );
         user.customFields = customFields.reduce((acc, field) => {
             acc[field.field_name] = field.field_value;
@@ -2726,20 +3334,22 @@ app.get('/api/admin/users/:id', async (req, res) => {
 });
 
 // Update user
-app.put('/api/admin/users/:id', async (req, res) => {
+app.put('/api/admin/users/:id', requireAdmin, async (req, res) => {
     try {
         const { email, first_name, last_name, customFields } = req.body;
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         // Check if user exists
-        const existingUser = await dbConn.get('SELECT * FROM users WHERE id = ?', req.params.id);
+        const existingUser = await dbConn.get('SELECT * FROM users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!existingUser) {
             return res.status(404).json({ error: 'Utente non trovato' });
         }
         
         // Check if email is already taken by another user
         if (email && email !== existingUser.email) {
-            const emailExists = await dbConn.get('SELECT id FROM users WHERE email = ? AND id != ?', email, req.params.id);
+            const emailExists = await dbConn.get('SELECT id FROM users WHERE email = ? AND id != ? AND tenant_id = ?', email, req.params.id, tenantId);
             if (emailExists) {
                 return res.status(400).json({ error: 'Email già utilizzata da un altro utente' });
             }
@@ -2747,21 +3357,21 @@ app.put('/api/admin/users/:id', async (req, res) => {
         
         // Update user basic info
         await dbConn.run(
-            'UPDATE users SET email = ?, first_name = ?, last_name = ? WHERE id = ?',
-            email, first_name, last_name, req.params.id
+            'UPDATE users SET email = ?, first_name = ?, last_name = ? WHERE id = ? AND tenant_id = ?',
+            email, first_name, last_name, req.params.id, tenantId
         );
         
         // Update custom fields
         if (customFields && typeof customFields === 'object') {
             // Delete existing custom fields
-            await dbConn.run('DELETE FROM user_custom_data WHERE user_id = ?', req.params.id);
+            await dbConn.run('DELETE FROM user_custom_data WHERE user_id = ? AND tenant_id = ?', req.params.id, tenantId);
             
             // Insert new custom fields
             for (const [fieldName, fieldValue] of Object.entries(customFields)) {
                 if (fieldValue !== undefined && fieldValue !== '') {
                     await dbConn.run(
-                        'INSERT INTO user_custom_data (user_id, field_name, field_value) VALUES (?, ?, ?)',
-                        req.params.id, fieldName, fieldValue
+                        'INSERT INTO user_custom_data (user_id, field_name, field_value, tenant_id) VALUES (?, ?, ?, ?)',
+                        req.params.id, fieldName, fieldValue, tenantId
                     );
                 }
             }
@@ -2774,7 +3384,7 @@ app.put('/api/admin/users/:id', async (req, res) => {
     }
 });
 
-app.get('/api/admin/coupons', async (req, res) => {
+app.get('/api/admin/coupons', requireAdmin, async (req, res) => {
     try {
         const { status = 'active', limit = '50', offset = '0', order = 'desc' } = req.query;
         const orderDir = String(order).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
@@ -2813,7 +3423,7 @@ app.get('/api/admin/coupons', async (req, res) => {
 });
 
 // API to manage custom fields for a campaign
-app.get('/api/admin/campaigns/:id/custom-fields', async (req, res) => {
+app.get('/api/admin/campaigns/:id/custom-fields', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ?', req.params.id);
@@ -2829,7 +3439,7 @@ app.get('/api/admin/campaigns/:id/custom-fields', async (req, res) => {
     }
 });
 
-app.put('/api/admin/campaigns/:id/custom-fields', async (req, res) => {
+app.put('/api/admin/campaigns/:id/custom-fields', requireAdmin, async (req, res) => {
     try {
         const { customFields } = req.body;
         const dbConn = await getDb();
@@ -2859,10 +3469,12 @@ app.put('/api/admin/campaigns/:id/custom-fields', async (req, res) => {
 });
 
 // Products API
-app.get('/api/admin/products', async (req, res) => {
+app.get('/api/admin/products', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        const products = await dbConn.all('SELECT * FROM products ORDER BY created_at DESC');
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        const products = await dbConn.all('SELECT * FROM products WHERE tenant_id = ? ORDER BY created_at DESC', tenantId);
         res.json(products);
     } catch (error) {
         console.error('Error fetching products:', error);
@@ -2870,7 +3482,7 @@ app.get('/api/admin/products', async (req, res) => {
     }
 });
 
-app.post('/api/admin/products', async (req, res) => {
+app.post('/api/admin/products', requireAdmin, async (req, res) => {
     try {
         const { name, value, margin_price, sku } = req.body;
         if (typeof name !== 'string' || !name.trim()) {
@@ -2885,9 +3497,11 @@ app.post('/api/admin/products', async (req, res) => {
         }
         
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const result = await dbConn.run(
-            'INSERT INTO products (name, value, margin_price, sku) VALUES (?, ?, ?, ?)',
-            [name, parseFloat(value), parseFloat(margin_price), sku || null]
+            'INSERT INTO products (name, value, margin_price, sku, tenant_id) VALUES (?, ?, ?, ?, ?)',
+            [name, parseFloat(value), parseFloat(margin_price), sku || null, tenantId]
         );
         
         res.json({ id: result.lastID, success: true });
@@ -2901,7 +3515,7 @@ app.post('/api/admin/products', async (req, res) => {
     }
 });
 
-app.put('/api/admin/products/:id', async (req, res) => {
+app.put('/api/admin/products/:id', requireAdmin, async (req, res) => {
     try {
         const { name, value, margin_price, sku } = req.body;
         if (typeof name !== 'string' || !name.trim()) {
@@ -2911,12 +3525,13 @@ app.put('/api/admin/products/:id', async (req, res) => {
             return res.status(400).json({ error: 'Valori numerici non validi' });
         }
         const dbConn = await getDb();
-        
-        await dbConn.run(
-            'UPDATE products SET name = ?, value = ?, margin_price = ?, sku = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            [name, parseFloat(value), parseFloat(margin_price), sku || null, req.params.id]
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        const result = await dbConn.run(
+            'UPDATE products SET name = ?, value = ?, margin_price = ?, sku = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?',
+            [name, parseFloat(value), parseFloat(margin_price), sku || null, req.params.id, tenantId]
         );
-        
+        if (result.changes === 0) return res.status(404).json({ error: 'Prodotto non trovato' });
         res.json({ success: true });
     } catch (error) {
         console.error('Error updating product:', error);
@@ -2928,10 +3543,13 @@ app.put('/api/admin/products/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/products/:id', async (req, res) => {
+app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        await dbConn.run('DELETE FROM products WHERE id = ?', req.params.id);
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        const result = await dbConn.run('DELETE FROM products WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Prodotto non trovato' });
         res.json({ success: true });
     } catch (error) {
         console.error('Error deleting product:', error);
@@ -2940,16 +3558,19 @@ app.delete('/api/admin/products/:id', async (req, res) => {
 });
 
 // Campaign Products API
-app.get('/api/admin/campaigns/:id/products', async (req, res) => {
+app.get('/api/admin/campaigns/:id/products', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const products = await dbConn.all(`
             SELECT p.*, cp.created_at as assigned_at
             FROM products p
             INNER JOIN campaign_products cp ON p.id = cp.product_id
-            WHERE cp.campaign_id = ?
+            INNER JOIN campaigns c ON c.id = cp.campaign_id
+            WHERE cp.campaign_id = ? AND c.tenant_id = ? AND p.tenant_id = ?
             ORDER BY p.name
-        `, req.params.id);
+        `, req.params.id, tenantId, tenantId);
         res.json(products);
     } catch (error) {
         console.error('Error fetching campaign products:', error);
@@ -2957,21 +3578,30 @@ app.get('/api/admin/campaigns/:id/products', async (req, res) => {
     }
 });
 
-app.post('/api/admin/campaigns/:id/products', async (req, res) => {
+app.post('/api/admin/campaigns/:id/products', requireAdmin, async (req, res) => {
     try {
         const { product_ids } = req.body;
         const dbConn = await getDb();
-        
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+
+        // Verify campaign belongs to tenant
+        const campaign = await dbConn.get('SELECT id FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (!campaign) return res.status(404).json({ error: 'Campagna non trovata' });
+
         // Remove existing associations
         await dbConn.run('DELETE FROM campaign_products WHERE campaign_id = ?', req.params.id);
         
-        // Add new associations
+        // Add new associations (only products in same tenant)
         if (product_ids && product_ids.length > 0) {
             for (const product_id of product_ids) {
-                await dbConn.run(
-                    'INSERT INTO campaign_products (campaign_id, product_id) VALUES (?, ?)',
-                    [req.params.id, product_id]
-                );
+                const prod = await dbConn.get('SELECT id FROM products WHERE id = ? AND tenant_id = ?', product_id, tenantId);
+                if (prod) {
+                    await dbConn.run(
+                        'INSERT OR IGNORE INTO campaign_products (campaign_id, product_id) VALUES (?, ?)',
+                        [req.params.id, product_id]
+                    );
+                }
             }
         }
         
@@ -2983,21 +3613,21 @@ app.post('/api/admin/campaigns/:id/products', async (req, res) => {
 });
 
 // Admin page
-app.get('/admin', (req, res) => {
+app.get('/admin', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'admin.html'));
 });
 app.get('/t/:tenantSlug/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'admin.html'));
 });
 
-app.get('/formsetup', requireAuth, (req, res) => {
+app.get('/formsetup', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'formsetup.html'));
 });
 app.get('/t/:tenantSlug/formsetup', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'formsetup.html'));
 });
 
-app.get('/custom-fields', requireAuth, (req, res) => {
+app.get('/custom-fields', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'custom-fields.html'));
 });
 app.get('/t/:tenantSlug/custom-fields', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
@@ -3005,7 +3635,7 @@ app.get('/t/:tenantSlug/custom-fields', tenantLoader, requireSameTenantAsSession
 });
 
 // New canonical route for aesthetic personalization
-app.get('/form-design', requireAuth, (req, res) => {
+app.get('/form-design', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'form-design.html'));
 });
 app.get('/t/:tenantSlug/form-design', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
@@ -3031,7 +3661,7 @@ if (ENFORCE_TENANT_PREFIX) {
     });
 }
 
-app.get('/admin/email-template', requireAuth, (req, res) => {
+app.get('/admin/email-template', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
 });
 // Tenant-scoped email template APIs
@@ -3087,7 +3717,7 @@ app.get('/t/:tenantSlug/admin/email-template', tenantLoader, requireSameTenantAs
     res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
 });
 
-app.get('/db-utenti', requireAuth, (req, res) => {
+app.get('/db-utenti', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'db-utenti.html'));
 });
 app.get('/t/:tenantSlug/db-utenti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
@@ -3095,14 +3725,14 @@ app.get('/t/:tenantSlug/db-utenti', tenantLoader, requireSameTenantAsSession, re
 });
 
 // Utenti (gestione auth_users admin/store)
-app.get('/utenti', requireAuth, (req, res) => {
+app.get('/utenti', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'utenti.html'));
 });
 app.get('/t/:tenantSlug/utenti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'utenti.html'));
 });
 
-app.get('/prodotti', requireAuth, (req, res) => {
+app.get('/prodotti', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'prodotti.html'));
 });
 app.get('/t/:tenantSlug/prodotti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
@@ -3110,7 +3740,7 @@ app.get('/t/:tenantSlug/prodotti', tenantLoader, requireSameTenantAsSession, req
 });
 
 // Analytics page
-app.get('/analytics', requireAuth, (req, res) => {
+app.get('/analytics', requireAdmin, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'analytics.html'));
 });
 app.get('/t/:tenantSlug/analytics', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
@@ -3120,7 +3750,7 @@ app.get('/t/:tenantSlug/analytics', tenantLoader, requireSameTenantAsSession, re
 // (moved 404 handler to the very end, before app.listen)
 
 // Admin analytics: summary
-app.get('/api/admin/analytics/summary', async (req, res) => {
+app.get('/api/admin/analytics/summary', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const { start, end, campaignId, status } = req.query;
@@ -3183,7 +3813,7 @@ app.get('/api/admin/analytics/summary', async (req, res) => {
 });
 
 // Admin analytics: per-campaign
-app.get('/api/admin/analytics/campaigns', async (req, res) => {
+app.get('/api/admin/analytics/campaigns', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const { start, end, campaignId, status } = req.query;
@@ -3241,7 +3871,7 @@ app.get('/api/admin/analytics/campaigns', async (req, res) => {
 });
 
 // Admin analytics: temporal data for charts
-app.get('/api/admin/analytics/temporal', async (req, res) => {
+app.get('/api/admin/analytics/temporal', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const { start, end, campaignId, status, groupBy = 'day' } = req.query;
@@ -3285,7 +3915,7 @@ app.get('/api/admin/analytics/temporal', async (req, res) => {
 });
 
 // Admin analytics: export CSV
-app.get('/api/admin/analytics/export', async (req, res) => {
+app.get('/api/admin/analytics/export', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const { start, end, campaignId, status, format = 'csv' } = req.query;
@@ -3352,14 +3982,15 @@ app.get('/api/admin/analytics/export', async (req, res) => {
 });
 
 // Admin auth users management (admin/store users) - tenant scoped by session
-app.get('/api/admin/auth-users', async (req, res) => {
+app.get('/api/admin/auth-users', requireAdmin, async (req, res) => {
     try {
         const sess = req.session && req.session.user;
         if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
         const dbConn = await getDb();
         
-        // Superadmin can see users from current tenant context, regular admin sees only their tenant
-        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        // Resolve tenant from path/referrer/session
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         const rows = await dbConn.all(
             `SELECT id, username, user_type as userType, is_active as isActive, last_login as lastLogin
@@ -3377,7 +4008,7 @@ app.get('/api/admin/auth-users', async (req, res) => {
     }
 });
 
-app.post('/api/admin/auth-users', async (req, res) => {
+app.post('/api/admin/auth-users', requireAdmin, async (req, res) => {
     try {
         const sess = req.session && req.session.user;
         if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
@@ -3386,12 +4017,17 @@ app.post('/api/admin/auth-users', async (req, res) => {
         if (!username || !password || !['admin', 'store'].includes(role)) {
             return res.status(400).json({ error: 'Dati non validi' });
         }
+        // Solo il Superadmin può creare utenti con ruolo admin
+        if (role === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può creare utenti admin' });
+        }
         const dbConn = await getDb();
-        // Simple hash to match existing approach
-        const passwordHash = Buffer.from(String(password)).toString('base64');
+        // Secure password hashing using bcrypt
+        const passwordHash = await hashPassword(password);
         
-        // Superadmin can create users in current tenant context, regular admin creates in their tenant
-        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        // Resolve tenant from path/referrer/session
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         try {
             const result = await dbConn.run(
@@ -3411,7 +4047,7 @@ app.post('/api/admin/auth-users', async (req, res) => {
     }
 });
 
-app.put('/api/admin/auth-users/:id', async (req, res) => {
+app.put('/api/admin/auth-users/:id', requireAdmin, async (req, res) => {
     try {
         const sess = req.session && req.session.user;
         if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
@@ -3421,17 +4057,19 @@ app.put('/api/admin/auth-users/:id', async (req, res) => {
             return res.status(400).json({ error: 'Ruolo non valido' });
         }
         const dbConn = await getDb();
-        // Superadmin can modify users from current tenant context, regular admin sees only their tenant
-        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        // Resolve tenant from path/referrer/session
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!user) return res.status(404).json({ error: 'Utente non trovato' });
         if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
-        // Admin non può modificare utenti con ruolo admin, tranne se è il primo admin
-        if (user.user_type === 'admin' && sess.userType === 'admin') {
-            const isCurrentUserFirstAdmin = await isFirstAdmin(dbConn, sess.authUserId || sess.id, tenantId);
-            if (!isCurrentUserFirstAdmin) {
-                return res.status(400).json({ error: 'Gli utenti admin non possono essere modificati' });
-            }
+        // Solo il Superadmin può modificare utenti con ruolo admin
+        if (user.user_type === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può modificare utenti admin' });
+        }
+        // Solo il Superadmin può promuovere/demotere a/da admin
+        if (role === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può assegnare il ruolo admin' });
         }
         if (user.id === (sess.authUserId || sess.id)) {
             // Prevent demoting or deactivating self
@@ -3440,11 +4078,7 @@ app.put('/api/admin/auth-users/:id', async (req, res) => {
             }
         }
         
-        // Prevent first admin from being modified by others (including themselves for critical changes)
-        const isTargetUserFirstAdmin = await isFirstAdmin(dbConn, user.id, tenantId);
-        if (isTargetUserFirstAdmin && user.id !== (sess.authUserId || sess.id)) {
-            return res.status(400).json({ error: 'Il primo admin non può essere modificato da altri utenti' });
-        }
+        // Rimuoviamo l'eccezione del "primo admin": ora solo il Superadmin può modificare admin
         // Build update dynamically
         const fields = [];
         const params = [];
@@ -3462,7 +4096,8 @@ app.put('/api/admin/auth-users/:id', async (req, res) => {
         }
         if (password) {
             fields.push('password_hash = ?');
-            params.push(Buffer.from(String(password)).toString('base64'));
+            const newPasswordHash = await hashPassword(password);
+            params.push(newPasswordHash);
         }
         if (fields.length === 0) return res.json({ ok: true });
         params.push(req.params.id);
@@ -3477,29 +4112,23 @@ app.put('/api/admin/auth-users/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/admin/auth-users/:id', async (req, res) => {
+app.delete('/api/admin/auth-users/:id', requireAdmin, async (req, res) => {
     try {
         const sess = req.session && req.session.user;
         if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
         const dbConn = await getDb();
-        // Superadmin can modify users from current tenant context, regular admin sees only their tenant
-        const tenantId = sess.userType === 'superadmin' ? (req.tenant?.id || sess.tenantId || null) : (sess.tenantId || null);
+        // Resolve tenant from path/referrer/session
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!user) return res.status(404).json({ error: 'Utente non trovato' });
         if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
-        // Admin non può eliminare utenti con ruolo admin, tranne se è il primo admin
-        if (user.user_type === 'admin' && sess.userType === 'admin') {
-            const isCurrentUserFirstAdmin = await isFirstAdmin(dbConn, sess.authUserId || sess.id, tenantId);
-            if (!isCurrentUserFirstAdmin) {
-                return res.status(400).json({ error: 'Gli utenti admin non possono essere eliminati' });
-            }
+        // Solo il Superadmin può eliminare utenti con ruolo admin
+        if (user.user_type === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può eliminare utenti admin' });
         }
         
-        // Prevent first admin from being deleted
-        const isTargetUserFirstAdmin = await isFirstAdmin(dbConn, user.id, tenantId);
-        if (isTargetUserFirstAdmin) {
-            return res.status(400).json({ error: 'Il primo admin non può essere eliminato' });
-        }
+        // Rimuoviamo la regola del "primo admin": gestione riservata al Superadmin
         if (user.id === (sess.authUserId || sess.id)) return res.status(400).json({ error: 'Non puoi eliminare il tuo utente' });
         await dbConn.run('DELETE FROM auth_users WHERE id = ?', req.params.id);
         res.json({ ok: true });
@@ -3614,12 +4243,13 @@ app.put('/api/account/password', async (req, res) => {
             return res.status(404).json({ error: 'Utente non trovato' });
         }
         
-        if (!verifyPassword(currentPassword, user.password_hash)) {
+        const isCurrentPasswordValid = await verifyPassword(currentPassword, user.password_hash);
+        if (!isCurrentPasswordValid) {
             return res.status(400).json({ error: 'Password attuale non corretta' });
         }
         
         // Update password
-        const newPasswordHash = hashPassword(newPassword);
+        const newPasswordHash = await hashPassword(newPassword);
         await dbConn.run(
             'UPDATE auth_users SET password_hash = ? WHERE id = ?',
             newPasswordHash, sess.authUserId || sess.id
@@ -3636,6 +4266,13 @@ app.put('/api/account/password', async (req, res) => {
 app.use('/redeem', requireAuth);
 
 app.get('/redeem/:code', (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'redeem.html'));
+});
+
+// Tenant-prefixed redemption page (for multi-tenant routing)
+app.use('/t/:tenantSlug/redeem', tenantLoader, requireAuth);
+
+app.get('/t/:tenantSlug/redeem/:code', tenantLoader, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'redeem.html'));
 });
 
@@ -3703,6 +4340,259 @@ app.get('/api/superadmin/tenants', requireSuperAdmin, async (req, res) => {
     }
 });
 
+// Superadmin: get brand settings for a tenant
+app.get('/api/superadmin/tenants/:id/brand', requireSuperAdmin, async (req, res) => {
+    try {
+        if (!req.session?.user || req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const tenantId = Number(req.params.id);
+        if (!Number.isFinite(tenantId)) return res.status(400).json({ error: 'ID tenant non valido' });
+        const dbConn = await getDb();
+        const row = await dbConn.get('SELECT * FROM tenant_brand_settings WHERE tenant_id = ?', tenantId);
+        if (!row) return res.json({});
+        res.json({
+            primary_color: row.primary_color,
+            accent_color: row.accent_color,
+            light_color: row.light_color,
+            background_color: row.background_color,
+            text_dark_color: row.text_dark_color
+        });
+    } catch (e) {
+        console.error('Error fetching brand settings:', e);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// Superadmin: upsert brand settings (create or full update)
+app.post('/api/superadmin/tenants/:id/brand', requireSuperAdmin, async (req, res) => {
+    try {
+        if (!req.session?.user || req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const tenantId = Number(req.params.id);
+        if (!Number.isFinite(tenantId)) return res.status(400).json({ error: 'ID tenant non valido' });
+        const {
+            primary_color = '#2d5a3d',
+            accent_color = '#4a7c59',
+            light_color = '#e8f5e8',
+            background_color = '#faf8f3',
+            text_dark_color = '#2c3e50'
+        } = req.body || {};
+        const dbConn = await getDb();
+        await dbConn.run(
+            `INSERT INTO tenant_brand_settings (tenant_id, primary_color, accent_color, light_color, background_color, text_dark_color, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(tenant_id) DO UPDATE SET 
+               primary_color = excluded.primary_color,
+               accent_color = excluded.accent_color,
+               light_color = excluded.light_color,
+               background_color = excluded.background_color,
+               text_dark_color = excluded.text_dark_color,
+               updated_at = datetime('now')`,
+            tenantId, primary_color, accent_color, light_color, background_color, text_dark_color
+        );
+        await logAction(req, 'update', `Brand settings aggiornati per tenant ${tenantId}`, 'success', { tenantId });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error upserting brand settings:', e);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// Superadmin: partial update brand settings
+app.put('/api/superadmin/tenants/:id/brand', requireSuperAdmin, async (req, res) => {
+    try {
+        if (!req.session?.user || req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const tenantId = Number(req.params.id);
+        if (!Number.isFinite(tenantId)) return res.status(400).json({ error: 'ID tenant non valido' });
+        const dbConn = await getDb();
+        const existing = await dbConn.get('SELECT * FROM tenant_brand_settings WHERE tenant_id = ?', tenantId);
+        const current = existing || {
+            primary_color: '#2d5a3d',
+            accent_color: '#4a7c59',
+            light_color: '#e8f5e8',
+            background_color: '#faf8f3',
+            text_dark_color: '#2c3e50'
+        };
+        const updated = {
+            primary_color: req.body?.primary_color ?? current.primary_color,
+            accent_color: req.body?.accent_color ?? current.accent_color,
+            light_color: req.body?.light_color ?? current.light_color,
+            background_color: req.body?.background_color ?? current.background_color,
+            text_dark_color: req.body?.text_dark_color ?? current.text_dark_color
+        };
+        await dbConn.run(
+            `INSERT INTO tenant_brand_settings (tenant_id, primary_color, accent_color, light_color, background_color, text_dark_color, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(tenant_id) DO UPDATE SET 
+               primary_color = excluded.primary_color,
+               accent_color = excluded.accent_color,
+               light_color = excluded.light_color,
+               background_color = excluded.background_color,
+               text_dark_color = excluded.text_dark_color,
+               updated_at = datetime('now')`,
+            tenantId, updated.primary_color, updated.accent_color, updated.light_color, updated.background_color, updated.text_dark_color
+        );
+        await logAction(req, 'update', `Brand settings aggiornati (parziali) per tenant ${tenantId}`, 'success', { tenantId });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error partial updating brand settings:', e);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// Tenant-scoped: public read brand settings
+app.get('/t/:tenantSlug/api/brand-settings', tenantLoader, async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const row = await dbConn.get('SELECT * FROM tenant_brand_settings WHERE tenant_id = ?', req.tenant.id);
+        if (!row) return res.json({});
+        res.json({
+            primary_color: row.primary_color,
+            accent_color: row.accent_color,
+            light_color: row.light_color,
+            background_color: row.background_color,
+            text_dark_color: row.text_dark_color
+        });
+    } catch (e) {
+        console.error('Error fetching tenant brand settings (public):', e);
+        res.json({});
+    }
+});
+// Super admin: create new tenant
+app.post('/api/superadmin/tenants', requireSuperAdmin, async (req, res) => {
+    try {
+        if (req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        
+        const { tenantName, tenantSlug, adminUsername, adminPassword, emailFromName } = req.body || {};
+        
+        // Validation
+        if (!tenantName || !adminUsername || !adminPassword) {
+            return res.status(400).json({ error: 'tenantName, adminUsername e adminPassword sono richiesti' });
+        }
+        
+        const db = await getDb();
+        const slug = toSlug(tenantSlug || tenantName);
+        
+        // Check slug uniqueness
+        const existing = await db.get('SELECT id FROM tenants WHERE slug = ?', slug);
+        if (existing) {
+            return res.status(409).json({ error: 'Slug tenant già in uso' });
+        }
+        
+        // Check admin username uniqueness (globalmente o per tenant)
+        const existingAdmin = await db.get('SELECT id FROM auth_users WHERE username = ?', adminUsername);
+        if (existingAdmin) {
+            return res.status(409).json({ error: 'Username già in uso' });
+        }
+        
+        // Create tenant
+        const resultTenant = await db.run(
+            'INSERT INTO tenants (slug, name, email_from_name) VALUES (?, ?, ?)', 
+            slug, 
+            tenantName,
+            emailFromName || 'CouponGen'
+        );
+        const newTenantId = resultTenant.lastID;
+        
+        // Create default email template for new tenant
+        const defaultTemplateHtml = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Il tuo coupon</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                    <tr>
+                        <td style="padding: 30px; text-align: center; background-color: #2d5a3d; border-radius: 8px 8px 0 0;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">🎫 Il tuo Coupon</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 30px;">
+                            <p style="font-size: 16px; color: #333333; margin: 0 0 20px 0;">Ciao {{firstName}} {{lastName}},</p>
+                            <p style="font-size: 16px; color: #333333; margin: 0 0 20px 0;">Ecco il tuo coupon personale che vale <strong style="color: #2d5a3d;">{{discountText}}</strong>!</p>
+                            <div style="background-color: #f8f9fa; border: 2px dashed #2d5a3d; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                                <p style="font-size: 14px; color: #666666; margin: 0 0 10px 0;">Codice Coupon</p>
+                                <p style="font-size: 32px; font-weight: bold; color: #2d5a3d; margin: 0; letter-spacing: 2px;">{{code}}</p>
+                            </div>
+                            <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+                                <p style="font-size: 14px; color: #666666; margin: 0 0 15px 0;">Scansiona il QR Code</p>
+                                <img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto; border: 1px solid #ddd; border-radius: 8px; display: block; margin: 0 auto;">
+                            </div>
+                            <p style="font-size: 16px; color: #333333; margin: 20px 0;">Mostra questo codice in negozio oppure usa il link qui sotto:</p>
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="{{redemptionUrl}}" style="display: inline-block; background-color: #2d5a3d; color: #ffffff; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">🚀 Vai alla Cassa</a>
+                            </div>
+                            <p style="font-size: 14px; color: #666666; margin: 20px 0 0 0;">Grazie per averci scelto!</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 20px 30px; background-color: #f8f9fa; border-radius: 0 0 8px 8px; text-align: center;">
+                            <p style="font-size: 12px; color: #999999; margin: 0;">CouponGen - Sistema di Coupon Digitali</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
+        
+        await db.run(
+            'INSERT INTO email_template (tenant_id, subject, html) VALUES (?, ?, ?)',
+            newTenantId, 
+            'Il tuo coupon', 
+            defaultTemplateHtml
+        );
+        
+        // Create first admin user
+        const adminPasswordHash = await hashPassword(adminPassword);
+        await db.run(
+            'INSERT INTO auth_users (username, password_hash, user_type, is_active, tenant_id) VALUES (?, ?, ?, 1, ?)',
+            adminUsername, 
+            adminPasswordHash, 
+            'admin', 
+            newTenantId
+        );
+        
+        // Log tenant creation
+        await logAction(req, 'create', `Nuovo tenant creato dal Super Admin: ${tenantName}`, 'success', {
+            tenantName: tenantName,
+            tenantSlug: slug,
+            adminUsername: adminUsername,
+            tenantId: newTenantId,
+            createdBy: req.session.user.username
+        });
+        
+        // Return created tenant info
+        const createdTenant = await db.get('SELECT * FROM tenants WHERE id = ?', newTenantId);
+        res.json({ 
+            success: true, 
+            tenant: {
+                id: createdTenant.id,
+                name: createdTenant.name,
+                slug: createdTenant.slug,
+                created_at: createdTenant.created_at
+            },
+            message: `Tenant "${tenantName}" creato con successo`
+        });
+    } catch (error) {
+        console.error('Error creating tenant:', error);
+        res.status(500).json({ error: 'Errore durante la creazione del tenant' });
+    }
+});
+
 app.post('/api/superadmin/login', async (req, res) => {
     try {
         const { username, password } = req.body || {};
@@ -3725,10 +4615,21 @@ app.post('/api/superadmin/login', async (req, res) => {
             return res.status(401).json({ error: 'Account disattivato' });
         }
         
-        // Verify password (simple base64 comparison for now)
-        const passwordHash = Buffer.from(password).toString('base64');
-        if (user.password_hash !== passwordHash) {
+        // Verify password (with backward compatibility for Base64)
+        const isValid = await verifyPassword(password, user.password_hash);
+        if (!isValid) {
             return res.status(401).json({ error: 'Credenziali non valide' });
+        }
+        
+        // If using legacy Base64 hash, upgrade to bcrypt on successful login
+        if (!user.password_hash.startsWith('$2a$') && !user.password_hash.startsWith('$2b$') && !user.password_hash.startsWith('$2y$')) {
+            try {
+                const newHash = await hashPassword(password);
+                await db.run('UPDATE auth_users SET password_hash = ? WHERE id = ?', newHash, user.id);
+            } catch (upgradeError) {
+                console.error('Error upgrading password hash:', upgradeError);
+                // Continue with login even if upgrade fails
+            }
         }
         
         // User is already verified as superadmin by the query above
@@ -3790,6 +4691,141 @@ app.get('/api/superadmin/admin-users', requireSuperAdmin, async (req, res) => {
     } catch (error) {
         console.error('Error fetching admin users:', error);
         res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// Superadmin: update admin/store users across tenants
+app.put('/api/superadmin/admin-users/:id', requireSuperAdmin, async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const { username, password, user_type, is_active } = req.body || {};
+        const role = user_type ? String(user_type).toLowerCase() : undefined;
+        if (role && !['admin', 'store'].includes(role)) {
+            return res.status(400).json({ error: 'Ruolo non valido' });
+        }
+        const db = await getDb();
+        const target = await db.get('SELECT * FROM auth_users WHERE id = ?', req.params.id);
+        if (!target) return res.status(404).json({ error: 'Utente non trovato' });
+        if (target.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
+
+        const fields = [];
+        const params = [];
+        if (typeof username !== 'undefined' && username !== target.username) {
+            fields.push('username = ?');
+            params.push(username);
+        }
+        if (typeof is_active !== 'undefined') {
+            fields.push('is_active = ?');
+            params.push(is_active ? 1 : 0);
+        }
+        if (role) {
+            fields.push('user_type = ?');
+            params.push(role);
+        }
+        if (password) {
+            fields.push('password_hash = ?');
+            const newHash = await hashPassword(password);
+            params.push(newHash);
+        }
+        if (fields.length === 0) return res.json({ ok: true });
+        params.push(req.params.id);
+        await db.run(`UPDATE auth_users SET ${fields.join(', ')} WHERE id = ?`, ...params);
+        return res.json({ ok: true });
+    } catch (e) {
+        if (String(e && e.message || '').includes('UNIQUE')) {
+            return res.status(400).json({ error: 'Username già esistente' });
+        }
+        console.error(e);
+        return res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Superadmin: delete admin/store users across tenants
+app.delete('/api/superadmin/admin-users/:id', requireSuperAdmin, async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const db = await getDb();
+        const target = await db.get('SELECT * FROM auth_users WHERE id = ?', req.params.id);
+        if (!target) return res.status(404).json({ error: 'Utente non trovato' });
+        if (target.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
+        await db.run('DELETE FROM auth_users WHERE id = ?', req.params.id);
+        return res.json({ ok: true });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Admin: read brand settings for current session tenant (legacy routes support)
+app.get('/api/admin/brand-settings', requireAdmin, async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (!sess.tenantId && !sess.tenantSlug)) {
+            return res.json({});
+        }
+        const dbConn = await getDb();
+        const tenant = sess.tenantId
+            ? { id: sess.tenantId }
+            : await dbConn.get('SELECT id FROM tenants WHERE slug = ?', sess.tenantSlug);
+        if (!tenant || !tenant.id) return res.json({});
+        const row = await dbConn.get('SELECT * FROM tenant_brand_settings WHERE tenant_id = ?', tenant.id);
+        if (!row) return res.json({});
+        res.json({
+            primary_color: row.primary_color,
+            accent_color: row.accent_color,
+            light_color: row.light_color,
+            background_color: row.background_color,
+            text_dark_color: row.text_dark_color
+        });
+    } catch (e) {
+        console.error('Error fetching session tenant brand settings:', e);
+        res.json({});
+    }
+});
+
+// Store: read brand settings for current session tenant (legacy store routes support)
+app.get('/api/store/brand-settings', requireStore, async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (!sess.tenantId && !sess.tenantSlug)) {
+            return res.json({});
+        }
+        const dbConn = await getDb();
+        const tenant = sess.tenantId
+            ? { id: sess.tenantId }
+            : await dbConn.get('SELECT id FROM tenants WHERE slug = ?', sess.tenantSlug);
+        if (!tenant || !tenant.id) return res.json({});
+        const row = await dbConn.get('SELECT * FROM tenant_brand_settings WHERE tenant_id = ?', tenant.id);
+        if (!row) return res.json({});
+        res.json({
+            primary_color: row.primary_color,
+            accent_color: row.accent_color,
+            light_color: row.light_color,
+            background_color: row.background_color,
+            text_dark_color: row.text_dark_color
+        });
+    } catch (e) {
+        console.error('Error fetching store tenant brand settings:', e);
+        res.json({});
+    }
+});
+
+// Superadmin brand settings page
+app.get('/superadmin/tenants/:id/brand', requireSuperAdmin, async (req, res) => {
+    try {
+        if (!req.session || !req.session.user || req.session.user.userType !== 'superadmin') {
+            return res.redirect('/superadmin-login');
+        }
+        res.sendFile(path.join(__dirname, 'views', 'superadmin-tenant-brand.html'));
+    } catch (e) {
+        console.error('Error serving brand page:', e);
+        res.status(500).send('Errore interno');
     }
 });
 
@@ -3961,8 +4997,10 @@ app.get('/api/superadmin/logs', requireSuperAdmin, async (req, res) => {
 });
 
 app.delete('/api/superadmin/tenants/:id', requireSuperAdmin, async (req, res) => {
+    const db = await getDb();
+    
     try {
-        if (req.session.user.userType !== 'superadmin') {
+        if (!req.session || !req.session.user || req.session.user.userType !== 'superadmin') {
             return res.status(403).json({ error: 'Accesso negato' });
         }
         
@@ -3971,33 +5009,244 @@ app.delete('/api/superadmin/tenants/:id', requireSuperAdmin, async (req, res) =>
             return res.status(400).json({ error: 'ID tenant non valido' });
         }
         
-        const db = await getDb();
-        
         // Get tenant info before deletion
         const tenant = await db.get('SELECT * FROM tenants WHERE id = ?', tenantId);
         if (!tenant) {
             return res.status(404).json({ error: 'Tenant non trovato' });
         }
         
-        // Delete all related data (cascading delete)
-        await db.run('DELETE FROM coupons WHERE tenant_id = ?', tenantId);
-        await db.run('DELETE FROM campaigns WHERE tenant_id = ?', tenantId);
-        await db.run('DELETE FROM user_custom_data WHERE tenant_id = ?', tenantId);
-        await db.run('DELETE FROM auth_users WHERE tenant_id = ?', tenantId);
-        await db.run('DELETE FROM tenants WHERE id = ?', tenantId);
+        // Use transaction to ensure atomicity
+        // Temporarily disable foreign key constraints for safe deletion
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        if (isDevelopment) {
+            console.log(`[DELETE TENANT] Starting deletion of tenant ${tenantId} (${tenant.name})`);
+        }
         
-        // Log tenant deletion
-        await logAction(req, 'delete', `Tenant eliminato: ${tenant.name}`, 'warning', {
-            tenantId: tenantId,
-            tenantName: tenant.name,
-            tenantSlug: tenant.slug
-        });
+        // Ensure WAL is checkpointed before starting transaction
+        try {
+            await db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+            if (isDevelopment) {
+                console.log(`[DELETE TENANT] WAL checkpoint completed`);
+            }
+        } catch (checkpointError) {
+            console.warn(`[DELETE TENANT] WAL checkpoint warning:`, checkpointError.message);
+            // Continue anyway
+        }
         
-        res.json({ success: true, message: 'Tenant eliminato con successo' });
+        await db.exec('PRAGMA foreign_keys = OFF');
+        await db.exec('BEGIN TRANSACTION');
+        
+        try {
+            // Delete all related data (cascading delete)
+            // Order matters: delete child tables first, then parent tables
+            
+            // Helper function to check if a table has a specific column
+            const tableHasColumn = async (tableName, columnName) => {
+                try {
+                    const columns = await db.all(`PRAGMA table_info(${tableName})`);
+                    return columns.some(col => col.name === columnName);
+                } catch (err) {
+                    console.error(`[DELETE] Error checking columns for ${tableName}:`, err.message);
+                    return false;
+                }
+            };
+            
+            // Helper function to safely delete from a table if it exists
+            const safeDelete = async (tableName, whereClause, params = [], fallbackQuery = null) => {
+                try {
+                    if (isDevelopment) {
+                        console.log(`[DELETE] Checking table: ${tableName}`);
+                    }
+                    // Check if table exists
+                    const tableExists = await db.get(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        tableName
+                    );
+                    if (!tableExists) {
+                        if (isDevelopment) {
+                            console.log(`[DELETE] Table ${tableName} does not exist, skipping`);
+                        }
+                        return;
+                    }
+                    
+                    // Check if the where clause uses tenant_id and if the column exists
+                    if (whereClause.includes('tenant_id')) {
+                        const hasTenantId = await tableHasColumn(tableName, 'tenant_id');
+                        if (!hasTenantId && fallbackQuery) {
+                            if (isDevelopment) {
+                                console.log(`[DELETE] Table ${tableName} does not have tenant_id, using fallback query`);
+                            }
+                            const result = await db.run(fallbackQuery, params);
+                            if (isDevelopment && result.changes > 0) {
+                                console.log(`[DELETE] Deleted from ${tableName} using fallback, changes: ${result.changes}`);
+                            }
+                            return;
+                        } else if (!hasTenantId) {
+                            if (isDevelopment) {
+                                console.log(`[DELETE] Table ${tableName} does not have tenant_id column and no fallback, skipping`);
+                            }
+                            return;
+                        }
+                    }
+                    
+                    if (isDevelopment) {
+                        console.log(`[DELETE] Table ${tableName} exists, executing delete with params:`, params);
+                    }
+                    const result = await db.run(`DELETE FROM ${tableName} WHERE ${whereClause}`, params);
+                    if (isDevelopment && result.changes > 0) {
+                        console.log(`[DELETE] Deleted from ${tableName} for tenant ${tenantId}, changes: ${result.changes}`);
+                    }
+                } catch (err) {
+                    console.error(`[DELETE] Error deleting from ${tableName}:`, err.message);
+                    console.error(`[DELETE] Error stack:`, err.stack);
+                    throw err;
+                }
+            };
+            
+            // 1. Delete campaign_products first (if table exists)
+            if (isDevelopment) {
+                console.log(`[DELETE TENANT] Checking for campaigns with tenant_id ${tenantId}`);
+            }
+            const campaignIds = await db.all('SELECT id FROM campaigns WHERE tenant_id = ?', tenantId);
+            if (isDevelopment) {
+                console.log(`[DELETE TENANT] Found ${campaignIds ? campaignIds.length : 0} campaigns`);
+            }
+            if (campaignIds && campaignIds.length > 0) {
+                const ids = campaignIds.map(c => c.id);
+                if (isDevelopment) {
+                    console.log(`[DELETE TENANT] Campaign IDs to delete from campaign_products:`, ids);
+                }
+                // Check if campaign_products table exists first
+                const cpTableExists = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='campaign_products'");
+                if (cpTableExists) {
+                    const placeholders = ids.map(() => '?').join(',');
+                    await safeDelete('campaign_products', `campaign_id IN (${placeholders})`, ids);
+                } else if (isDevelopment) {
+                    console.log(`[DELETE TENANT] campaign_products table does not exist, skipping`);
+                }
+            }
+            
+            // 2. Delete data that depends on users first
+            // For user_custom_data, if it doesn't have tenant_id, delete via users relationship
+            await safeDelete(
+                'user_custom_data', 
+                'tenant_id = ?', 
+                [tenantId],
+                'DELETE FROM user_custom_data WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)'
+            );
+            await safeDelete('coupons', 'tenant_id = ?', [tenantId]);
+            
+            // 3. Delete users and auth_users
+            await safeDelete('users', 'tenant_id = ?', [tenantId]);
+            await safeDelete('auth_users', 'tenant_id = ?', [tenantId]);
+            
+            // 4. Delete campaigns
+            await safeDelete('campaigns', 'tenant_id = ?', [tenantId]);
+            
+            // 5. Delete email templates
+            await safeDelete('email_template', 'tenant_id = ?', [tenantId]);
+            
+            // 6. Delete products if table exists and has tenant_id
+            const productsCheck = await db.all("PRAGMA table_info(products)").catch(() => []);
+            if (productsCheck.some(col => col.name === 'tenant_id')) {
+                await safeDelete('products', 'tenant_id = ?', [tenantId]);
+            }
+            
+            // 7. Finally delete the tenant itself
+            if (isDevelopment) {
+                console.log(`[DELETE TENANT] Deleting tenant record with id ${tenantId}`);
+            }
+            await db.run('DELETE FROM tenants WHERE id = ?', tenantId);
+            
+            // Commit transaction
+            await db.exec('COMMIT');
+            await db.exec('PRAGMA foreign_keys = ON');
+            
+            // Log tenant deletion (after successful deletion)
+            // Note: tenant is already deleted, so we use the saved tenant info
+            try {
+                await logAction(req, 'delete', `Tenant eliminato: ${tenant.name}`, 'warning', {
+                    tenantId: tenantId,
+                    tenantName: tenant.name,
+                    tenantSlug: tenant.slug
+                });
+            } catch (logError) {
+                console.error(`[DELETE TENANT] Error logging deletion (non-critical):`, logError.message);
+                // Don't fail the request if logging fails
+            }
+            
+            // Always log successful deletion (important for audit)
+            console.log(`[DELETE TENANT] Tenant ${tenantId} (${tenant.name}) deleted successfully`);
+            res.json({ success: true, message: 'Tenant eliminato con successo' });
+        } catch (deleteError) {
+            // Rollback on error
+            try {
+                await db.exec('ROLLBACK');
+            } catch (rollbackError) {
+                console.error('Rollback error:', rollbackError);
+            }
+            try {
+                await db.exec('PRAGMA foreign_keys = ON');
+            } catch (fkError) {
+                console.error('Foreign keys re-enable error:', fkError);
+            }
+            throw deleteError;
+        }
     } catch (error) {
         console.error('Error deleting tenant:', error);
-        res.status(500).json({ error: 'Errore interno del server' });
+        console.error('Error stack:', error.stack);
+        const errorMessage = error.message || 'Errore interno del server';
+        // In development, send more details about the error
+        const errorDetails = process.env.NODE_ENV !== 'production' 
+            ? { message: errorMessage, stack: error.stack } 
+            : { message: errorMessage };
+        res.status(500).json({ error: errorMessage, details: errorDetails });
     }
+});
+
+// Global error handler (must be before 404 handler)
+app.use((error, req, res, next) => {
+    // Skip if response already sent
+    if (res.headersSent) {
+        return next(error);
+    }
+    
+    // Log error with context
+    const errorContext = {
+        message: error.message,
+        stack: error.stack,
+        url: req.url,
+        method: req.method,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        timestamp: new Date().toISOString()
+    };
+    
+    console.error('[error-handler] Unhandled error:', JSON.stringify(errorContext, null, 2));
+    
+    // Determine status code
+    let statusCode = error.status || error.statusCode || 500;
+    if (statusCode < 400 || statusCode >= 600) {
+        statusCode = 500;
+    }
+    
+    // Prepare error response
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const errorResponse = {
+        error: 'Errore interno del server',
+        message: statusCode === 500 && !isDevelopment 
+            ? 'Si è verificato un errore. Riprova più tardi.' 
+            : error.message || 'Errore interno del server',
+        statusCode
+    };
+    
+    // Include stack trace only in development
+    if (isDevelopment && error.stack) {
+        errorResponse.stack = error.stack;
+    }
+    
+    // Send error response
+    res.status(statusCode).json(errorResponse);
 });
 
 // 404 handler (must be last): serve friendly not-found page
@@ -4012,15 +5261,76 @@ const server = app.listen(PORT, async () => {
 });
 
 // Configure server timeouts to prevent connection issues
-server.keepAliveTimeout = 65000; // 65 seconds (same as nginx default)
-server.headersTimeout = 66000;   // 66 seconds (slightly higher than keepAliveTimeout)
-server.requestTimeout = 30000;   // 30 seconds for request processing
-server.timeout = 30000;          // 30 seconds overall timeout
+// Note: requestTimeout and timeout are the same setting (requestTimeout is deprecated)
+const KEEP_ALIVE_TIMEOUT = Number(process.env.SERVER_KEEPALIVE_TIMEOUT) || 65000; // 65 seconds (same as nginx default)
+const HEADERS_TIMEOUT = Number(process.env.SERVER_HEADERS_TIMEOUT) || 66000; // 66 seconds (slightly higher than keepAliveTimeout)
+const REQUEST_TIMEOUT = Number(process.env.SERVER_REQUEST_TIMEOUT) || 30000; // 30 seconds for request processing
+
+server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT;
+server.headersTimeout = HEADERS_TIMEOUT;
+server.timeout = REQUEST_TIMEOUT; // Overall request timeout
 
 console.log('Server timeouts configured:');
 console.log(`- Keep-Alive: ${server.keepAliveTimeout}ms`);
 console.log(`- Headers: ${server.headersTimeout}ms`);
-console.log(`- Request: ${server.requestTimeout}ms`);
-console.log(`- Overall: ${server.timeout}ms`);
+console.log(`- Request/Overall: ${server.timeout}ms`);
 
+// Graceful shutdown handler
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+    if (isShuttingDown) {
+        console.log(`[shutdown] Already shutting down, ignoring ${signal}`);
+        return;
+    }
+    
+    isShuttingDown = true;
+    console.log(`[shutdown] Received ${signal}, initiating graceful shutdown...`);
+    
+    // Stop accepting new requests
+    server.close(() => {
+        console.log('[shutdown] HTTP server closed');
+    });
+    
+    // Close database connection
+    if (db) {
+        try {
+            await db.close();
+            console.log('[shutdown] Database connection closed');
+        } catch (error) {
+            console.error('[shutdown] Error closing database:', error);
+        }
+    }
+    
+    // Clear intervals
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+        console.log('[shutdown] Cleanup intervals cleared');
+    }
+    
+    // Force exit after timeout if graceful shutdown takes too long
+    setTimeout(() => {
+        console.error('[shutdown] Graceful shutdown timeout, forcing exit');
+        process.exit(1);
+    }, 10000); // 10 seconds timeout
+    
+    // Exit cleanly
+    console.log('[shutdown] Graceful shutdown complete');
+    process.exit(0);
+}
+
+// Handle shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions and unhandled rejections
+process.on('uncaughtException', (error) => {
+    console.error('[fatal] Uncaught exception:', error);
+    gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[fatal] Unhandled rejection at:', promise, 'reason:', reason);
+    gracefulShutdown('unhandledRejection');
+});
 

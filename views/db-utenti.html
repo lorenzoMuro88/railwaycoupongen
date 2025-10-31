@@ -67,7 +67,6 @@
         .nav-link:hover {
             background: rgba(255,255,255,0.15);
             color: var(--light-green);
-            transform: translateY(-1px);
         }
         
         .nav-link.active {
@@ -155,7 +154,8 @@
         }
         
         th {
-            background: var(--light-green);
+            background: var(--primary-green);
+            color: var(--white);
             font-weight: bold;
             color: var(--primary-green);
         }
@@ -269,7 +269,6 @@
         .dropdown-trigger:hover {
             border-color: var(--dark-green);
             background: var(--light-green);
-            transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         
@@ -347,7 +346,6 @@
         
         .dropdown-option:hover {
             background: var(--light-green);
-            transform: translateX(4px);
         }
         
         .dropdown-option:last-child {
@@ -456,7 +454,6 @@
         .column-visibility-controls .dropdown-trigger:hover {
             border-color: var(--dark-green);
             background: var(--light-green);
-            transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
 
@@ -493,7 +490,6 @@
         .column-visibility-controls .clear-btn:hover {
             background: rgba(255,255,255,0.3);
             border-color: rgba(255,255,255,0.5);
-            transform: translateY(-1px);
         }
 
         .column-visibility-controls .dropdown-options {
@@ -512,7 +508,6 @@
 
         .column-visibility-controls .dropdown-option:hover {
             background: var(--light-green);
-            transform: translateX(4px);
         }
 
         .column-visibility-controls .dropdown-option:last-child {
@@ -948,9 +943,14 @@
             <div class="table-container">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                     <h2>Elenco Utenti <span id="usersCount" class="users-count"></span></h2>
-                    <button class="refresh-btn" onclick="loadUsersWithFeedback(this)">
-                        <span class="btn-text">Aggiorna</span>
-                    </button>
+                    <div>
+                        <button class="refresh-btn" onclick="loadUsersWithFeedback(this)">
+                            <span class="btn-text">Aggiorna</span>
+                        </button>
+                        <button class="refresh-btn" onclick="downloadUsersCsv(this)" style="margin-left: 0.5rem;">
+                            <span class="btn-text">Scarica CSV</span>
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="filters-container">
@@ -1138,6 +1138,39 @@
                 setButtonState(button, 'success');
             } catch (error) {
                 console.error('Errore durante il caricamento utenti:', error);
+                setButtonState(button, 'error');
+            }
+        }
+
+        async function downloadUsersCsv(button) {
+            try {
+                setButtonState(button, 'loading');
+                const response = await fetch('/api/admin/users/export.csv');
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || 'Errore durante l\'esportazione CSV');
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                // Prova a leggere filename dall'header, altrimenti fallback
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename="?([^";]+)"?/i);
+                a.download = match ? match[1] : 'utenti.csv';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                setButtonState(button, 'success');
+            } catch (error) {
+                console.error('Errore export CSV:', error);
+                showModal({
+                    title: 'Errore',
+                    message: 'Impossibile scaricare il CSV utenti',
+                    type: 'error',
+                    showCancel: false
+                });
                 setButtonState(button, 'error');
             }
         }
