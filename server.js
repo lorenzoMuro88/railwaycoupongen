@@ -86,6 +86,10 @@ function csrfIfProtectedRoute(req, res, next) {
     const isProtected = protectedPrefixes.some(p => url.startsWith(p));
     
     if (isProtected || isTenantScoped) {
+        // Log CSRF token info for debugging
+        const csrfTokenHeader = req.headers['x-csrf-token'];
+        const hasSession = req.session && req.session.id;
+        console.log(`[CSRF] ${req.method} ${url} - Token in header: ${csrfTokenHeader ? csrfTokenHeader.substring(0, 20) + '...' : 'missing'}, Session: ${hasSession ? 'yes' : 'no'}`);
         return csrfProtection(req, res, next);
     }
     
@@ -500,6 +504,8 @@ app.get(['/api/csrf-token','/t/:tenantSlug/api/csrf-token'], (req, res, next) =>
     csrfProtection(req, res, () => {
         try {
             const token = req.csrfToken ? req.csrfToken() : null;
+            const hasSession = req.session && req.session.id;
+            console.log(`[CSRF] GET /api/csrf-token - Token generated: ${token ? token.substring(0, 20) + '...' : 'null'}, Session: ${hasSession ? 'yes' : 'no'}`);
             if (!token) {
                 return res.status(500).json({ error: 'Impossibile generare token CSRF' });
             }
@@ -890,6 +896,12 @@ async function getDb() {
         if (!campaignColumnNames.includes('tenant_id')) {
             logger.debug('Adding tenant_id column to campaigns...');
             await db.exec('ALTER TABLE campaigns ADD COLUMN tenant_id INTEGER');
+        }
+        
+        // Check if expiry_date column exists in campaigns table
+        if (!campaignColumnNames.includes('expiry_date')) {
+            logger.debug('Adding expiry_date column to campaigns...');
+            await db.exec('ALTER TABLE campaigns ADD COLUMN expiry_date DATETIME');
         }
         
         // Check if new columns exist in users table
