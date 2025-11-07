@@ -2814,18 +2814,20 @@ app.get('/api/admin/coupons/search', requireAdmin, async (req, res) => {
         }
         
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const searchTerm = `%${q.trim().toUpperCase()}%`;
         
         const coupons = await dbConn.all(`
             SELECT c.id, c.code, c.discount_type AS discountType, c.discount_value AS discountValue, c.status, c.issued_at AS issuedAt, c.redeemed_at AS redeemedAt,
                    u.first_name AS firstName, u.last_name AS lastName, u.email, camp.name AS campaignName
             FROM coupons c
-            JOIN users u ON u.id = c.user_id
-            LEFT JOIN campaigns camp ON camp.id = c.campaign_id
-            WHERE c.code LIKE ? OR UPPER(u.last_name) LIKE ?
+            JOIN users u ON u.id = c.user_id AND u.tenant_id = c.tenant_id
+            LEFT JOIN campaigns camp ON camp.id = c.campaign_id AND camp.tenant_id = c.tenant_id
+            WHERE (c.code LIKE ? OR UPPER(u.last_name) LIKE ?) AND c.tenant_id = ?
             ORDER BY c.issued_at DESC
             LIMIT 100
-        `, searchTerm, searchTerm);
+        `, searchTerm, searchTerm, tenantId);
         
         res.json(coupons);
     } catch (e) {
@@ -2834,15 +2836,24 @@ app.get('/api/admin/coupons/search', requireAdmin, async (req, res) => {
     }
 });
 
-// Redeem coupon (burn)
+// Redeem coupon (burn) - LEGACY: senza tenant, deprecato
+// Nota: questo endpoint legacy non dovrebbe essere usato in produzione multicliente
+// Si consiglia di usare /t/:tenantSlug/api/coupons/:code/redeem
 app.post('/api/coupons/:code/redeem', async (req, res) => {
     try {
         const dbConn = await getDb();
-        const coupon = await dbConn.get('SELECT * FROM coupons WHERE code = ?', req.params.code);
+        // Tentativo di inferire il tenant dal referer o dalla sessione
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) {
+            // Se non c'è tenant, cerca il coupon senza filtro (comportamento legacy)
+            // MA questo è un problema di sicurezza - meglio restituire errore
+            return res.status(400).json({ error: 'Tenant non specificato. Usa /t/:tenantSlug/api/coupons/:code/redeem' });
+        }
+        const coupon = await dbConn.get('SELECT * FROM coupons WHERE code = ? AND tenant_id = ?', req.params.code, tenantId);
         if (!coupon) return res.status(404).json({ error: 'Non trovato' });
         if (coupon.status !== 'active') return res.status(400).json({ error: 'Coupon non attivo' });
 
-        await dbConn.run('UPDATE coupons SET status = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?', 'redeemed', coupon.id);
+        await dbConn.run('UPDATE coupons SET status = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?', 'redeemed', coupon.id, tenantId);
         res.json({ ok: true, code: coupon.code, status: 'redeemed' });
     } catch (e) {
         res.status(500).json({ error: 'Errore server' });
@@ -2868,13 +2879,16 @@ app.post('/t/:tenantSlug/api/coupons/:code/redeem', tenantLoader, async (req, re
 app.get('/api/admin/campaigns', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        const campaigns = await dbConn.all('SELECT * FROM campaigns ORDER BY created_at DESC');
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
+        const campaigns = await dbConn.all('SELECT * FROM campaigns WHERE tenant_id = ? ORDER BY created_at DESC', tenantId);
         
         // Auto-deactivate expired campaigns
         const now = new Date();
         for (const campaign of campaigns) {
             if (campaign.expiry_date && new Date(campaign.expiry_date) < now && campaign.is_active) {
-                await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+                await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ? AND tenant_id = ?', campaign.id, tenantId);
                 campaign.is_active = 0; // Update local object for response
             }
         }
@@ -3102,6 +3116,9 @@ app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
         }
         
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
         const campaignCode = generateId(12).toUpperCase();
         const defaultFormConfig = JSON.stringify({ 
             email: { visible: true, required: true }, 
@@ -3113,8 +3130,8 @@ app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
             customFields: []
         });
         const result = await dbConn.run(
-            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, expiry_date || null
+            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, expiry_date, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, expiry_date || null, tenantId
         );
         res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
     } catch (e) {
@@ -3136,9 +3153,12 @@ app.put('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
         if (typeof expiry_date === 'string' || expiry_date === null) { fields.push('expiry_date = ?'); params.push(expiry_date || null); }
         if (fields.length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
         const dbConn = await getDb();
-        params.push(req.params.id);
-        await dbConn.run(`UPDATE campaigns SET ${fields.join(', ')} WHERE id = ?`, params);
-        const updated = await dbConn.get('SELECT * FROM campaigns WHERE id = ?', req.params.id);
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        params.push(req.params.id, tenantId);
+        await dbConn.run(`UPDATE campaigns SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`, params);
+        const updated = await dbConn.get('SELECT * FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (!updated) return res.status(404).json({ error: 'Campagna non trovata' });
         res.json(updated);
     } catch (e) {
         console.error('update campaign error', e);
@@ -3152,8 +3172,11 @@ app.put('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
 app.put('/api/admin/campaigns/:id/activate', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         // Simply activate the selected campaign (no need to deactivate others)
-        await dbConn.run('UPDATE campaigns SET is_active = 1 WHERE id = ?', req.params.id);
+        const result = await dbConn.run('UPDATE campaigns SET is_active = 1 WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
         res.json({ ok: true });
     } catch (e) {
         console.error(e);
@@ -3164,8 +3187,11 @@ app.put('/api/admin/campaigns/:id/activate', requireAdmin, async (req, res) => {
 app.put('/api/admin/campaigns/:id/deactivate', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         // Deactivate the specific campaign
-        await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', req.params.id);
+        const result = await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
         res.json({ ok: true });
     } catch (e) {
         console.error(e);
@@ -3176,7 +3202,10 @@ app.put('/api/admin/campaigns/:id/deactivate', requireAdmin, async (req, res) =>
 app.delete('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        await dbConn.run('DELETE FROM campaigns WHERE id = ?', req.params.id);
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        const result = await dbConn.run('DELETE FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
         res.json({ ok: true });
     } catch (e) {
         console.error(e);
@@ -3188,7 +3217,9 @@ app.delete('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
 app.get('/api/admin/campaigns/:id/form-config', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ?', req.params.id);
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!campaign) {
             return res.status(404).json({ error: 'Campagna non trovata' });
         }
@@ -3202,13 +3233,17 @@ app.get('/api/admin/campaigns/:id/form-config', requireAdmin, async (req, res) =
 
 app.put('/api/admin/campaigns/:id/form-config', requireAdmin, async (req, res) => {
     try {
+        const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
         const { formConfig } = req.body;
         if (!formConfig || typeof formConfig !== 'object') {
             return res.status(400).json({ error: 'Configurazione form non valida' });
         }
         
-        const dbConn = await getDb();
-        await dbConn.run('UPDATE campaigns SET form_config = ? WHERE id = ?', JSON.stringify(formConfig), req.params.id);
+        const result = await dbConn.run('UPDATE campaigns SET form_config = ? WHERE id = ? AND tenant_id = ?', JSON.stringify(formConfig), req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
         res.json({ ok: true });
     } catch (e) {
         console.error(e);
@@ -3220,12 +3255,14 @@ app.put('/api/admin/campaigns/:id/form-config', requireAdmin, async (req, res) =
 app.get('/api/admin/campaigns-list', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const campaigns = await dbConn.all(`
             SELECT DISTINCT name 
             FROM campaigns 
-            WHERE name IS NOT NULL AND name != ''
+            WHERE name IS NOT NULL AND name != '' AND tenant_id = ?
             ORDER BY name
-        `);
+        `, tenantId);
         res.json(campaigns.map(c => c.name));
     } catch (e) {
         console.error(e);
@@ -3436,15 +3473,18 @@ app.get('/api/admin/users/:id/coupons', requireAdmin, async (req, res) => {
 app.delete('/api/admin/coupons/:id', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         // Check if coupon exists
-        const coupon = await dbConn.get('SELECT * FROM coupons WHERE id = ?', req.params.id);
+        const coupon = await dbConn.get('SELECT * FROM coupons WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!coupon) {
             return res.status(404).json({ error: 'Coupon non trovato' });
         }
         
         // Delete coupon
-        await dbConn.run('DELETE FROM coupons WHERE id = ?', req.params.id);
+        const result = await dbConn.run('DELETE FROM coupons WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Coupon non trovato' });
         
         res.json({ success: true, message: 'Coupon eliminato con successo' });
     } catch (e) {
@@ -3571,10 +3611,14 @@ app.get('/api/admin/coupons', requireAdmin, async (req, res) => {
         const parsedOffset = Math.max(parseInt(String(offset), 10) || 0, 0);
 
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
         const params = [];
-        let whereClause = '';
+        let whereClause = 'WHERE c.tenant_id = ?';
+        params.push(tenantId);
         if (status) {
-            whereClause = 'WHERE c.status = ?';
+            whereClause += ' AND c.status = ?';
             params.push(String(status));
         }
 
@@ -3583,8 +3627,8 @@ app.get('/api/admin/coupons', requireAdmin, async (req, res) => {
                     c.issued_at AS issuedAt, c.redeemed_at AS redeemedAt,
                     u.email AS userEmail, camp.name AS campaignName
              FROM coupons c
-             JOIN users u ON u.id = c.user_id
-             LEFT JOIN campaigns camp ON camp.id = c.campaign_id
+             JOIN users u ON u.id = c.user_id AND u.tenant_id = c.tenant_id
+             LEFT JOIN campaigns camp ON camp.id = c.campaign_id AND camp.tenant_id = c.tenant_id
              ${whereClause}
              ORDER BY c.issued_at ${orderDir}
              LIMIT ? OFFSET ?`,
@@ -3605,7 +3649,9 @@ app.get('/api/admin/coupons', requireAdmin, async (req, res) => {
 app.get('/api/admin/campaigns/:id/custom-fields', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
-        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ?', req.params.id);
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!campaign) {
             return res.status(404).json({ error: 'Campagna non trovata' });
         }
@@ -3622,6 +3668,8 @@ app.put('/api/admin/campaigns/:id/custom-fields', requireAdmin, async (req, res)
     try {
         const { customFields } = req.body;
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         // Controlla il limite di 5 campi custom
         if (customFields && customFields.length > 5) {
@@ -3629,7 +3677,7 @@ app.put('/api/admin/campaigns/:id/custom-fields', requireAdmin, async (req, res)
         }
         
         // Get current form config
-        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ?', req.params.id);
+        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
         if (!campaign) {
             return res.status(404).json({ error: 'Campagna non trovata' });
         }
@@ -3638,7 +3686,8 @@ app.put('/api/admin/campaigns/:id/custom-fields', requireAdmin, async (req, res)
         formConfig.customFields = customFields || [];
         
         // Update campaign
-        await dbConn.run('UPDATE campaigns SET form_config = ? WHERE id = ?', JSON.stringify(formConfig), req.params.id);
+        const result = await dbConn.run('UPDATE campaigns SET form_config = ? WHERE id = ? AND tenant_id = ?', JSON.stringify(formConfig), req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
         
         res.json({ success: true });
     } catch (error) {
@@ -3932,21 +3981,24 @@ app.get('/t/:tenantSlug/analytics', tenantLoader, requireSameTenantAsSession, re
 app.get('/api/admin/analytics/summary', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
         const { start, end, campaignId, status } = req.query;
 
-        const where = [];
-        const params = [];
+        const where = ['tenant_id = ?'];
+        const params = [tenantId];
         if (campaignId) { where.push('campaign_id = ?'); params.push(campaignId); }
         if (start) { where.push('date(issued_at) >= date(?)'); params.push(start); }
         if (end) { where.push('date(issued_at) <= date(?)'); params.push(end); }
         if (status) { where.push('status = ?'); params.push(status); }
-        const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+        const whereSql = 'WHERE ' + where.join(' AND ');
 
         const coupons = await dbConn.all(
             `SELECT discount_type AS discountType, discount_value AS discountValue, status, campaign_id AS campaignId, issued_at AS issuedAt, redeemed_at AS redeemedAt FROM coupons ${whereSql}`,
             params
         );
-        const campaigns = await dbConn.all('SELECT id FROM campaigns');
+        const campaigns = await dbConn.all('SELECT id FROM campaigns WHERE tenant_id = ?', tenantId);
 
         // Build avg value/margin per campaign from associated products
         const rows = await dbConn.all(`
@@ -3995,27 +4047,32 @@ app.get('/api/admin/analytics/summary', requireAdmin, async (req, res) => {
 app.get('/api/admin/analytics/campaigns', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
         const { start, end, campaignId, status } = req.query;
-        const campaigns = await dbConn.all('SELECT id, name FROM campaigns ORDER BY created_at DESC');
+        const campaigns = await dbConn.all('SELECT id, name FROM campaigns WHERE tenant_id = ? ORDER BY created_at DESC', tenantId);
 
-        const where = [];
-        const params = [];
-        if (campaignId) { where.push('campaign_id = ?'); params.push(campaignId); }
-        if (start) { where.push('date(issued_at) >= date(?)'); params.push(start); }
-        if (end) { where.push('date(issued_at) <= date(?)'); params.push(end); }
-        if (status) { where.push('status = ?'); params.push(status); }
-        const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+        const where = ['c.tenant_id = ?'];
+        const params = [tenantId];
+        if (campaignId) { where.push('c.campaign_id = ?'); params.push(campaignId); }
+        if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
+        if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
+        if (status) { where.push('c.status = ?'); params.push(status); }
+        const whereSql = 'WHERE ' + where.join(' AND ');
 
         const coupons = await dbConn.all(
-            `SELECT campaign_id AS campaignId, discount_type AS discountType, discount_value AS discountValue, status FROM coupons ${whereSql}`,
+            `SELECT c.campaign_id AS campaignId, c.discount_type AS discountType, c.discount_value AS discountValue, c.status FROM coupons c ${whereSql}`,
             params
         );
         const avgs = await dbConn.all(`
             SELECT cp.campaign_id AS campaignId, AVG(p.value) AS avgValue, AVG(p.margin_price) AS avgMargin
             FROM campaign_products cp
-            JOIN products p ON p.id = cp.product_id
+            JOIN products p ON p.id = cp.product_id AND p.tenant_id = ?
+            JOIN campaigns c ON c.id = cp.campaign_id AND c.tenant_id = ?
+            WHERE c.tenant_id = ?
             GROUP BY cp.campaign_id
-        `);
+        `, tenantId, tenantId, tenantId);
         const avgMap = new Map(avgs.map(r => [r.campaignId, { avgValue: r.avgValue || 0, avgMargin: r.avgMargin || 0 }]));
 
         const byCamp = new Map();
@@ -4053,38 +4110,41 @@ app.get('/api/admin/analytics/campaigns', requireAdmin, async (req, res) => {
 app.get('/api/admin/analytics/temporal', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
         const { start, end, campaignId, status, groupBy = 'day' } = req.query;
 
-        const where = [];
-        const params = [];
-        if (campaignId) { where.push('campaign_id = ?'); params.push(campaignId); }
-        if (start) { where.push('date(issued_at) >= date(?)'); params.push(start); }
-        if (end) { where.push('date(issued_at) <= date(?)'); params.push(end); }
-        if (status) { where.push('status = ?'); params.push(status); }
-        const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+        const where = ['c.tenant_id = ?'];
+        const params = [tenantId];
+        if (campaignId) { where.push('c.campaign_id = ?'); params.push(campaignId); }
+        if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
+        if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
+        if (status) { where.push('c.status = ?'); params.push(status); }
+        const whereSql = 'WHERE ' + where.join(' AND ');
 
         // Get temporal aggregation
-        const dateFormat = groupBy === 'week' ? "strftime('%Y-W%W', issued_at)" : "date(issued_at)";
+        const dateFormat = groupBy === 'week' ? "strftime('%Y-W%W', c.issued_at)" : "date(c.issued_at)";
         const temporalData = await dbConn.all(`
             SELECT 
                 ${dateFormat} as period,
                 COUNT(*) as issued,
-                SUM(CASE WHEN status = 'redeemed' THEN 1 ELSE 0 END) as redeemed,
-                SUM(CASE WHEN status = 'redeemed' THEN 
+                SUM(CASE WHEN c.status = 'redeemed' THEN 1 ELSE 0 END) as redeemed,
+                SUM(CASE WHEN c.status = 'redeemed' THEN 
                     CASE 
-                        WHEN discount_type = 'percent' THEN (SELECT AVG(p.value) FROM campaign_products cp JOIN products p ON p.id = cp.product_id WHERE cp.campaign_id = c.campaign_id) * (discount_value / 100.0)
-                        WHEN discount_type = 'fixed' THEN discount_value
+                        WHEN c.discount_type = 'percent' THEN (SELECT AVG(p.value) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp ON camp.id = cp.campaign_id AND camp.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp.tenant_id = ?) * (c.discount_value / 100.0)
+                        WHEN c.discount_type = 'fixed' THEN c.discount_value
                         ELSE 0
                     END
                 ELSE 0 END) as discount_applied,
-                SUM(CASE WHEN status = 'redeemed' THEN 
-                    (SELECT AVG(p.margin_price) FROM campaign_products cp JOIN products p ON p.id = cp.product_id WHERE cp.campaign_id = c.campaign_id)
+                SUM(CASE WHEN c.status = 'redeemed' THEN 
+                    (SELECT AVG(p.margin_price) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp ON camp.id = cp.campaign_id AND camp.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp.tenant_id = ?)
                 ELSE 0 END) as gross_margin
             FROM coupons c
             ${whereSql}
             GROUP BY ${dateFormat}
-            ORDER BY ${groupBy === 'week' ? "strftime('%Y', issued_at), strftime('%W', issued_at)" : "date(issued_at)"}
-        `, params);
+            ORDER BY ${groupBy === 'week' ? "strftime('%Y', c.issued_at), strftime('%W', c.issued_at)" : "date(c.issued_at)"}
+        `, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, ...params);
 
         res.json(temporalData);
     } catch (e) {
@@ -4097,15 +4157,18 @@ app.get('/api/admin/analytics/temporal', requireAdmin, async (req, res) => {
 app.get('/api/admin/analytics/export', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        
         const { start, end, campaignId, status, format = 'csv' } = req.query;
 
-        const where = [];
-        const params = [];
+        const where = ['c.tenant_id = ?'];
+        const params = [tenantId];
         if (campaignId) { where.push('c.campaign_id = ?'); params.push(campaignId); }
         if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
         if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
         if (status) { where.push('c.status = ?'); params.push(status); }
-        const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+        const whereSql = 'WHERE ' + where.join(' AND ');
 
         const data = await dbConn.all(`
             SELECT 
@@ -4119,14 +4182,14 @@ app.get('/api/admin/analytics/export', requireAdmin, async (req, res) => {
                 u.email,
                 c.discount_type,
                 c.discount_value,
-                (SELECT AVG(p.value) FROM campaign_products cp JOIN products p ON p.id = cp.product_id WHERE cp.campaign_id = c.campaign_id) as avg_product_value,
-                (SELECT AVG(p.margin_price) FROM campaign_products cp JOIN products p ON p.id = cp.product_id WHERE cp.campaign_id = c.campaign_id) as avg_margin
+                (SELECT AVG(p.value) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp2 ON camp2.id = cp.campaign_id AND camp2.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp2.tenant_id = ?) as avg_product_value,
+                (SELECT AVG(p.margin_price) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp2 ON camp2.id = cp.campaign_id AND camp2.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp2.tenant_id = ?) as avg_margin
             FROM coupons c
-            LEFT JOIN campaigns camp ON camp.id = c.campaign_id
-            LEFT JOIN users u ON u.id = c.user_id
+            LEFT JOIN campaigns camp ON camp.id = c.campaign_id AND camp.tenant_id = c.tenant_id
+            LEFT JOIN users u ON u.id = c.user_id AND u.tenant_id = c.tenant_id
             ${whereSql}
             ORDER BY c.issued_at DESC
-        `, params);
+        `, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, ...params);
 
         if (format === 'csv') {
             const headers = ['Code', 'Status', 'Issued At', 'Redeemed At', 'Campaign', 'First Name', 'Last Name', 'Email', 'Discount Type', 'Discount Value', 'Avg Product Value', 'Avg Margin'];
