@@ -578,12 +578,12 @@ async function runTests() {
         log('\n=== TEST 6: Legacy Endpoint Behavior ===');
         
         await test('Legacy /api/campaigns/:code uses default tenant', async () => {
-            // This should only work for default tenant campaigns
+            // This endpoint has been deprecated and returns 410 Gone
             const res = await makeRequest('GET', '/api/campaigns/NONEXISTENT');
             
-            // Should return 404, not error
-            if (res.status !== 404) {
-                throw new Error(`Expected 404, got ${res.status}`);
+            // Should return 410 Gone (deprecated), not 404
+            if (res.status !== 410) {
+                throw new Error(`Expected 410 (Gone - deprecated endpoint), got ${res.status}`);
             }
         });
         

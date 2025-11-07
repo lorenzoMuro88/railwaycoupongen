@@ -15,6 +15,8 @@ const crypto = require('crypto');
 // Mailgun SDK
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
+// Logger
+const logger = require('./utils/logger');
 function generateId(length = 12) {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     const bytes = crypto.randomBytes(length);
@@ -97,7 +99,7 @@ app.use(cookieParser());
 // Middleware per gestire errori di parsing JSON
 app.use((error, req, res, next) => {
     if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
-        console.error('Errore parsing JSON:', error.message);
+        logger.warn({ err: error, message: error.message }, 'JSON parsing error in request body');
         return res.status(400).json({ success: false, message: 'JSON non valido' });
     }
     next();
@@ -363,7 +365,7 @@ async function verifyRecaptchaToken(token, remoteIp) {
         }
         return { ok: false, reason: data['error-codes']?.join(',') || 'verify-failed' };
     } catch (e) {
-        console.error('reCAPTCHA verify error', e);
+        logger.warn({ err: e }, 'reCAPTCHA verify error');
         return { ok: false, reason: 'verify-exception' };
     }
 }
@@ -373,7 +375,7 @@ async function verifyRecaptchaIfEnabled(req, res, next) {
     const token = req.body['g-recaptcha-response'] || req.body['recaptchaToken'];
     const ip = req.ip || req.connection?.remoteAddress || undefined;
     if (!RECAPTCHA_SECRET) {
-        console.warn('RECAPTCHA_ENABLED=true ma RECAPTCHA_SECRET è vuoto');
+        logger.warn('RECAPTCHA_ENABLED=true but RECAPTCHA_SECRET is empty');
         return res.status(500).send('Configurazione reCAPTCHA mancante');
     }
     const result = await verifyRecaptchaToken(token, ip);
@@ -406,10 +408,12 @@ async function tenantLoader(req, res, next) {
         req.tenant = tenant;
         req.tenantSlug = tenant.slug;
         // Simple visibility in logs
-        console.log(`[tenant:${tenant.slug}] ${req.method} ${req.originalUrl}`);
+        const logContext = logger.withRequest(req);
+        logContext.debug({ tenant: tenant.slug }, 'Tenant loaded for request');
         next();
     } catch (e) {
-        console.error('tenantLoader error', e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, tenantSlug: req.params.tenantSlug }, 'tenantLoader error');
         res.status(500).send('Errore tenant');
     }
 }
@@ -469,9 +473,10 @@ const generateSecureSecret = () => {
 let sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret || sessionSecret === 'your-secret-key-change-in-production' || sessionSecret === 'coupon-gen-secret-key-change-in-production') {
     sessionSecret = generateSecureSecret();
-    console.warn('⚠️  SECURITY WARNING: SESSION_SECRET not set or using default value.');
-    console.warn('⚠️  A random session secret has been generated, but you MUST set SESSION_SECRET in .env for production!');
-    console.warn('⚠️  Generated secret (for this session only):', sessionSecret.substring(0, 16) + '...');
+    logger.warn({
+        generated: true,
+        secretPreview: sessionSecret.substring(0, 16) + '...'
+    }, 'SECURITY WARNING: SESSION_SECRET not set or using default value. A random secret has been generated for this session only. MUST set SESSION_SECRET in .env for production!');
 }
 
 let sessionOptions = {
@@ -500,7 +505,8 @@ app.get(['/api/csrf-token','/t/:tenantSlug/api/csrf-token'], (req, res, next) =>
             }
             res.json({ csrfToken: token });
         } catch (error) {
-            console.error('[csrf-token] Error generating token:', error);
+            const logContext = logger.withRequest(req);
+            logContext.error({ err: error }, 'CSRF token generation error');
             res.status(500).json({ error: 'Errore generazione token CSRF' });
         }
     });
@@ -618,7 +624,7 @@ async function getDb() {
     
     // Migrate existing database
     try {
-        console.log('Starting database migration v2.2 - FIXED AUTH_USERS...');
+        logger.info({ version: '2025-10-mt-a2' }, 'Starting database migration');
         
         // Simple versioned migrations table
         await db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
@@ -626,12 +632,12 @@ async function getDb() {
         const hasVersion = await db.get('SELECT 1 FROM schema_migrations WHERE version = ?', currentVersion);
 
         // STEP 1: Create all base tables FIRST (before any ALTER statements)
-        console.log('Creating base tables...');
+        logger.debug('Creating base tables');
         
         // Create auth_users table if it doesn't exist
         const authUsersTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'");
         if (authUsersTable.length === 0) {
-            console.log('Creating auth_users table...');
+            logger.debug('Creating auth_users table');
             await db.exec(`
                 CREATE TABLE auth_users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -652,7 +658,7 @@ async function getDb() {
         // Create form_customization table if it doesn't exist
         const formCustomizationTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='form_customization'");
         if (formCustomizationTable.length === 0) {
-            console.log('Creating form_customization table...');
+            logger.debug('Creating form_customization table');
             await db.exec(`
                 CREATE TABLE form_customization (
                     id INTEGER PRIMARY KEY,
@@ -667,7 +673,7 @@ async function getDb() {
         // Create products table if it doesn't exist
         const productsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='products'");
         if (productsTable.length === 0) {
-            console.log('Creating products table...');
+            logger.debug('Creating products table');
             await db.exec(`
                 CREATE TABLE products (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -685,7 +691,7 @@ async function getDb() {
             const productCols = await db.all("PRAGMA table_info(products)");
             const hasTenantOnProducts = productCols.some(c => c.name === 'tenant_id');
             if (!hasTenantOnProducts) {
-                console.log('Adding tenant_id column to products...');
+                logger.debug('Adding tenant_id column to products');
                 await db.exec('ALTER TABLE products ADD COLUMN tenant_id INTEGER');
                 // Backfill tenant_id for existing products:
                 // 1) If a product is associated to campaigns, inherit the campaign tenant
@@ -704,7 +710,7 @@ async function getDb() {
                 if (defaultTenantId) {
                     await db.run('UPDATE products SET tenant_id = ? WHERE tenant_id IS NULL', defaultTenantId);
                 }
-                console.log('Backfill tenant_id on products completed');
+                logger.debug('Backfill tenant_id on products completed');
             }
             // Ensure a trigger exists to prevent NULL tenant_id inserts/updates
             const triggerRows = await db.all("SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('trg_products_tenant_ins','trg_products_tenant_upd')");
@@ -736,7 +742,7 @@ async function getDb() {
         // Create campaign_products table if it doesn't exist
         const campaignProductsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='campaign_products'");
         if (campaignProductsTable.length === 0) {
-            console.log('Creating campaign_products table...');
+            logger.debug('Creating campaign_products table');
             await db.exec(`
                 CREATE TABLE campaign_products (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -765,17 +771,17 @@ async function getDb() {
         const columnNames = columns.map(col => col.name);
         
         if (!columnNames.includes('campaign_id')) {
-            console.log('Adding campaign_id column to coupons...');
+            logger.debug('Adding campaign_id column to coupons...');
             await db.exec('ALTER TABLE coupons ADD COLUMN campaign_id INTEGER');
         }
         
         if (!columnNames.includes('discount_type')) {
-            console.log('Adding discount_type column to coupons...');
+            logger.debug('Adding discount_type column to coupons...');
             await db.exec("ALTER TABLE coupons ADD COLUMN discount_type TEXT DEFAULT 'percent'");
         }
         
         if (!columnNames.includes('discount_value')) {
-            console.log('Adding discount_value column to coupons...');
+            logger.debug('Adding discount_value column to coupons...');
             await db.exec("ALTER TABLE coupons ADD COLUMN discount_value TEXT DEFAULT '10'");
         }
         
@@ -807,7 +813,7 @@ async function getDb() {
         // Create campaign index after adding the column
         await db.exec('CREATE INDEX IF NOT EXISTS idx_coupons_campaign ON coupons(campaign_id)');
         if (!columnNames.includes('tenant_id')) {
-            console.log('Adding tenant_id column to coupons...');
+            logger.debug('Adding tenant_id column to coupons...');
             await db.exec('ALTER TABLE coupons ADD COLUMN tenant_id INTEGER');
         }
         
@@ -816,7 +822,7 @@ async function getDb() {
         const campaignColumnNames = campaignColumns.map(col => col.name);
         
         if (!campaignColumnNames.includes('campaign_code')) {
-            console.log('Adding campaign_code column to campaigns...');
+            logger.debug('Adding campaign_code column to campaigns...');
             await db.exec(`ALTER TABLE campaigns ADD COLUMN campaign_code TEXT`);
             
             // Generate campaign codes for existing campaigns
@@ -848,7 +854,7 @@ async function getDb() {
         
         // Check if form_config column exists in campaigns table
         if (!campaignColumnNames.includes('form_config')) {
-            console.log('Adding form_config column to campaigns...');
+            logger.debug('Adding form_config column to campaigns...');
             await db.exec(`ALTER TABLE campaigns ADD COLUMN form_config TEXT DEFAULT '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}'`);
             
             // Set default form config for existing campaigns
@@ -882,7 +888,7 @@ async function getDb() {
             }
         }
         if (!campaignColumnNames.includes('tenant_id')) {
-            console.log('Adding tenant_id column to campaigns...');
+            logger.debug('Adding tenant_id column to campaigns...');
             await db.exec('ALTER TABLE campaigns ADD COLUMN tenant_id INTEGER');
         }
         
@@ -891,26 +897,26 @@ async function getDb() {
         const userColumnNames = userColumns.map(col => col.name);
         
         if (!userColumnNames.includes('phone')) {
-            console.log('Adding phone column to users...');
+            logger.debug('Adding phone column to users...');
             await db.exec("ALTER TABLE users ADD COLUMN phone TEXT");
         }
         if (!userColumnNames.includes('address')) {
-            console.log('Adding address column to users...');
+            logger.debug('Adding address column to users...');
             await db.exec("ALTER TABLE users ADD COLUMN address TEXT");
         }
         if (!userColumnNames.includes('allergies')) {
-            console.log('Adding allergies column to users...');
+            logger.debug('Adding allergies column to users...');
             await db.exec("ALTER TABLE users ADD COLUMN allergies TEXT");
         }
         if (!userColumnNames.includes('tenant_id')) {
-            console.log('Adding tenant_id column to users...');
+            logger.debug('Adding tenant_id column to users...');
             await db.exec('ALTER TABLE users ADD COLUMN tenant_id INTEGER');
         }
         
         // Check if user_custom_data table exists
         const customDataTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='user_custom_data'");
         if (customDataTable.length === 0) {
-            console.log('Creating user_custom_data table...');
+            logger.debug('Creating user_custom_data table');
             await db.exec(`
                 CREATE TABLE user_custom_data (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -929,7 +935,7 @@ async function getDb() {
             const userCustomDataCols = await db.all("PRAGMA table_info(user_custom_data)");
             const userCustomDataColNames = userCustomDataCols.map(c => c.name);
             if (!userCustomDataColNames.includes('tenant_id')) {
-                console.log('Adding tenant_id column to user_custom_data table...');
+                logger.debug('Adding tenant_id column to user_custom_data table...');
                 await db.exec('ALTER TABLE user_custom_data ADD COLUMN tenant_id INTEGER');
                 // Set default tenant_id for existing records
                 if (defaultTenantId) {
@@ -941,7 +947,7 @@ async function getDb() {
         // Ensure auth_users table exists BEFORE attempting to alter it
         const hasAuthUsersTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_users'");
         if (hasAuthUsersTable.length === 0) {
-            console.log('Creating auth_users table (missing before alteration step)...');
+            logger.debug('Creating auth_users table (missing before alteration step)');
             await db.exec(`
                 CREATE TABLE auth_users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -992,7 +998,7 @@ async function getDb() {
             const tenantColumns = await db.all("PRAGMA table_info(tenants)");
             const hasEmailFromName = tenantColumns.some(col => col.name === 'email_from_name');
             if (!hasEmailFromName) {
-                console.log('Adding email_from_name column to tenants table...');
+                logger.debug('Adding email_from_name column to tenants table...');
                 await db.exec('ALTER TABLE tenants ADD COLUMN email_from_name TEXT DEFAULT "CouponGen"');
             }
             
@@ -1004,26 +1010,26 @@ async function getDb() {
         const tenantColumnNames = tenantColumnsAll.map(c => c.name);
         
         if (!tenantColumnNames.includes('email_from_address')) {
-            console.log('Adding email_from_address column to tenants table...');
+            logger.debug('Adding email_from_address column to tenants table...');
             await db.exec('ALTER TABLE tenants ADD COLUMN email_from_address TEXT');
         }
         if (!tenantColumnNames.includes('mailgun_domain')) {
-            console.log('Adding mailgun_domain column to tenants table...');
+            logger.debug('Adding mailgun_domain column to tenants table...');
             await db.exec('ALTER TABLE tenants ADD COLUMN mailgun_domain TEXT');
         }
         if (!tenantColumnNames.includes('mailgun_region')) {
-            console.log('Adding mailgun_region column to tenants table...');
+            logger.debug('Adding mailgun_region column to tenants table...');
             await db.exec('ALTER TABLE tenants ADD COLUMN mailgun_region TEXT');
         }
         if (!tenantColumnNames.includes('custom_domain')) {
-            console.log('Adding custom_domain column to tenants table...');
+            logger.debug('Adding custom_domain column to tenants table...');
             await db.exec('ALTER TABLE tenants ADD COLUMN custom_domain TEXT');
         }
 
         // Email template table (multitenant)
         const emailTemplateTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='email_template'");
         if (emailTemplateTable.length === 0) {
-            console.log('Creating email_template table...');
+            logger.debug('Creating email_template table');
             await db.exec(`
                 CREATE TABLE email_template (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1039,7 +1045,7 @@ async function getDb() {
             const emailTemplateCols = await db.all("PRAGMA table_info(email_template)");
             const emailTemplateColNames = emailTemplateCols.map(c => c.name);
             if (!emailTemplateColNames.includes('tenant_id')) {
-                console.log('Adding tenant_id column to email_template...');
+                logger.debug('Adding tenant_id column to email_template...');
                 await db.exec('ALTER TABLE email_template ADD COLUMN tenant_id INTEGER');
                 // Migrate existing template to default tenant
                 await db.run('UPDATE email_template SET tenant_id = ? WHERE tenant_id IS NULL', defaultTenantId);
@@ -1049,7 +1055,7 @@ async function getDb() {
         // Create tenant_brand_settings table if it doesn't exist
         const brandSettingsTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='tenant_brand_settings'");
         if (brandSettingsTable.length === 0) {
-            console.log('Creating tenant_brand_settings table...');
+            logger.debug('Creating tenant_brand_settings table');
             await db.exec(`
                 CREATE TABLE tenant_brand_settings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1069,7 +1075,7 @@ async function getDb() {
         // Create default users if auth_users table is empty
         const userCount = await db.get('SELECT COUNT(*) as count FROM auth_users');
         if (userCount.count === 0) {
-            console.log('Creating default users...');
+            logger.debug('Creating default users');
             
             // Generate secure random passwords if not provided in environment
             const generateSecurePassword = (length = 16) => {
@@ -1092,10 +1098,7 @@ async function getDb() {
             
             // Security warning if using generated passwords
             if (!process.env.SUPERADMIN_PASSWORD || !process.env.STORE_PASSWORD) {
-                console.warn('⚠️  SECURITY WARNING: SUPERADMIN_PASSWORD and/or STORE_PASSWORD not set in .env!');
-                console.warn('⚠️  Random secure passwords have been generated for initial setup.');
-                console.warn('⚠️  Set SUPERADMIN_PASSWORD and STORE_PASSWORD in .env file for production!');
-                console.warn('⚠️  Generated passwords are NOT logged for security reasons.');
+                logger.warn('SECURITY WARNING: SUPERADMIN_PASSWORD and/or STORE_PASSWORD not set in .env! Random secure passwords have been generated for initial setup. Set SUPERADMIN_PASSWORD and STORE_PASSWORD in .env file for production! Generated passwords are NOT logged for security reasons.');
             }
             
             // Secure password hashing using bcrypt
@@ -1107,42 +1110,42 @@ async function getDb() {
                 VALUES ('admin', ?, 'superadmin', ?), ('store', ?, 'store', ?)
             `, superAdminHash, defaultTenantId, storeHash, defaultTenantId);
             
-            console.log('✅ Default users created:');
-            console.log('   SuperAdmin: username=admin');
-            console.log('   Store:      username=store');
+            logger.info({ 
+                superAdmin: 'admin',
+                store: 'store',
+                passwordsFromEnv: !!(process.env.SUPERADMIN_PASSWORD && process.env.STORE_PASSWORD)
+            }, 'Default users created');
             
             if (!process.env.SUPERADMIN_PASSWORD || !process.env.STORE_PASSWORD) {
-                console.warn('⚠️  IMPORTANT: Configure SUPERADMIN_PASSWORD and STORE_PASSWORD in .env file!');
-                console.warn('⚠️  Contact system administrator to retrieve initial passwords if needed.');
-                console.warn('═══════════════════════════════════════════════════════════════');
+                logger.warn('IMPORTANT: Configure SUPERADMIN_PASSWORD and STORE_PASSWORD in .env file! Contact system administrator to retrieve initial passwords if needed.');
             } else {
-                console.log('✅ Passwords loaded from environment variables.');
+                logger.info('Passwords loaded from environment variables');
             }
         }
         
         // Re-enable foreign keys after migration
         await db.exec('PRAGMA foreign_keys = ON');
         
-        console.log('Database migration completed successfully');
+        logger.info({ version: currentVersion }, 'Database migration completed successfully');
         
         // Create some initial sample logs for testing
         try {
             const sampleLogs = await db.all('SELECT COUNT(*) as count FROM system_logs');
             if (sampleLogs[0].count === 0) {
-                console.log('Creating sample logs...');
+                logger.debug('Creating sample logs for testing');
                 await db.run(`
                     INSERT INTO system_logs (username, user_type, action_type, action_description, level, details, timestamp) VALUES
                     ('Sistema', 'system', 'create', 'Sistema avviato', 'info', '{"message": "Sistema CouponGen avviato correttamente"}', datetime('now', '-1 hour')),
                     ('admin', 'superadmin', 'login', 'Login SuperAdmin effettuato', 'success', '{"username": "admin", "userType": "superadmin"}', datetime('now', '-30 minutes')),
                     ('Sistema', 'system', 'create', 'Database inizializzato', 'info', '{"tables": ["tenants", "users", "campaigns", "coupons", "system_logs"]}', datetime('now', '-15 minutes'))
                 `);
-                console.log('Sample logs created');
+                logger.debug('Sample logs created');
             }
         } catch (error) {
-            console.error('Error creating sample logs:', error);
+            logger.warn({ err: error }, 'Error creating sample logs');
         }
     } catch (migrationError) {
-        console.error('Migration error:', migrationError);
+        logger.error({ err: migrationError, version: currentVersion }, 'Database migration error');
         // Re-enable foreign keys even if migration fails
         await db.exec('PRAGMA foreign_keys = ON');
     }
@@ -1232,24 +1235,31 @@ async function ensureTenantScopedUniqueConstraints(dbConn) {
         const indexes = await dbConn.all("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='campaigns'");
         const indexNames = new Set(indexes.map(idx => idx.name));
         
-        // Remove old global unique index if it exists
+        // Remove old global unique indexes if they exist
         if (indexNames.has('idx_campaigns_code')) {
-            console.log('[schema] Removing global unique index on campaign_code...');
+            logger.debug('Removing global unique index on campaign_code');
             await dbConn.exec('DROP INDEX IF EXISTS idx_campaigns_code');
+        }
+        
+        // Check for any global unique index on name (should not exist, but check anyway)
+        const nameIndexes = indexes.filter(idx => idx.name && idx.name.includes('name') && !idx.name.includes('tenant'));
+        for (const idx of nameIndexes) {
+            logger.debug(`Removing global unique index on name: ${idx.name}`);
+            await dbConn.exec(`DROP INDEX IF EXISTS ${idx.name}`);
         }
         
         // Create tenant-scoped unique indexes
         if (!indexNames.has('idx_campaigns_code_tenant')) {
-            console.log('[schema] Creating tenant-scoped unique index on campaign_code...');
+            logger.debug('Creating tenant-scoped unique index on campaigns(campaign_code, tenant_id)');
             await dbConn.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_code_tenant ON campaigns(campaign_code, tenant_id)');
         }
         
         if (!indexNames.has('idx_campaigns_name_tenant')) {
-            console.log('[schema] Creating tenant-scoped unique index on name...');
+            logger.debug('Creating tenant-scoped unique index on campaigns(name, tenant_id)');
             await dbConn.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_name_tenant ON campaigns(name, tenant_id)');
         }
     } catch (e) {
-        console.error('Error ensuring tenant-scoped unique constraints:', e);
+        logger.error({ err: e }, 'Error ensuring tenant-scoped unique constraints');
     }
 }
 
@@ -1344,16 +1354,17 @@ function buildTransport() {
                         mg.messages.create(domain, data),
                         timeoutPromise
                     ]);
-                    console.log('[email] Mailgun message sent successfully:', result.id);
+                    logger.info({ messageId: result.id, domain, to: message.to }, 'Mailgun message sent successfully');
                     return { id: result.id };
                 } catch (err) {
-                    console.error('[email] Mailgun API error:', {
+                    logger.error({
+                        err,
                         message: err.message,
                         status: err.status,
                         details: err.details || err.body || 'No details',
                         domain: domain,
                         to: message.to
-                    });
+                    }, 'Mailgun API error');
                     throw err; // Re-throw per permettere gestione errori a monte
                 }
             },
@@ -1393,7 +1404,7 @@ try {
         (transporter && transporter.options && transporter.options.provider)
             || (transporter && transporter.options && transporter.options.jsonTransport ? 'json' : null)
             || (transporter && transporter.options && transporter.options.host ? `smtp:${transporter.options.host}` : 'unknown');
-    console.log('[email] transport active:', transportLabel);
+    logger.info({ transport: transportLabel }, 'Email transport configured');
 } catch (_) {}
 
 // Utilities
@@ -1456,7 +1467,7 @@ async function logAction(req, actionType, actionDescription, level = 'info', det
             req.get('User-Agent') || null
         ]);
     } catch (error) {
-        console.error('Error logging action:', error);
+        logger.warn({ err: error }, 'Failed to log action to database');
         // Don't throw error to avoid breaking the main flow
     }
 }
@@ -1537,7 +1548,7 @@ app.post('/api/login', async (req, res) => {
         
         const dbConn = await getDb();
         if (!dbConn) {
-            console.error('Database connection failed');
+            logger.error({ username, userType, ip }, 'Database connection failed during login');
             return res.status(500).json({ error: 'Errore di connessione al database' });
         }
         
@@ -1582,7 +1593,7 @@ app.post('/api/login', async (req, res) => {
                 req.session.regenerate(err => err ? reject(err) : resolve());
             });
         } catch (sessionError) {
-            console.error('Session regeneration failed:', sessionError);
+            logger.warn({ userId: user.id, username }, 'Session regeneration failed during login');
             // Continue with login even if session regeneration fails
         }
         // Create session (tenant-scoped payload)
@@ -1615,7 +1626,7 @@ app.post('/api/login', async (req, res) => {
                 tenantId: user.tenant_id
             });
         } catch (logError) {
-            console.error('Failed to log login action:', logError);
+            logger.warn({ userId: user.id, username }, 'Failed to log login action to database');
             // Continue with login even if logging fails
         }
         
@@ -1626,8 +1637,12 @@ app.post('/api/login', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Login error:', error);
-        console.error('Error stack:', error.stack);
+        const logContext = logger.withRequest(req);
+        logContext.error({
+            err: error,
+            username: req.body?.username,
+            userType: req.body?.userType
+        }, 'Login endpoint error');
         res.status(500).json({ 
             error: 'Errore interno del server',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -1857,7 +1872,7 @@ app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
                 const dbConn = await getDb();
                 tenant = await dbConn.get('SELECT email_from_name, email_from_address, mailgun_domain, mailgun_region FROM tenants WHERE slug = ?', req.session.user.tenantSlug);
             } catch (e) {
-                console.error('Error getting tenant for test email:', e);
+                logger.warn({ err: e, tenantSlug: req.session?.user?.tenantSlug }, 'Error getting tenant for test email');
             }
         }
 
@@ -1873,7 +1888,8 @@ app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
         const info = await transporter.sendMail(message);
         res.json({ ok: true, info });
     } catch (e) {
-        console.error('Test email error:', e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, to }, 'Test email error');
         res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
 });
@@ -1925,7 +1941,8 @@ app.get('/api/test-coupon-email', async (req, res) => {
         const info = await transporter.sendMail(message);
         res.json({ ok: true, info });
     } catch (e) {
-        console.error('Test coupon email error:', e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Test coupon email error');
         res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
 });
@@ -1949,7 +1966,8 @@ app.put('/api/admin/email-from-name', requireAdmin, async (req, res) => {
         
         res.json({ ok: true, emailFromName: emailFromName.trim() });
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error updating email from name');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -1993,7 +2011,8 @@ app.get('/t/:tenantSlug/api/admin/test-email', tenantLoader, requireSameTenantAs
         const info = await transporter.sendMail(message);
         res.json({ ok: true, info });
     } catch (e) {
-        console.error('Test email error:', e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, to }, 'Test email error');
         res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
 });
@@ -2030,7 +2049,8 @@ app.get('/api/admin/email-template', requireAdmin, async (req, res) => {
         }
         res.json(row);
     } catch (e) {
-        console.error('Errore get email template:', e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error getting email template');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2396,12 +2416,20 @@ app.get('/t/:tenantSlug/thanks', tenantLoader, (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'thanks.html'));
 });
 
-// Form submission - create user and coupon, send email with QR
-// NOTE: This legacy endpoint finds campaign by code without tenant filter.
-// It uses the campaign's tenant_id to scope users/coupons, which is correct.
-// However, if multiple tenants have the same campaign_code, it will use the first one found.
-// DEPRECATED: Use /t/:tenantSlug/submit instead for proper tenant isolation.
-app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
+// DEPRECATED ENDPOINT REMOVED: /submit
+// This legacy endpoint has been removed. Use /t/:tenantSlug/submit instead for proper tenant isolation.
+// If you need backward compatibility, redirect to tenant-scoped endpoint:
+app.post('/submit', (req, res) => {
+    logger.warn({ path: req.path, ip: req.ip }, 'Deprecated endpoint /submit accessed - redirecting to tenant-scoped endpoint');
+    // Try to infer tenant from referer or default
+    const referer = req.get('referer') || '';
+    const tenantMatch = referer.match(/\/t\/([^\/]+)/);
+    const tenantSlug = tenantMatch ? tenantMatch[1] : DEFAULT_TENANT_SLUG;
+    res.redirect(301, `/t/${tenantSlug}/submit`);
+});
+
+// Tenant-scoped form submission (RECOMMENDED)
+app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
     try {
         const { email, firstName, lastName, campaign_id, ...customFields } = req.body;
         if (!email) {
@@ -2529,175 +2557,30 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
         try {
             const info = await transporter.sendMail(message);
             if (transporter.options.jsonTransport) {
-                // Log to console in dev
-                console.log('Email simulata:', info.message);
+                logger.debug({ message: info.message }, 'Email simulated (dev mode)');
+            } else {
+                logger.info({ messageId: info.id, to: email }, 'Coupon email sent successfully');
             }
         } catch (emailErr) {
-            console.error('[email] Error sending coupon email:', {
+            logger.error({
+                err: emailErr,
                 message: emailErr?.message || 'Unknown error',
                 status: emailErr?.status,
                 details: emailErr?.details || emailErr?.body,
-                to: email,
-                stack: emailErr?.stack
-            });
+                to: email
+            }, 'Error sending coupon email');
             // Continue without failing the request
         }
 
         res.redirect('/thanks');
     } catch (err) {
-        console.error('Error in submit:', err);
-        console.error('Error stack:', err.stack);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err, stack: err.stack }, 'Error in legacy submit endpoint');
         res.status(500).send('Errore durante la creazione del coupon');
     }
 });
 
-// Tenant-scoped form submission (M3)
-app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
-    try {
-        const { email, firstName, lastName, campaign_id, ...customFields } = req.body;
-        if (!email) {
-            return res.status(400).send('Email richiesta');
-        }
-        const couponCode = generateId(12);
-
-        const dbConn = await getDb();
-        let discountType = 'percent';
-        let discountValue = process.env.DEFAULT_DISCOUNT_PERCENT || '10';
-        let campaignId = null;
-        let specificCampaign = null;
-
-        if (campaign_id) {
-            specificCampaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', campaign_id, req.tenant.id);
-            if (specificCampaign) {
-                if (!specificCampaign.is_active) {
-                    return res.status(400).send('Questo coupon non esiste o è scaduto');
-                }
-                
-                // Check if campaign has expired
-                if (specificCampaign.expiry_date && new Date(specificCampaign.expiry_date) < new Date()) {
-                    // Auto-deactivate expired campaign
-                    await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', specificCampaign.id);
-                    return res.status(400).send('Questo coupon non esiste o è scaduto');
-                }
-                
-                discountType = specificCampaign.discount_type;
-                discountValue = specificCampaign.discount_value;
-                campaignId = specificCampaign.id;
-            } else {
-                return res.status(400).send('Questo coupon non esiste o è scaduto');
-            }
-        } else {
-            return res.status(400).send('Questo coupon non esiste o è scaduto');
-        }
-
-        const user = await dbConn.get('SELECT * FROM users WHERE email = ? AND tenant_id = ?', email, req.tenant.id);
-        let userId;
-        if (user) {
-            userId = user.id;
-        } else {
-            const result = await dbConn.run(
-                'INSERT INTO users (email, first_name, last_name, tenant_id) VALUES (?, ?, ?, ?)',
-                email, firstName || null, lastName || null, req.tenant.id
-            );
-            userId = result.lastID;
-        }
-
-        // Save custom fields
-        const formConfig = JSON.parse(specificCampaign.form_config);
-        if (formConfig.customFields && formConfig.customFields.length > 0) {
-            for (const customField of formConfig.customFields) {
-                const fieldValue = customFields[customField.id];
-                if (fieldValue !== undefined && fieldValue !== '') {
-                    await dbConn.run(
-                        'INSERT INTO user_custom_data (user_id, field_name, field_value, tenant_id) VALUES (?, ?, ?, ?)',
-                        userId, customField.id, fieldValue, req.tenant.id
-                    );
-                }
-            }
-        }
-
-        await dbConn.run(
-            'INSERT INTO coupons (code, user_id, campaign_id, discount_type, discount_value, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            couponCode, userId, campaignId, discountType, discountValue, 'active', req.tenant.id
-        );
-
-        const redemptionUrl = `${req.protocol}://${req.get('host')}/t/${req.tenant.slug}/redeem/${couponCode}`;
-        // Generate QR for tenant flow as inline PNG buffer for email clients and keep DataURL as fallback
-        const qrDataUrl = await QRCode.toDataURL(redemptionUrl, { width: 300, margin: 2 });
-        const qrPngBuffer = await QRCode.toBuffer(redemptionUrl, { width: 300, margin: 2, type: 'png' });
-
-        const discountText = discountType === 'percent' ? `uno sconto del ${discountValue}%` : 
-                            discountType === 'fixed' ? `uno sconto di &euro;${discountValue}` : discountValue;
-        let templateSubject = process.env.MAIL_SUBJECT || 'Il tuo coupon';
-        let templateHtml = '';
-        try {
-            const tenantId = req.tenant?.id || req.session?.user?.tenantId;
-            if (tenantId) {
-                const t = await dbConn.get('SELECT subject, html FROM email_template WHERE tenant_id = ?', tenantId);
-                if (t) { templateSubject = t.subject || templateSubject; templateHtml = t.html || templateHtml; }
-            }
-        } catch (e) {}
-        if (!templateHtml) {
-            templateHtml = `<p>Ciao {{firstName}} {{lastName}},</p>
-            <p>Ecco il tuo coupon: <strong>{{code}}</strong> che vale {{discountText}}.</p>
-            <p>Mostra questo codice in negozio. Puoi anche usare questo link per la cassa: <a href="{{redemptionUrl}}">{{redemptionUrl}}</a></p>
-            <p><img src="cid:coupon-qr" alt="QR Code" style="max-width: 200px; height: auto;" /></p>
-            <p>Grazie!</p>`;
-        }
-        // Replace {{qrDataUrl}} with cid:coupon-qr for inline attachment (before other replacements)
-        // Mailgun uses filename without extension as CID reference
-        const htmlTemplate = templateHtml.replaceAll('{{qrDataUrl}}', 'cid:coupon-qr.png');
-        
-        const html = htmlTemplate
-            .replaceAll('{{firstName}}', firstName || '')
-            .replaceAll('{{lastName}}', lastName || '')
-            .replaceAll('{{code}}', couponCode)
-            .replaceAll('{{discountText}}', discountText)
-            .replaceAll('{{redemptionUrl}}', redemptionUrl);
-
-        const message = {
-            from: buildTenantEmailFrom(req.tenant),
-            to: email,
-            subject: templateSubject,
-            html,
-            attachments: [
-                { filename: 'coupon-qr.png', content: qrPngBuffer, cid: 'coupon-qr.png' }
-            ],
-            mailgunDomain: getTenantMailgunDomain(req.tenant)
-        };
-        try {
-            const info = await transporter.sendMail(message);
-            if (transporter && transporter.options && transporter.options.jsonTransport) {
-                console.log('Email simulata (tenant):', info && info.message);
-            } else {
-                console.log('Email inviata (tenant):', info);
-            }
-        } catch (emailErr) {
-            console.error('[email] Error sending coupon email (tenant):', {
-                message: emailErr?.message || 'Unknown error',
-                status: emailErr?.status,
-                details: emailErr?.details || emailErr?.body,
-                to: email,
-                tenant: req.tenant?.slug,
-                stack: emailErr?.stack
-            });
-        }
-
-        // Log coupon creation
-        await logAction(req, 'create', `Coupon creato: ${couponCode}`, 'success', {
-            couponCode: couponCode,
-            campaignId: campaignId,
-            discountType: discountType,
-            discountValue: discountValue,
-            userEmail: email
-        });
-
-        res.redirect(`/t/${req.tenant.slug}/thanks`);
-    } catch (err) {
-        console.error('Error in submit (tenant):', err);
-        res.status(500).send('Errore durante la creazione del coupon');
-    }
-});
+// Tenant-scoped form submission (M3) - already defined above at line 2414
 
 // Legacy protected areas (kept for now)
 app.use('/store', requireAuth);
@@ -2805,7 +2688,8 @@ app.get('/api/store/coupons/active', async (req, res) => {
         `);
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error fetching active coupons (legacy)');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2823,7 +2707,8 @@ app.get('/t/:tenantSlug/api/store/coupons/active', tenantLoader, async (req, res
         `, req.tenant.id);
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, tenant: req.tenant.slug }, 'Error fetching active coupons');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2843,7 +2728,8 @@ app.get('/api/store/coupons/redeemed', async (req, res) => {
         `);
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error fetching redeemed coupons');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2861,7 +2747,8 @@ app.get('/t/:tenantSlug/api/store/coupons/redeemed', tenantLoader, async (req, r
         `, req.tenant.id);
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error fetching redeemed coupons');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2890,7 +2777,8 @@ app.get('/api/store/coupons/search', async (req, res) => {
         
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error fetching redeemed coupons');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2914,7 +2802,8 @@ app.get('/t/:tenantSlug/api/store/coupons/search', tenantLoader, async (req, res
         `, searchTerm, searchTerm, req.tenant.id);
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error fetching redeemed coupons');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -2945,33 +2834,20 @@ app.get('/api/admin/coupons/search', requireAdmin, async (req, res) => {
         
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error fetching redeemed coupons');
         res.status(500).json({ error: 'Errore server' });
     }
 });
 
-// Redeem coupon (burn) - LEGACY: senza tenant, deprecato
-// Nota: questo endpoint legacy non dovrebbe essere usato in produzione multicliente
-// Si consiglia di usare /t/:tenantSlug/api/coupons/:code/redeem
-app.post('/api/coupons/:code/redeem', async (req, res) => {
-    try {
-        const dbConn = await getDb();
-        // Tentativo di inferire il tenant dal referer o dalla sessione
-        const tenantId = await getTenantIdForApi(req);
-        if (!tenantId) {
-            // Se non c'è tenant, cerca il coupon senza filtro (comportamento legacy)
-            // MA questo è un problema di sicurezza - meglio restituire errore
-            return res.status(400).json({ error: 'Tenant non specificato. Usa /t/:tenantSlug/api/coupons/:code/redeem' });
-        }
-        const coupon = await dbConn.get('SELECT * FROM coupons WHERE code = ? AND tenant_id = ?', req.params.code, tenantId);
-        if (!coupon) return res.status(404).json({ error: 'Non trovato' });
-        if (coupon.status !== 'active') return res.status(400).json({ error: 'Coupon non attivo' });
-
-        await dbConn.run('UPDATE coupons SET status = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?', 'redeemed', coupon.id, tenantId);
-        res.json({ ok: true, code: coupon.code, status: 'redeemed' });
-    } catch (e) {
-        res.status(500).json({ error: 'Errore server' });
-    }
+// DEPRECATED ENDPOINT REMOVED: /api/coupons/:code/redeem
+// This legacy endpoint has been removed. Use /t/:tenantSlug/api/coupons/:code/redeem instead.
+app.post('/api/coupons/:code/redeem', (req, res) => {
+    logger.warn({ path: req.path, code: req.params.code, ip: req.ip }, 'Deprecated endpoint /api/coupons/:code/redeem accessed');
+    res.status(410).json({ 
+        error: 'Endpoint deprecato. Usa /t/:tenantSlug/api/coupons/:code/redeem',
+        deprecated: true
+    });
 });
 app.post('/t/:tenantSlug/api/coupons/:code/redeem', tenantLoader, async (req, res) => {
     try {
@@ -3064,7 +2940,12 @@ app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAs
         );
         res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        if (e && e.code === 'SQLITE_CONSTRAINT') {
+            logContext.warn({ err: e, campaignName: name, tenant: req.tenant.slug }, 'Campaign name already exists for tenant');
+            return res.status(409).json({ error: 'Nome campagna già esistente per questo tenant' });
+        }
+        logContext.error({ err: e, campaignName: name, tenant: req.tenant.slug }, 'Error creating campaign');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -3133,7 +3014,8 @@ app.put('/t/:tenantSlug/api/admin/email-from-name', tenantLoader, requireSameTen
         
         res.json({ ok: true, emailFromName: emailFromName.trim() });
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error updating email from name');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -3181,42 +3063,14 @@ app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => 
     }
 });
 
-// Legacy: get campaign by code (DEPRECATED - use tenant-scoped endpoint)
-// NOTE: This endpoint is kept for backward compatibility but should not be used in production
-// It uses the default tenant for legacy support
-app.get('/api/campaigns/:code', async (req, res) => {
-    try {
-        const dbConn = await getDb();
-        // Use default tenant for legacy endpoint
-        const defaultTenant = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
-        if (!defaultTenant) {
-            return res.status(404).json({ error: 'Campagna non trovata' });
-        }
-        const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, defaultTenant.id);
-        if (!campaign) {
-            return res.status(404).json({ error: 'Campagna non trovata' });
-        }
-        // Check if campaign is active and not expired
-        if (!campaign.is_active) {
-            return res.status(404).json({ error: 'Campagna non trovata' });
-        }
-        
-        // Check if campaign has expired
-        if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
-            // Auto-deactivate expired campaign
-            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ? AND tenant_id = ?', campaign.id, defaultTenant.id);
-            return res.status(404).json({ error: 'Campagna scaduta' });
-        }
-        
-        // Parse form config
-        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
-        campaign.form_config = formConfig;
-        
-        res.json(campaign);
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Errore server' });
-    }
+// DEPRECATED ENDPOINT REMOVED: /api/campaigns/:code
+// This legacy endpoint has been removed. Use /t/:tenantSlug/api/campaigns/:code instead.
+app.get('/api/campaigns/:code', (req, res) => {
+    logger.warn({ path: req.path, code: req.params.code, ip: req.ip }, 'Deprecated endpoint /api/campaigns/:code accessed');
+    res.status(410).json({ 
+        error: 'Endpoint deprecato. Usa /t/:tenantSlug/api/campaigns/:code',
+        deprecated: true
+    });
 });
 
 app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
@@ -3585,7 +3439,8 @@ app.get('/api/admin/users/:id/coupons', requireAdmin, async (req, res) => {
         
         res.json(coupons);
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e }, 'Error fetching redeemed coupons');
         res.status(500).json({ error: 'Errore server' });
     }
 });
@@ -5679,18 +5534,14 @@ app.use((error, req, res, next) => {
         return next(error);
     }
     
-    // Log error with context
-    const errorContext = {
+    // Log error with context using logger
+    const logContext = logger.withRequest(req);
+    logContext.error({
+        err: error,
         message: error.message,
         stack: error.stack,
-        url: req.url,
-        method: req.method,
-        ip: req.ip,
-        userAgent: req.get('User-Agent'),
-        timestamp: new Date().toISOString()
-    };
-    
-    console.error('[error-handler] Unhandled error:', JSON.stringify(errorContext, null, 2));
+        statusCode: error.status || error.statusCode || 500
+    }, 'Unhandled error in request handler');
     
     // Determine status code
     let statusCode = error.status || error.statusCode || 500;
@@ -5725,7 +5576,7 @@ app.use((req, res) => {
 // Start server with proper timeout configurations
 const server = app.listen(PORT, async () => {
     await getDb();
-    console.log(`CouponGen avviato su http://localhost:${PORT}`);
+    logger.info({ port: PORT }, 'CouponGen server started');
 });
 
 // Configure server timeouts to prevent connection issues
@@ -5738,8 +5589,11 @@ server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT;
 server.headersTimeout = HEADERS_TIMEOUT;
 server.timeout = REQUEST_TIMEOUT; // Overall request timeout
 
-console.log('Server timeouts configured:');
-console.log(`- Keep-Alive: ${server.keepAliveTimeout}ms`);
+    logger.info({
+        keepAliveTimeout: server.keepAliveTimeout,
+        headersTimeout: server.headersTimeout,
+        requestTimeout: server.timeout
+    }, 'Server timeouts configured');
 console.log(`- Headers: ${server.headersTimeout}ms`);
 console.log(`- Request/Overall: ${server.timeout}ms`);
 
@@ -5793,12 +5647,12 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught exceptions and unhandled rejections
 process.on('uncaughtException', (error) => {
-    console.error('[fatal] Uncaught exception:', error);
+    logger.fatal({ err: error, stack: error.stack }, 'Uncaught exception - shutting down');
     gracefulShutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('[fatal] Unhandled rejection at:', promise, 'reason:', reason);
+    logger.fatal({ reason, promise, stack: reason?.stack }, 'Unhandled rejection - shutting down');
     gracefulShutdown('unhandledRejection');
 });
 

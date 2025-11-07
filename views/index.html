@@ -573,125 +573,14 @@
                 footer.style.display = 'none';
             }
             
-            // Create decorative gradient background using platform colors
-            const gradientContainer = document.createElement('div');
-            gradientContainer.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                background: linear-gradient(135deg, 
-                    #2d5a3d 0%, 
-                    #4a7c59 20%, 
-                    #8b6f47 40%, 
-                    #d4af37 60%, 
-                    #4a7c59 80%, 
-                    #2d5a3d 100%);
-                background-size: 400% 400%;
-                animation: gradientShift 20s ease infinite;
-                z-index: -1;
-            `;
+            // Hide main container
+            const mainContainer = document.querySelector('main.container');
+            if (mainContainer) {
+                mainContainer.style.display = 'none';
+            }
             
-            // Add gradient animation keyframes
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes gradientShift {
-                    0% { background-position: 0% 50%; }
-                    50% { background-position: 100% 50%; }
-                    100% { background-position: 0% 50%; }
-                }
-            `;
-            document.head.appendChild(style);
-            document.body.appendChild(gradientContainer);
-            
-            // Create welcome message container - perfectly centered
-            const welcomeContainer = document.createElement('div');
-            welcomeContainer.className = 'card';
-            welcomeContainer.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                max-width: 600px;
-                width: 90%;
-                max-width: calc(100vw - 2rem);
-                padding: 3rem 2rem;
-                text-align: center;
-                background: rgba(250, 248, 243, 0.95);
-                backdrop-filter: blur(10px);
-                border-radius: 20px;
-                box-shadow: 0 20px 40px rgba(45, 90, 61, 0.15);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                z-index: 1;
-                overflow-y: auto;
-                max-height: 90vh;
-            `;
-            
-            welcomeContainer.innerHTML = `
-                <div style="color: var(--text-dark);">
-                    <h2 style="color: var(--primary-green); margin-bottom: 1.5rem; font-size: 2rem;">Benvenuto in CouponGen</h2>
-                    <p style="font-size: 1.2rem; margin-bottom: 2rem; color: var(--text-medium);">
-                        Il sistema per generare e gestire coupon personalizzati con QR code
-                    </p>
-                    <div style="background: var(--light-green); border: 2px solid var(--accent-green); border-radius: 12px; padding: 2rem; margin: 2rem 0;">
-                        <h3 style="color: var(--primary-green); margin-bottom: 1rem;">Come funziona?</h3>
-                        <div style="text-align: left; max-width: 400px; margin: 0 auto;">
-                            <p style="margin-bottom: 1rem;">📧 <strong>Inserisci la tua email</strong> e i dati richiesti</p>
-                            <p style="margin-bottom: 1rem;">🎫 <strong>Ricevi il coupon</strong> via email con QR code</p>
-                            <p style="margin-bottom: 0;">🏪 <strong>Presenta il QR code</strong> in negozio per riscattare</p>
-                        </div>
-                    </div>
-                    <p style="color: var(--text-light); font-size: 0.9rem; margin-top: 2rem;">
-                        Per accedere a una campagna specifica, usa il link del coupon che hai ricevuto
-                    </p>
-                </div>
-            `;
-            
-            // Add responsive styles for welcome container
-            const responsiveStyle = document.createElement('style');
-            responsiveStyle.textContent = `
-                @media (max-width: 768px) {
-                    .welcome-container {
-                        padding: 2rem 1.5rem !important;
-                        width: 95% !important;
-                        max-width: calc(100vw - 1rem) !important;
-                    }
-                    .welcome-container h2 {
-                        font-size: 1.6rem !important;
-                    }
-                    .welcome-container p {
-                        font-size: 1rem !important;
-                    }
-                    .welcome-container .info-box {
-                        padding: 1.5rem !important;
-                        margin: 1.5rem 0 !important;
-                    }
-                }
-                @media (max-width: 480px) {
-                    .welcome-container {
-                        padding: 1.5rem 1rem !important;
-                        width: 98% !important;
-                        max-width: calc(100vw - 0.5rem) !important;
-                        border-radius: 16px !important;
-                    }
-                    .welcome-container h2 {
-                        font-size: 1.4rem !important;
-                    }
-                    .welcome-container p {
-                        font-size: 0.9rem !important;
-                    }
-                    .welcome-container .info-box {
-                        padding: 1rem !important;
-                        margin: 1rem 0 !important;
-                    }
-                }
-            `;
-            document.head.appendChild(responsiveStyle);
-            welcomeContainer.classList.add('welcome-container');
-            
-            // Insert welcome message where the form was
-            form.parentNode.insertBefore(welcomeContainer, form);
+            // Load tenant colors and create gradient
+            loadTenantGradient();
         }
         
         function validateForm() {
@@ -763,22 +652,248 @@
             // Hide the entire form
             form.style.display = 'none';
             
-            // Create error message container
-            const errorContainer = document.createElement('div');
-            errorContainer.className = 'card';
-            errorContainer.style.maxWidth = '450px';
-            errorContainer.style.margin = '0 auto';
-            errorContainer.style.padding = '2rem';
-            errorContainer.style.textAlign = 'center';
+            // Ensure data-campaign attribute is removed
+            document.body.removeAttribute('data-campaign');
             
-            errorContainer.innerHTML = `
-                <div class="error-message">
-                    <h3>${message}</h3>
-                </div>
+            // Hide the footer
+            const footer = document.querySelector('.site-footer');
+            if (footer) {
+                footer.style.display = 'none';
+            }
+            
+            // Hide main container
+            const mainContainer = document.querySelector('main.container');
+            if (mainContainer) {
+                mainContainer.style.display = 'none';
+            }
+            
+            // Hide header if visible
+            const header = document.getElementById('publicHeader');
+            if (header) {
+                header.style.display = 'none';
+            }
+            
+            // Load tenant colors and create gradient, then show error message
+            loadTenantGradient(() => {
+                // Remove existing error/fallback containers
+                const existingError = document.querySelector('.error-fallback-container');
+                if (existingError) {
+                    existingError.remove();
+                }
+                
+                // Ensure error message styles exist
+                if (!document.getElementById('errorMessageStyles')) {
+                    const style = document.createElement('style');
+                    style.id = 'errorMessageStyles';
+                    style.textContent = `
+                        .error-fallback-message {
+                            color: white;
+                            font-size: 1.2rem;
+                            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+                        }
+                        @media (max-width: 768px) {
+                            .error-fallback-message {
+                                font-size: 1.1rem;
+                            }
+                        }
+                        @media (max-width: 480px) {
+                            .error-fallback-message {
+                                font-size: 1rem;
+                            }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+                
+                // Create centered fallback container with error message
+                const fallbackContainer = document.createElement('div');
+                fallbackContainer.className = 'error-fallback-container';
+                fallbackContainer.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 1;
+                    text-align: center;
+                    max-width: 90%;
+                `;
+                
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'error-fallback-message';
+                errorMessage.textContent = message;
+                
+                fallbackContainer.appendChild(errorMessage);
+                document.body.appendChild(fallbackContainer);
+            });
+        }
+
+        // Load tenant colors and create gradient background
+        async function loadTenantGradient(callback) {
+            try {
+                // Determine if we're in tenant mode by checking the URL path
+                const isTenantMode = window.location.pathname.startsWith('/t/');
+                let apiUrl;
+                
+                if (isTenantMode) {
+                    // Extract tenant slug from URL path
+                    const pathParts = window.location.pathname.split('/');
+                    const tenantSlug = pathParts[2]; // /t/{tenantSlug}/...
+                    apiUrl = `/t/${tenantSlug}/api/form-customization`;
+                } else {
+                    // Legacy mode - use global endpoint
+                    apiUrl = '/api/form-customization';
+                }
+                
+                const response = await fetch(apiUrl);
+                const config = await response.json();
+                
+                // Extract colors from config
+                let primaryColor = config?.primaryColor || '#2d5a3d';
+                let accentColor = config?.accentColor || '#4a7c59';
+                let backgroundColor = config?.backgroundColor || '#faf8f3';
+                let textColor = config?.textColor || '#333333';
+                
+                // Create gradient colors - use tenant colors with variations
+                // Convert hex to RGB for better gradient transitions
+                const hexToRgb = (hex) => {
+                    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                    return result ? {
+                        r: parseInt(result[1], 16),
+                        g: parseInt(result[2], 16),
+                        b: parseInt(result[3], 16)
+                    } : null;
+                };
+                
+                const rgbToHex = (r, g, b) => {
+                    return "#" + [r, g, b].map(x => {
+                        const hex = Math.max(0, Math.min(255, Math.round(x))).toString(16);
+                        return hex.length === 1 ? "0" + hex : hex;
+                    }).join("");
+                };
+                
+                const lightenColor = (hex, percent) => {
+                    const rgb = hexToRgb(hex);
+                    if (!rgb) return hex;
+                    const factor = 1 + (percent / 100);
+                    return rgbToHex(
+                        Math.min(255, Math.round(rgb.r * factor)),
+                        Math.min(255, Math.round(rgb.g * factor)),
+                        Math.min(255, Math.round(rgb.b * factor))
+                    );
+                };
+                
+                const darkenColor = (hex, percent) => {
+                    const rgb = hexToRgb(hex);
+                    if (!rgb) return hex;
+                    const factor = 1 - (percent / 100);
+                    return rgbToHex(
+                        Math.max(0, Math.round(rgb.r * factor)),
+                        Math.max(0, Math.round(rgb.g * factor)),
+                        Math.max(0, Math.round(rgb.b * factor))
+                    );
+                };
+                
+                // Create gradient using tenant colors with variations
+                const color1 = darkenColor(primaryColor, 20);
+                const color2 = primaryColor;
+                const color3 = accentColor;
+                const color4 = lightenColor(accentColor, 30);
+                const color5 = lightenColor(accentColor, 50);
+                
+                // Remove existing gradient if present
+                const existingGradient = document.getElementById('homeGradient');
+                if (existingGradient) {
+                    existingGradient.remove();
+                }
+                
+                // Create gradient animation keyframes if not exists
+                if (!document.getElementById('gradientKeyframes')) {
+                    const style = document.createElement('style');
+                    style.id = 'gradientKeyframes';
+                    style.textContent = `
+                        @keyframes gradientShift {
+                            0% { background-position: 0% 50%; }
+                            50% { background-position: 100% 50%; }
+                            100% { background-position: 0% 50%; }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+                
+                // Create modern animated gradient background
+                const gradientContainer = document.createElement('div');
+                gradientContainer.id = 'homeGradient';
+                gradientContainer.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    background: linear-gradient(135deg, 
+                        ${color1} 0%, 
+                        ${color2} 25%, 
+                        ${color3} 50%, 
+                        ${color4} 75%, 
+                        ${color5} 100%);
+                    background-size: 400% 400%;
+                    animation: gradientShift 15s ease infinite;
+                    z-index: -1;
+                `;
+                document.body.appendChild(gradientContainer);
+                
+                // Execute callback if provided
+                if (callback && typeof callback === 'function') {
+                    callback();
+                }
+            } catch (error) {
+                console.error('Errore caricamento configurazione tenant:', error);
+                // Fallback to default gradient
+                createDefaultGradient();
+                if (callback && typeof callback === 'function') {
+                    callback();
+                }
+            }
+        }
+        
+        // Create default gradient if tenant config fails
+        function createDefaultGradient() {
+            const existingGradient = document.getElementById('homeGradient');
+            if (existingGradient) {
+                existingGradient.remove();
+            }
+            
+            if (!document.getElementById('gradientKeyframes')) {
+                const style = document.createElement('style');
+                style.id = 'gradientKeyframes';
+                style.textContent = `
+                    @keyframes gradientShift {
+                        0% { background-position: 0% 50%; }
+                        50% { background-position: 100% 50%; }
+                        100% { background-position: 0% 50%; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            const gradientContainer = document.createElement('div');
+            gradientContainer.id = 'homeGradient';
+            gradientContainer.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: linear-gradient(135deg, 
+                    #667eea 0%, 
+                    #764ba2 25%, 
+                    #f093fb 50%, 
+                    #4facfe 75%, 
+                    #00f2fe 100%);
+                background-size: 400% 400%;
+                animation: gradientShift 15s ease infinite;
+                z-index: -1;
             `;
-            
-            // Insert error message where the form was
-            form.parentNode.insertBefore(errorContainer, form);
+            document.body.appendChild(gradientContainer);
         }
 
         // Applica configurazioni personalizzate
