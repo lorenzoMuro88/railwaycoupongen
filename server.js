@@ -3075,14 +3075,49 @@ app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => 
     }
 });
 
-// DEPRECATED ENDPOINT REMOVED: /api/campaigns/:code
-// This legacy endpoint has been removed. Use /t/:tenantSlug/api/campaigns/:code instead.
-app.get('/api/campaigns/:code', (req, res) => {
-    logger.warn({ path: req.path, code: req.params.code, ip: req.ip }, 'Deprecated endpoint /api/campaigns/:code accessed');
-    res.status(410).json({ 
-        error: 'Endpoint deprecato. Usa /t/:tenantSlug/api/campaigns/:code',
-        deprecated: true
-    });
+// Legacy endpoint /api/campaigns/:code (tenant-aware for backward compatibility)
+// Tries to infer tenant from session/referer, falls back to global search if not found
+app.get('/api/campaigns/:code', async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        
+        let campaign;
+        if (tenantId) {
+            // Try tenant-scoped search first
+            campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, tenantId);
+        }
+        
+        // If not found with tenant, try global search (legacy behavior)
+        if (!campaign) {
+            campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ?', req.params.code);
+        }
+        
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Check if campaign is active and not expired
+        if (!campaign.is_active) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Check if campaign has expired
+        if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
+            // Auto-deactivate expired campaign
+            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+            return res.status(404).json({ error: 'Campagna scaduta' });
+        }
+        
+        // Parse form config
+        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
+        campaign.form_config = formConfig;
+        
+        res.json(campaign);
+    } catch (e) {
+        console.error('Error in legacy /api/campaigns/:code:', e);
+        res.status(500).json({ error: 'Errore server' });
+    }
 });
 
 app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
