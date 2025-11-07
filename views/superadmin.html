@@ -1188,14 +1188,19 @@
             const btn = document.querySelector('#brandModal .modal-btn-primary');
             const old = btn.textContent; btn.disabled = true; btn.textContent = 'Salvataggio...';
             try {
-                // Ensure CSRF token is available
+                // Force refresh CSRF token before request
+                window.__csrfToken = null; // Clear cached token
                 const csrfToken = await ensureCsrfToken();
-                const headers = { 
-                    'Content-Type': 'application/json'
-                };
-                if (csrfToken) {
-                    headers['X-CSRF-Token'] = csrfToken;
+                
+                if (!csrfToken) {
+                    showError('Impossibile recuperare il token CSRF. Ricarica la pagina e riprova.');
+                    return;
                 }
+                
+                const headers = { 
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                };
                 
                 const r = await fetch(`/api/superadmin/tenants/${currentBrandTenantId}/brand`, { 
                     method: 'POST', 
