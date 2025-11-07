@@ -132,13 +132,9 @@
                 </div>
 
                 <div class="setup-section" id="emailSenderSection">
-                    <div class="section-title" onclick="toggleAccSection(this)">
-                        <span>Nome Mittente Email</span>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span id="senderNameDisplay" style="font-size: 0.85rem; color: var(--text-medium); font-weight: normal;"></span>
-                            <button type="button" id="editSenderBtn" onclick="editSenderName(event)" style="background: var(--primary-green); color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer; display: none;">Modifica</button>
-                            <span class="dropdown-arrow">▼</span>
-                        </div>
+                    <div class="section-title" onclick="toggleSenderSection(this)">
+                        Nome Mittente Email
+                        <span class="dropdown-arrow">▼</span>
                     </div>
                     <div class="section-content">
                         <div class="form-group">
@@ -560,8 +556,6 @@
                     document.getElementById('emailFromNameInput').value = senderName;
                     
                     if (senderName) {
-                        document.getElementById('senderNameDisplay').textContent = senderName;
-                        document.getElementById('editSenderBtn').style.display = 'inline-block';
                         // Close the accordion if sender name is already configured
                         const senderSection = document.getElementById('emailSenderSection');
                         const sectionTitle = senderSection.querySelector('.section-title');
@@ -599,8 +593,6 @@
 
                 if (response.ok) {
                     setButtonState(saveBtn, 'success');
-                    document.getElementById('senderNameDisplay').textContent = senderName;
-                    document.getElementById('editSenderBtn').style.display = 'inline-block';
                     
                     // Close the accordion after successful save
                     const senderSection = document.getElementById('emailSenderSection');
@@ -621,20 +613,38 @@
             }
         }
 
+        function toggleSenderSection(el) {
+            const active = el.classList.contains('active');
+            // chiudi tutte le altre sezioni
+            document.querySelectorAll('.section-title').forEach(t => { 
+                if (t !== el) {
+                    t.classList.remove('active'); 
+                    t.nextElementSibling.classList.remove('show'); 
+                }
+            });
+            // apri/chiudi questa sezione
+            if (!active) { 
+                el.classList.add('active'); 
+                el.nextElementSibling.classList.add('show');
+                // Focus automatico sull'input quando si apre
+                setTimeout(() => {
+                    const input = document.getElementById('emailFromNameInput');
+                    if (input) {
+                        input.focus();
+                        input.select(); // seleziona il testo esistente per facilitare la modifica
+                    }
+                }, 100);
+            } else {
+                el.classList.remove('active');
+                el.nextElementSibling.classList.remove('show');
+            }
+        }
+
         function editSenderName(event) {
             event.stopPropagation();
             const senderSection = document.getElementById('emailSenderSection');
             const sectionTitle = senderSection.querySelector('.section-title');
-            const sectionContent = senderSection.querySelector('.section-content');
-            
-            // Open the accordion
-            sectionTitle.classList.add('active');
-            sectionContent.classList.add('show');
-            
-            // Focus on the input field
-            setTimeout(() => {
-                document.getElementById('emailFromNameInput').focus();
-            }, 100);
+            toggleSenderSection(sectionTitle);
         }
 
         function testEmailFromName() {
