@@ -1190,7 +1190,9 @@
             try {
                 // Force refresh CSRF token before request
                 window.__csrfToken = null; // Clear cached token
+                console.log('[CSRF] Recupero token CSRF...');
                 const csrfToken = await ensureCsrfToken();
+                console.log('[CSRF] Token recuperato:', csrfToken ? csrfToken.substring(0, 20) + '...' : 'null');
                 
                 if (!csrfToken) {
                     showError('Impossibile recuperare il token CSRF. Ricarica la pagina e riprova.');
@@ -1202,12 +1204,14 @@
                     'X-CSRF-Token': csrfToken
                 };
                 
+                console.log('[CSRF] Invio richiesta POST con token:', csrfToken.substring(0, 20) + '...');
                 const r = await fetch(`/api/superadmin/tenants/${currentBrandTenantId}/brand`, { 
                     method: 'POST', 
                     headers: headers, 
                     credentials: 'same-origin',
                     body: JSON.stringify(payload) 
                 });
+                console.log('[CSRF] Risposta:', r.status, r.statusText);
                 if (r.ok) {
                     showSuccess('Brand salvato');
                     closeBrandModal();

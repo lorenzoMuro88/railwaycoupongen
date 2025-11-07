@@ -35,13 +35,10 @@ const DEFAULT_TENANT_NAME = process.env.DEFAULT_TENANT_NAME || 'Default Tenant';
 const ENFORCE_TENANT_PREFIX = String(process.env.ENFORCE_TENANT_PREFIX || 'false') === 'true';
 const csrf = require('csurf');
 
-// CSRF protection setup (cookie-based)
+// CSRF protection setup (session-based for better compatibility with JavaScript POST requests)
+// Session-based CSRF stores token in session instead of cookie, which works better with sameSite restrictions
 const csrfProtection = csrf({
-    cookie: {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: 'auto'
-    }
+    cookie: false  // Use session-based CSRF instead of cookie-based
 });
 
 // Apply CSRF only to authenticated mutating routes
@@ -400,6 +397,8 @@ async function tenantLoader(req, res, next) {
         const { tenantSlug } = req.params;
         const dbConn = await getDb();
         await ensureTenantEmailColumns(dbConn);
+        await ensureFormCustomizationTenantId(dbConn);
+        await ensureTenantScopedUniqueConstraints(dbConn);
         const tenant = await dbConn.get('SELECT id, slug, name, custom_domain, email_from_name, email_from_address, mailgun_domain, mailgun_region FROM tenants WHERE slug = ?', tenantSlug);
         if (!tenant) {
             return res.status(404).send('Tenant non trovato');
@@ -557,8 +556,8 @@ async function getDb() {
         );
         CREATE TABLE IF NOT EXISTS campaigns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            campaign_code TEXT NOT NULL UNIQUE,
-            name TEXT NOT NULL UNIQUE,
+            campaign_code TEXT NOT NULL,
+            name TEXT NOT NULL,
             description TEXT,
             is_active BOOLEAN DEFAULT 0,
             discount_type TEXT NOT NULL DEFAULT 'percent',
@@ -657,10 +656,12 @@ async function getDb() {
             await db.exec(`
                 CREATE TABLE form_customization (
                     id INTEGER PRIMARY KEY,
+                    tenant_id INTEGER,
                     config_data TEXT NOT NULL,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             `);
+            await db.exec(`CREATE INDEX IF NOT EXISTS idx_form_customization_tenant_id ON form_customization(tenant_id)`);
         }
 
         // Create products table if it doesn't exist
@@ -827,7 +828,8 @@ async function getDb() {
                 console.log(`Generated campaign_code ${campaignCode} for campaign ${campaign.id}`);
             }
             
-            // Make campaign_code unique
+            // Make campaign_code unique per tenant (not globally)
+            // Note: This will be migrated to tenant-scoped unique index later
             await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_code ON campaigns(campaign_code)`);
         } else {
             console.log('campaign_code column already exists');
@@ -1195,6 +1197,59 @@ async function ensureTenantEmailColumns(dbConn) {
     }
     if (columnNames.has('mailgun_region') && process.env.MAILGUN_REGION) {
         await dbConn.run('UPDATE tenants SET mailgun_region = COALESCE(mailgun_region, ?)', process.env.MAILGUN_REGION);
+    }
+}
+
+async function ensureFormCustomizationTenantId(dbConn) {
+    if (!dbConn) return;
+    try {
+        const columns = await dbConn.all("PRAGMA table_info(form_customization)");
+        const columnNames = new Set(columns.map(c => c.name));
+        
+        if (!columnNames.has('tenant_id')) {
+            console.log('[schema] Adding tenant_id column to form_customization table...');
+            await dbConn.exec('ALTER TABLE form_customization ADD COLUMN tenant_id INTEGER');
+            await dbConn.exec('CREATE INDEX IF NOT EXISTS idx_form_customization_tenant_id ON form_customization(tenant_id)');
+            
+            // Migrate existing data: assign to default tenant if exists
+            const defaultTenant = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
+            if (defaultTenant) {
+                await dbConn.run('UPDATE form_customization SET tenant_id = ? WHERE tenant_id IS NULL', defaultTenant.id);
+            }
+        }
+    } catch (e) {
+        // Table might not exist yet, that's ok
+        if (!e.message.includes('no such table')) {
+            console.error('Error ensuring form_customization tenant_id:', e);
+        }
+    }
+}
+
+async function ensureTenantScopedUniqueConstraints(dbConn) {
+    if (!dbConn) return;
+    try {
+        // Check if tenant-scoped unique indexes exist
+        const indexes = await dbConn.all("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='campaigns'");
+        const indexNames = new Set(indexes.map(idx => idx.name));
+        
+        // Remove old global unique index if it exists
+        if (indexNames.has('idx_campaigns_code')) {
+            console.log('[schema] Removing global unique index on campaign_code...');
+            await dbConn.exec('DROP INDEX IF EXISTS idx_campaigns_code');
+        }
+        
+        // Create tenant-scoped unique indexes
+        if (!indexNames.has('idx_campaigns_code_tenant')) {
+            console.log('[schema] Creating tenant-scoped unique index on campaign_code...');
+            await dbConn.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_code_tenant ON campaigns(campaign_code, tenant_id)');
+        }
+        
+        if (!indexNames.has('idx_campaigns_name_tenant')) {
+            console.log('[schema] Creating tenant-scoped unique index on name...');
+            await dbConn.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_name_tenant ON campaigns(name, tenant_id)');
+        }
+    } catch (e) {
+        console.error('Error ensuring tenant-scoped unique constraints:', e);
     }
 }
 
@@ -1946,7 +2001,13 @@ app.get('/t/:tenantSlug/api/admin/test-email', tenantLoader, requireSameTenantAs
 // API per configurazione personalizzazione form
 app.get('/api/admin/form-customization', requireAdmin, async (req, res) => {
     try {
-        const config = await db.get('SELECT * FROM form_customization WHERE id = 1');
+        const dbConn = await getDb();
+        await ensureFormCustomizationTenantId(dbConn);
+        const tenantId = req.session.user.tenantId;
+        if (!tenantId) {
+            return res.status(400).json({ error: 'Tenant non valido' });
+        }
+        const config = await dbConn.get('SELECT * FROM form_customization WHERE tenant_id = ?', tenantId);
         if (config) {
             res.json(JSON.parse(config.config_data));
         } else {
@@ -2009,13 +2070,31 @@ app.post('/api/admin/email-template', requireAdmin, async (req, res) => {
 
 app.post('/api/admin/form-customization', requireAdmin, async (req, res) => {
     try {
+        const dbConn = await getDb();
+        await ensureFormCustomizationTenantId(dbConn);
+        const tenantId = req.session.user.tenantId;
+        if (!tenantId) {
+            return res.status(400).json({ error: 'Tenant non valido' });
+        }
         const configData = JSON.stringify(req.body);
         
-        // Inserisci o aggiorna la configurazione
-        await db.run(`
-            INSERT OR REPLACE INTO form_customization (id, config_data, updated_at) 
-            VALUES (1, ?, datetime('now'))
-        `, configData);
+        // Check if config exists for this tenant
+        const existing = await dbConn.get('SELECT id FROM form_customization WHERE tenant_id = ?', tenantId);
+        
+        if (existing) {
+            // Update existing configuration
+            await dbConn.run(`
+                UPDATE form_customization 
+                SET config_data = ?, updated_at = datetime('now')
+                WHERE tenant_id = ?
+            `, configData, tenantId);
+        } else {
+            // Insert new configuration
+            await dbConn.run(`
+                INSERT INTO form_customization (tenant_id, config_data, updated_at) 
+                VALUES (?, ?, datetime('now'))
+            `, tenantId, configData);
+        }
         
         res.json({ success: true, message: 'Configurazione salvata con successo!' });
     } catch (error) {
@@ -2216,7 +2295,10 @@ app.get('/t/:tenantSlug/api/uploads/:filename', tenantLoader, async (req, res) =
 // Tenant-scoped: API per configurazione form (pubblica)
 app.get('/t/:tenantSlug/api/form-customization', tenantLoader, async (req, res) => {
     try {
-        const config = await db.get('SELECT * FROM form_customization WHERE id = 1');
+        const dbConn = await getDb();
+        await ensureFormCustomizationTenantId(dbConn);
+        const tenantId = req.tenant.id;
+        const config = await dbConn.get('SELECT * FROM form_customization WHERE tenant_id = ?', tenantId);
         if (config) {
             res.json(JSON.parse(config.config_data));
         } else {
@@ -2228,10 +2310,17 @@ app.get('/t/:tenantSlug/api/form-customization', tenantLoader, async (req, res) 
     }
 });
 
-// Legacy: API per configurazione form (pubblica)
+// Legacy: API per configurazione form (pubblica) - uses default tenant
 app.get('/api/form-customization', async (req, res) => {
     try {
-        const config = await db.get('SELECT * FROM form_customization WHERE id = 1');
+        const dbConn = await getDb();
+        await ensureFormCustomizationTenantId(dbConn);
+        // Use default tenant for legacy endpoint
+        const defaultTenant = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
+        if (!defaultTenant) {
+            return res.json({});
+        }
+        const config = await dbConn.get('SELECT * FROM form_customization WHERE tenant_id = ?', defaultTenant.id);
         if (config) {
             res.json(JSON.parse(config.config_data));
         } else {
@@ -2244,7 +2333,9 @@ app.get('/api/form-customization', async (req, res) => {
 });
 
 // Endpoint pubblico per salvare la configurazione del form (per la pagina di personalizzazione)
-app.post('/api/form-customization', async (req, res) => {
+// DEPRECATED: This endpoint should not be used directly. Use tenant-scoped endpoint instead.
+// Kept for backward compatibility but requires authentication or tenant context
+app.post('/api/form-customization', requireAdmin, async (req, res) => {
     try {
         // Verifica che il body sia un oggetto valido
         if (!req.body || typeof req.body !== 'object') {
@@ -2252,14 +2343,33 @@ app.post('/api/form-customization', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Body della richiesta non valido' });
         }
         
+        const dbConn = await getDb();
+        await ensureFormCustomizationTenantId(dbConn);
+        const tenantId = req.session.user.tenantId;
+        if (!tenantId) {
+            return res.status(400).json({ error: 'Tenant non valido' });
+        }
+        
         const configData = JSON.stringify(req.body);
         console.log('Config data da salvare:', configData);
         
-        // Inserisci o aggiorna la configurazione
-        await db.run(`
-            INSERT OR REPLACE INTO form_customization (id, config_data, updated_at) 
-            VALUES (1, ?, datetime('now'))
-        `, configData);
+        // Check if config exists for this tenant
+        const existing = await dbConn.get('SELECT id FROM form_customization WHERE tenant_id = ?', tenantId);
+        
+        if (existing) {
+            // Update existing configuration
+            await dbConn.run(`
+                UPDATE form_customization 
+                SET config_data = ?, updated_at = datetime('now')
+                WHERE tenant_id = ?
+            `, configData, tenantId);
+        } else {
+            // Insert new configuration
+            await dbConn.run(`
+                INSERT INTO form_customization (tenant_id, config_data, updated_at) 
+                VALUES (?, ?, datetime('now'))
+            `, tenantId, configData);
+        }
         
         console.log('Configurazione salvata con successo (pubblico)');
         res.json({ success: true, message: 'Configurazione salvata con successo!' });
@@ -2287,6 +2397,10 @@ app.get('/t/:tenantSlug/thanks', tenantLoader, (req, res) => {
 });
 
 // Form submission - create user and coupon, send email with QR
+// NOTE: This legacy endpoint finds campaign by code without tenant filter.
+// It uses the campaign's tenant_id to scope users/coupons, which is correct.
+// However, if multiple tenants have the same campaign_code, it will use the first one found.
+// DEPRECATED: Use /t/:tenantSlug/submit instead for proper tenant isolation.
 app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
     try {
         const { email, firstName, lastName, campaign_id, ...customFields } = req.body;
@@ -3068,10 +3182,17 @@ app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => 
 });
 
 // Legacy: get campaign by code (DEPRECATED - use tenant-scoped endpoint)
+// NOTE: This endpoint is kept for backward compatibility but should not be used in production
+// It uses the default tenant for legacy support
 app.get('/api/campaigns/:code', async (req, res) => {
     try {
         const dbConn = await getDb();
-        const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ?', req.params.code);
+        // Use default tenant for legacy endpoint
+        const defaultTenant = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
+        if (!defaultTenant) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, defaultTenant.id);
         if (!campaign) {
             return res.status(404).json({ error: 'Campagna non trovata' });
         }
@@ -3083,7 +3204,7 @@ app.get('/api/campaigns/:code', async (req, res) => {
         // Check if campaign has expired
         if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
             // Auto-deactivate expired campaign
-            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ? AND tenant_id = ?', campaign.id, defaultTenant.id);
             return res.status(404).json({ error: 'Campagna scaduta' });
         }
         
