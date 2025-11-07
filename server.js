@@ -2436,8 +2436,9 @@ app.post('/submit', (req, res) => {
     // Try to infer tenant from referer or default
     const referer = req.get('referer') || '';
     const tenantMatch = referer.match(/\/t\/([^\/]+)/);
-    const tenantSlug = tenantMatch ? tenantMatch[1] : DEFAULT_TENANT_SLUG;
-    res.redirect(301, `/t/${tenantSlug}/submit`);
+    const tenantSlug = tenantMatch ? tenantMatch[1] : (req.session?.user?.tenantSlug || DEFAULT_TENANT_SLUG);
+    // Use 307 redirect to preserve POST method and body
+    res.redirect(307, `/t/${tenantSlug}/submit`);
 });
 
 // Tenant-scoped form submission (RECOMMENDED)
