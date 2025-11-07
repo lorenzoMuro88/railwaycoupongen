@@ -1188,7 +1188,21 @@
             const btn = document.querySelector('#brandModal .modal-btn-primary');
             const old = btn.textContent; btn.disabled = true; btn.textContent = 'Salvataggio...';
             try {
-                const r = await fetch(`/api/superadmin/tenants/${currentBrandTenantId}/brand`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                // Ensure CSRF token is available
+                const csrfToken = await ensureCsrfToken();
+                const headers = { 
+                    'Content-Type': 'application/json'
+                };
+                if (csrfToken) {
+                    headers['X-CSRF-Token'] = csrfToken;
+                }
+                
+                const r = await fetch(`/api/superadmin/tenants/${currentBrandTenantId}/brand`, { 
+                    method: 'POST', 
+                    headers: headers, 
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload) 
+                });
                 if (r.ok) {
                     showSuccess('Brand salvato');
                     closeBrandModal();
@@ -1197,6 +1211,7 @@
                     showError(e.error || 'Errore salvataggio brand');
                 }
             } catch(err) {
+                console.error('Error saving brand:', err);
                 showError('Errore di connessione');
             } finally {
                 btn.disabled = false; btn.textContent = old;
