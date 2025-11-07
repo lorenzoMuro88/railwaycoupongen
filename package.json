@@ -9,6 +9,7 @@
     "dev": "nodemon server.js",
     "clean:db": "node scripts/clean-db.js",
     "test:csrf": "node scripts/test-csrf.js",
+    "test:tenant-isolation": "node scripts/test-tenant-isolation.js",
     "db:migrate-email": "node scripts/migrate-tenant-email.js",
     "test:tenant-email": "node scripts/test-tenant-email-config.js",
     "server:start": "node scripts/server-control.js start",

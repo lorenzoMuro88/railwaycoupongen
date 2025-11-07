@@ -1562,9 +1562,8 @@
                 const fy = Number(document.getElementById('focalY').value)/100;
                 currentCfg.headerFocalX = isNaN(fx)?0.5:fx;
                 currentCfg.headerFocalY = isNaN(fy)?0.5:fy;
-                // salva nella configurazione admin e anche pubblica per garantire la lettura dalla home
+                // salva nella configurazione admin (tenant-aware)
                 await fetch('/api/admin/form-customization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
-                await fetch('/api/form-customization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
                 status.textContent = 'Configurazione salvata.';
                 _headerDirty = false;
                 updateSaveButton();
