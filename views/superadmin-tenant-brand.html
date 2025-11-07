@@ -54,6 +54,44 @@
                 </div>
             </div>
 
+            <div class="card" style="display:grid; gap: .75rem;">
+                <div style="font-weight:600;">Email Mittente (Mailgun)</div>
+                <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem;">
+                    <label style="grid-column: 1 / -1;">
+                        Nome mittente (display)
+                        <input type="text" id="email_from_name" placeholder="Brand Cliente" />
+                    </label>
+                    <label>
+                        Indirizzo mittente (opzionale)
+                        <input type="email" id="email_from_address" placeholder="no-reply@dominiocliente.it" />
+                    </label>
+                    <label>
+                        Dominio Mailgun per il tenant (opzionale)
+                        <input type="text" id="mailgun_domain" placeholder="mg.dominiocliente.it" />
+                    </label>
+                    <label>
+                        Regione Mailgun
+                        <select id="mailgun_region">
+                            <option value="">(usa default globale)</option>
+                            <option value="eu">EU</option>
+                            <option value="us">US</option>
+                        </select>
+                    </label>
+                    <label style="grid-column: 1 / -1;">
+                        Dominio personalizzato per il form (opzionale)
+                        <input type="text" id="custom_domain" placeholder="promo.dominiocliente.it" />
+                    </label>
+                </div>
+                <div style="display:flex; gap:.5rem; justify-content:flex-end; align-items:center; flex-wrap:wrap;">
+                    <input type="email" id="test_to" placeholder="test@example.com" style="max-width:280px;" />
+                    <button type="button" class="modal-btn modal-btn-secondary" id="btnTestEmail">Invia test</button>
+                    <button type="button" class="modal-btn modal-btn-primary" id="btnSaveEmail">Salva email mittente</button>
+                </div>
+                <div style="font-size:12px; color:#555;">
+                    Suggerimento: per usare un indirizzo @dominiocliente è necessario attestare il dominio in Mailgun (DKIM/SPF).
+                </div>
+            </div>
+
             <div style="display:flex; gap:.75rem; justify-content:space-between; align-items:center;">
                 <button type="button" class="clear-btn" id="btnReset">Ripristina default</button>
                 <div style="display:flex; gap:.75rem;">
@@ -129,6 +167,20 @@
                     }
                 }
             } catch(e){ console.error(e); }
+            // Carica impostazioni email mittente
+            try {
+                const r2 = await fetch(`/api/superadmin/tenants/${tenantId}/email`);
+                if (r2.ok){
+                    const e = await r2.json();
+                    if (e){
+                        if (e.email_from_name) qs('#email_from_name').value = e.email_from_name;
+                        if (e.email_from_address) qs('#email_from_address').value = e.email_from_address;
+                        if (e.mailgun_domain) qs('#mailgun_domain').value = e.mailgun_domain;
+                        if (e.mailgun_region) qs('#mailgun_region').value = e.mailgun_region;
+                        if (e.custom_domain) qs('#custom_domain').value = e.custom_domain;
+                    }
+                }
+            } catch(e){ console.error(e); }
             applyPreview();
         }
 
@@ -180,6 +232,36 @@
         });
 
         qs('#btnSave').addEventListener('click', save);
+        qs('#btnTestEmail').addEventListener('click', async ()=>{
+            const tenantId = getTenantIdFromPath();
+            if (!tenantId) { showError('Tenant non valido'); return; }
+            const btn = qs('#btnTestEmail'); const old = btn.textContent; btn.disabled = true; btn.textContent = 'Invio...';
+            try {
+                const to = qs('#test_to').value.trim() || 'test@example.com';
+                const r = await fetch(`/api/superadmin/tenants/${tenantId}/test-email`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ to }) });
+                if (r.ok){ const json = await r.json(); showSuccess(`Inviato da ${json.from} via ${json.domain}`); }
+                else { const err = await r.json().catch(()=>({})); showError(err.error || 'Errore invio'); }
+            } catch(e){ showError('Errore di connessione'); }
+            finally { btn.disabled = false; btn.textContent = old; }
+        });
+        qs('#btnSaveEmail').addEventListener('click', async ()=>{
+            const tenantId = getTenantIdFromPath();
+            if (!tenantId) { showError('Tenant non valido'); return; }
+            const btn = qs('#btnSaveEmail'); const old = btn.textContent; btn.disabled = true; btn.textContent = 'Salvataggio...';
+            try {
+                const payload = {
+                    email_from_name: qs('#email_from_name').value.trim(),
+                    email_from_address: qs('#email_from_address').value.trim(),
+                    mailgun_domain: qs('#mailgun_domain').value.trim(),
+                    mailgun_region: qs('#mailgun_region').value,
+                    custom_domain: qs('#custom_domain').value.trim()
+                };
+                const r = await fetch(`/api/superadmin/tenants/${tenantId}/email`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                if (r.ok){ showSuccess('Impostazioni email aggiornate'); }
+                else { const err = await r.json().catch(()=>({})); showError(err.error || 'Errore salvataggio'); }
+            } catch(e){ showError('Errore di connessione'); }
+            finally { btn.disabled = false; btn.textContent = old; }
+        });
         qs('#btnReset').addEventListener('click', resetDefaults);
         qs('#btnCancel').addEventListener('click', ()=>{ window.location.href='/superadmin'; });
         document.addEventListener('DOMContentLoaded', loadData);

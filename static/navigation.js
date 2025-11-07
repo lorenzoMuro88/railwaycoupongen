@@ -65,6 +65,35 @@ function navigateTo(path) {
 // Load tenant info when DOM is ready
 document.addEventListener('DOMContentLoaded', loadTenantInfo);
 
+// CSRF token handling: fetch once and attach to mutating fetch requests
+window.__csrfToken = null;
+
+async function ensureCsrfToken() {
+    if (window.__csrfToken) return window.__csrfToken;
+    const base = window.__tenantBase || '';
+    try {
+        const r = await fetch(base + '/api/csrf-token', { credentials: 'same-origin' });
+        if (r.ok) {
+            const j = await r.json();
+            window.__csrfToken = j.csrfToken || null;
+        }
+    } catch (_) {}
+    return window.__csrfToken;
+}
+
+const originalFetch = window.fetch.bind(window);
+window.fetch = async function(input, init = {}) {
+    try {
+        const method = (init && init.method ? String(init.method) : 'GET').toUpperCase();
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+            const token = await ensureCsrfToken();
+            init.headers = Object.assign({}, init.headers, token ? { 'X-CSRF-Token': token } : {});
+            init.credentials = init.credentials || 'same-origin';
+        }
+    } catch (_) {}
+    return originalFetch(input, init);
+};
+
 // Sidebar functions
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');

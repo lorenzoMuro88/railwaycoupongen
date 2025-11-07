@@ -4,6 +4,7 @@ require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
@@ -32,9 +33,69 @@ app.set('trust proxy', 1);
 const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || 'default';
 const DEFAULT_TENANT_NAME = process.env.DEFAULT_TENANT_NAME || 'Default Tenant';
 const ENFORCE_TENANT_PREFIX = String(process.env.ENFORCE_TENANT_PREFIX || 'false') === 'true';
+const csrf = require('csurf');
+
+// CSRF protection setup (cookie-based)
+const csrfProtection = csrf({
+    cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: 'auto'
+    }
+});
+
+// Apply CSRF only to authenticated mutating routes
+function csrfIfProtectedRoute(req, res, next) {
+    const method = req.method.toUpperCase();
+    // Skip CSRF for read-only requests
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
+    
+    const url = req.path || '';
+    
+    // Exclude login endpoints from CSRF (client doesn't have token yet)
+    // After login, they'll get token and subsequent requests will be protected
+    const csrfExemptPaths = [
+        '/api/login',
+        '/api/superadmin/login',
+        '/api/signup',
+        '/submit',
+        '/t/:tenantSlug/submit'
+    ];
+    
+    // Check if this is an exempt path (exact match or pattern match)
+    const isExempt = csrfExemptPaths.some(exempt => {
+        if (exempt.includes(':')) {
+            // Pattern match for tenant-scoped routes
+            const exemptPattern = exempt.replace(/:\w+/g, '[^/]+');
+            const regex = new RegExp('^' + exemptPattern.replace(/\//g, '\\/') + '$');
+            return regex.test(url);
+        }
+        return url === exempt || url.startsWith(exempt + '/');
+    });
+    
+    if (isExempt) {
+        return next();
+    }
+    
+    // Apply CSRF to protected endpoints
+    const protectedPrefixes = [
+        '/api/admin',
+        '/api/store',
+        '/api/superadmin'
+    ];
+    const isTenantScoped = url.startsWith('/t/') && url.includes('/api/');
+    const isProtected = protectedPrefixes.some(p => url.startsWith(p));
+    
+    if (isProtected || isTenantScoped) {
+        return csrfProtection(req, res, next);
+    }
+    
+    return next();
+}
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '15mb' }));
+app.use(cookieParser());
 
 // Middleware per gestire errori di parsing JSON
 app.use((error, req, res, next) => {
@@ -338,7 +399,7 @@ async function tenantLoader(req, res, next) {
     try {
         const { tenantSlug } = req.params;
         const dbConn = await getDb();
-        const tenant = await dbConn.get('SELECT id, slug, name FROM tenants WHERE slug = ?', tenantSlug);
+        const tenant = await dbConn.get('SELECT id, slug, name, custom_domain, email_from_name, email_from_address, mailgun_domain, mailgun_region FROM tenants WHERE slug = ?', tenantSlug);
         if (!tenant) {
             return res.status(404).send('Tenant non trovato');
         }
@@ -426,6 +487,27 @@ let sessionOptions = {
     }
 };
 app.use(session(sessionOptions));
+
+// CSRF token endpoint (must be after session middleware but before CSRF protection)
+// This endpoint needs CSRF middleware to generate token, but is itself exempt from protection
+app.get(['/api/csrf-token','/t/:tenantSlug/api/csrf-token'], (req, res, next) => {
+    // Apply csrfProtection just for this route to generate token
+    csrfProtection(req, res, () => {
+        try {
+            const token = req.csrfToken ? req.csrfToken() : null;
+            if (!token) {
+                return res.status(500).json({ error: 'Impossibile generare token CSRF' });
+            }
+            res.json({ csrfToken: token });
+        } catch (error) {
+            console.error('[csrf-token] Error generating token:', error);
+            res.status(500).json({ error: 'Errore generazione token CSRF' });
+        }
+    });
+});
+
+// Attach CSRF middleware for protected routes (mutating authenticated endpoints)
+app.use(csrfIfProtectedRoute);
 
 // Super admin page will be defined before /admin middleware
 
@@ -914,6 +996,27 @@ async function getDb() {
             await db.run('INSERT INTO schema_migrations(version) VALUES (?)', currentVersion);
         }
 
+        // Auto-migration: Add per-tenant email fields if missing (backward compatibility)
+        const tenantColumnsAll = await db.all("PRAGMA table_info(tenants)");
+        const tenantColumnNames = tenantColumnsAll.map(c => c.name);
+        
+        if (!tenantColumnNames.includes('email_from_address')) {
+            console.log('Adding email_from_address column to tenants table...');
+            await db.exec('ALTER TABLE tenants ADD COLUMN email_from_address TEXT');
+        }
+        if (!tenantColumnNames.includes('mailgun_domain')) {
+            console.log('Adding mailgun_domain column to tenants table...');
+            await db.exec('ALTER TABLE tenants ADD COLUMN mailgun_domain TEXT');
+        }
+        if (!tenantColumnNames.includes('mailgun_region')) {
+            console.log('Adding mailgun_region column to tenants table...');
+            await db.exec('ALTER TABLE tenants ADD COLUMN mailgun_region TEXT');
+        }
+        if (!tenantColumnNames.includes('custom_domain')) {
+            console.log('Adding custom_domain column to tenants table...');
+            await db.exec('ALTER TABLE tenants ADD COLUMN custom_domain TEXT');
+        }
+
         // Email template table (multitenant)
         const emailTemplateTable = await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='email_template'");
         if (emailTemplateTable.length === 0) {
@@ -1122,7 +1225,7 @@ function buildTransport() {
                 if (process.env.MAILGUN_REPLY_TO) {
                     data['h:Reply-To'] = process.env.MAILGUN_REPLY_TO;
                 }
-                const domain = process.env.MAILGUN_DOMAIN;
+                const domain = message.mailgunDomain || process.env.MAILGUN_DOMAIN;
                 
                 // Add timeout wrapper for Mailgun API call
                 const timeoutPromise = new Promise((_, reject) => 
@@ -1194,6 +1297,29 @@ function toSlug(input) {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
         .slice(0, 64) || 'tenant';
+}
+
+// Per-tenant email helpers
+function buildTenantEmailFrom(tenant) {
+    const displayName = (tenant && tenant.email_from_name) || 'CouponGen';
+    if (tenant && tenant.email_from_address) {
+        return `${displayName} <${tenant.email_from_address}>`;
+    }
+    // If tenant has Mailgun custom domain, use no-reply@ that domain
+    if (tenant && tenant.mailgun_domain) {
+        return `${displayName} <no-reply@${tenant.mailgun_domain.replace(/^mg\./, '')}>`;
+    }
+    // Fallback to global sender
+    const globalFrom = process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>';
+    // Replace display name while preserving address
+    const addrMatch = globalFrom.match(/<([^>]+)>/);
+    const address = addrMatch ? addrMatch[1] : 'no-reply@send.coupongen.it';
+    return `${displayName} <${address}>`;
+}
+
+function getTenantMailgunDomain(tenant) {
+    if (tenant && tenant.mailgun_domain) return tenant.mailgun_domain;
+    return process.env.MAILGUN_DOMAIN;
 }
 
 // Logging utility function
@@ -1617,26 +1743,25 @@ app.get('/api/admin/test-email', requireAdmin, async (req, res) => {
     try {
         const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
         
-        // Try to get custom sender name from user's tenant
-        let senderName = 'CouponGen';
-        if (req.session && req.session.user && req.session.user.tenantSlug) {
+        // Load tenant (if any) to honor per-tenant sender/domain
+        let tenant = null;
+        if (req.session?.user?.tenantSlug) {
             try {
                 const dbConn = await getDb();
-                const tenant = await dbConn.get('SELECT email_from_name FROM tenants WHERE slug = ?', req.session.user.tenantSlug);
-                if (tenant && tenant.email_from_name) {
-                    senderName = tenant.email_from_name;
-                }
+                tenant = await dbConn.get('SELECT email_from_name, email_from_address, mailgun_domain, mailgun_region FROM tenants WHERE slug = ?', req.session.user.tenantSlug);
             } catch (e) {
-                console.error('Error getting tenant sender name:', e);
+                console.error('Error getting tenant for test email:', e);
             }
         }
-        
+
+        const senderName = (tenant && tenant.email_from_name) || 'CouponGen';
         const html = `<p>Test email da ${senderName} - Mailgun integrazione da CouponGen.</p>`;
         const message = {
-            from: `${senderName} <no-reply@send.coupongen.it>`,
+            from: buildTenantEmailFrom(tenant),
             to,
             subject: `Test Email - ${senderName}`,
-            html
+            html,
+            mailgunDomain: getTenantMailgunDomain(tenant)
         };
         const info = await transporter.sendMail(message);
         res.json({ ok: true, info });
@@ -2224,14 +2349,15 @@ app.post('/submit', checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, 
             .replaceAll('{{redemptionUrl}}', redemptionUrl);
 
         const message = {
-            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
+            from: buildTenantEmailFrom(req.tenant),
             to: email,
             subject: templateSubject,
             html,
             // Only one inline attachment referenced via CID
             attachments: [
                 { filename: 'coupon-qr.png', content: qrPngBuffer, cid: 'coupon-qr.png' }
-            ]
+            ],
+            mailgunDomain: getTenantMailgunDomain(req.tenant)
         };
 
         try {
@@ -2364,13 +2490,14 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             .replaceAll('{{redemptionUrl}}', redemptionUrl);
 
         const message = {
-            from: process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>',
+            from: buildTenantEmailFrom(req.tenant),
             to: email,
             subject: templateSubject,
             html,
             attachments: [
                 { filename: 'coupon-qr.png', content: qrPngBuffer, cid: 'coupon-qr.png' }
-            ]
+            ],
+            mailgunDomain: getTenantMailgunDomain(req.tenant)
         };
         try {
             const info = await transporter.sendMail(message);
@@ -4340,6 +4467,102 @@ app.get('/api/superadmin/tenants', requireSuperAdmin, async (req, res) => {
     }
 });
 
+// Superadmin: dry-run resolve email settings for a tenant (no send)
+app.get('/api/superadmin/tenants/:id/email/resolve', requireSuperAdmin, async (req, res) => {
+    try {
+        const tenantId = Number(req.params.id);
+        if (!Number.isFinite(tenantId)) return res.status(400).json({ error: 'ID tenant non valido' });
+        const dbConn = await getDb();
+        const tenant = await dbConn.get('SELECT email_from_name, email_from_address, mailgun_domain, mailgun_region FROM tenants WHERE id = ?', tenantId);
+        if (!tenant) return res.status(404).json({ error: 'Tenant non trovato' });
+        const from = buildTenantEmailFrom(tenant);
+        const domain = getTenantMailgunDomain(tenant);
+        res.json({ from, domain });
+    } catch (e) {
+        console.error('Error resolving tenant email settings:', e);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// Superadmin: send test email for a tenant using its settings
+app.post('/api/superadmin/tenants/:id/test-email', requireSuperAdmin, async (req, res) => {
+    try {
+        const tenantId = Number(req.params.id);
+        if (!Number.isFinite(tenantId)) return res.status(400).json({ error: 'ID tenant non valido' });
+        const to = (req.body?.to || req.query?.to || process.env.MAIL_TEST_TO || 'test@example.com');
+        const dbConn = await getDb();
+        const tenant = await dbConn.get('SELECT email_from_name, email_from_address, mailgun_domain, mailgun_region, name FROM tenants WHERE id = ?', tenantId);
+        if (!tenant) return res.status(404).json({ error: 'Tenant non trovato' });
+
+        const senderName = tenant.email_from_name || (tenant.name || 'CouponGen');
+        const message = {
+            from: buildTenantEmailFrom(tenant),
+            to,
+            subject: `Test Email - ${senderName}`,
+            html: `<p>Test email da ${senderName} (tenant ${tenantId}).</p>`,
+            mailgunDomain: getTenantMailgunDomain(tenant)
+        };
+        const info = await transporter.sendMail(message);
+        res.json({ ok: true, info, from: message.from, domain: message.mailgunDomain });
+    } catch (e) {
+        console.error('Superadmin test email error:', e);
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+});
+
+// Superadmin: get email sender settings for a tenant
+app.get('/api/superadmin/tenants/:id/email', requireSuperAdmin, async (req, res) => {
+    try {
+        if (!req.session?.user || req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const tenantId = Number(req.params.id);
+        if (!Number.isFinite(tenantId)) return res.status(400).json({ error: 'ID tenant non valido' });
+        const dbConn = await getDb();
+        const row = await dbConn.get('SELECT email_from_name, email_from_address, mailgun_domain, mailgun_region, custom_domain FROM tenants WHERE id = ?', tenantId);
+        if (!row) return res.status(404).json({ error: 'Tenant non trovato' });
+        res.json(row);
+    } catch (e) {
+        console.error('Error fetching tenant email settings:', e);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
+// Superadmin: update email sender settings for a tenant
+app.put('/api/superadmin/tenants/:id/email', requireSuperAdmin, async (req, res) => {
+    try {
+        if (!req.session?.user || req.session.user.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const tenantId = Number(req.params.id);
+        if (!Number.isFinite(tenantId)) return res.status(400).json({ error: 'ID tenant non valido' });
+        const { email_from_name, email_from_address, mailgun_domain, mailgun_region, custom_domain } = req.body || {};
+        // Basic normalization
+        const name = (email_from_name || '').toString().trim();
+        const addr = (email_from_address || '').toString().trim();
+        const mgDomain = (mailgun_domain || '').toString().trim();
+        const mgRegion = (mailgun_region || '').toString().trim();
+        const hostDomain = (custom_domain || '').toString().trim();
+        const dbConn = await getDb();
+        await dbConn.run(
+            `UPDATE tenants SET 
+                email_from_name = COALESCE(?, email_from_name),
+                email_from_address = COALESCE(NULLIF(?, ''), email_from_address),
+                mailgun_domain = COALESCE(NULLIF(?, ''), mailgun_domain),
+                mailgun_region = COALESCE(NULLIF(?, ''), mailgun_region),
+                custom_domain = COALESCE(NULLIF(?, ''), custom_domain),
+                updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [ name || null, addr || null, mgDomain || null, mgRegion || null, hostDomain || null, tenantId ]
+        );
+        await logAction(req, 'update', `Email settings aggiornati per tenant ${tenantId}`);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error updating tenant email settings:', e);
+        res.status(500).json({ error: 'Errore interno del server' });
+    }
+});
+
 // Superadmin: get brand settings for a tenant
 app.get('/api/superadmin/tenants/:id/brand', requireSuperAdmin, async (req, res) => {
     try {
@@ -4492,11 +4715,19 @@ app.post('/api/superadmin/tenants', requireSuperAdmin, async (req, res) => {
         }
         
         // Create tenant
+        // Defaults for new tenants: use global Mailgun settings as baseline
+        const defaultFromEnv = (process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>');
+        const nameFromEnv = defaultFromEnv.replace(/\s*<[^>]+>\s*$/, '') || 'CouponGen';
+        const defaultMailgunDomain = process.env.MAILGUN_DOMAIN || null;
+        const defaultMailgunRegion = process.env.MAILGUN_REGION || null;
+
         const resultTenant = await db.run(
-            'INSERT INTO tenants (slug, name, email_from_name) VALUES (?, ?, ?)', 
+            'INSERT INTO tenants (slug, name, email_from_name, mailgun_domain, mailgun_region) VALUES (?, ?, ?, ?, ?)', 
             slug, 
             tenantName,
-            emailFromName || 'CouponGen'
+            emailFromName || nameFromEnv,
+            defaultMailgunDomain,
+            defaultMailgunRegion
         );
         const newTenantId = resultTenant.lastID;
         
