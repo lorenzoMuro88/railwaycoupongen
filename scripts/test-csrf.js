@@ -10,8 +10,8 @@ const { URL } = require('url');
 
 const BASE_URL = process.env.TEST_URL || 'http://localhost:3000';
 const ADMIN_USERNAME = process.env.TEST_ADMIN_USER || 'admin';
-const ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD || 'admin123';
-const ADMIN_USERTYPE = 'admin';
+const ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD || process.env.SUPERADMIN_PASSWORD || 'admin123';
+const ADMIN_USERTYPE = process.env.TEST_ADMIN_USERTYPE || 'superadmin'; // Use superadmin by default since that's what gets created
 
 let sessionCookie = '';
 let csrfToken = '';

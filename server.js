@@ -840,9 +840,8 @@ async function getDb() {
                 console.log(`Generated campaign_code ${campaignCode} for campaign ${campaign.id}`);
             }
             
-            // Make campaign_code unique per tenant (not globally)
-            // Note: This will be migrated to tenant-scoped unique index later
-            await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_code ON campaigns(campaign_code)`);
+            // Don't create global unique index - will be created as tenant-scoped by ensureTenantScopedUniqueConstraints
+            // This ensures tenant isolation for campaign codes
         } else {
             console.log('campaign_code column already exists');
             
@@ -1137,6 +1136,9 @@ async function getDb() {
         
         // Re-enable foreign keys after migration
         await db.exec('PRAGMA foreign_keys = ON');
+        
+        // Ensure tenant-scoped unique constraints (remove global indexes, create tenant-scoped ones)
+        await ensureTenantScopedUniqueConstraints(db);
         
         logger.info({ version: currentVersion }, 'Database migration completed successfully');
         
@@ -2853,14 +2855,33 @@ app.get('/api/admin/coupons/search', requireAdmin, async (req, res) => {
     }
 });
 
-// DEPRECATED ENDPOINT REMOVED: /api/coupons/:code/redeem
-// This legacy endpoint has been removed. Use /t/:tenantSlug/api/coupons/:code/redeem instead.
-app.post('/api/coupons/:code/redeem', (req, res) => {
-    logger.warn({ path: req.path, code: req.params.code, ip: req.ip }, 'Deprecated endpoint /api/coupons/:code/redeem accessed');
-    res.status(410).json({ 
-        error: 'Endpoint deprecato. Usa /t/:tenantSlug/api/coupons/:code/redeem',
-        deprecated: true
-    });
+// Legacy endpoint /api/coupons/:code/redeem (tenant-aware for backward compatibility)
+// Tries to infer tenant from session/referer, falls back to global search if not found
+app.post('/api/coupons/:code/redeem', async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        
+        let coupon;
+        if (tenantId) {
+            // Try tenant-scoped search first
+            coupon = await dbConn.get('SELECT * FROM coupons WHERE code = ? AND tenant_id = ?', req.params.code, tenantId);
+        }
+        
+        // If not found with tenant, try global search (legacy behavior)
+        if (!coupon) {
+            coupon = await dbConn.get('SELECT * FROM coupons WHERE code = ?', req.params.code);
+        }
+        
+        if (!coupon) return res.status(404).json({ error: 'Non trovato' });
+        if (coupon.status !== 'active') return res.status(400).json({ error: 'Coupon non attivo' });
+        
+        await dbConn.run('UPDATE coupons SET status = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?', 'redeemed', coupon.id);
+        res.json({ ok: true, code: coupon.code, status: 'redeemed' });
+    } catch (e) {
+        console.error('Error in legacy /api/coupons/:code/redeem:', e);
+        res.status(500).json({ error: 'Errore server' });
+    }
 });
 app.post('/t/:tenantSlug/api/coupons/:code/redeem', tenantLoader, async (req, res) => {
     try {
