@@ -399,6 +399,7 @@ async function tenantLoader(req, res, next) {
     try {
         const { tenantSlug } = req.params;
         const dbConn = await getDb();
+        await ensureTenantEmailColumns(dbConn);
         const tenant = await dbConn.get('SELECT id, slug, name, custom_domain, email_from_name, email_from_address, mailgun_domain, mailgun_region FROM tenants WHERE slug = ?', tenantSlug);
         if (!tenant) {
             return res.status(404).send('Tenant non trovato');
@@ -1144,6 +1145,57 @@ async function getDb() {
         await db.exec('PRAGMA foreign_keys = ON');
     }
     return db;
+}
+
+function parseMailFrom(value) {
+    if (!value) return { name: null, address: null };
+    const trimmed = String(value).trim();
+    if (!trimmed) return { name: null, address: null };
+    const match = trimmed.match(/^(.*)<([^>]+)>\s*$/);
+    if (match) {
+        const name = match[1].trim().replace(/^"|"$/g, '');
+        return {
+            name: name || null,
+            address: match[2].trim()
+        };
+    }
+    return { name: null, address: trimmed };
+}
+
+async function ensureTenantEmailColumns(dbConn) {
+    if (!dbConn) return;
+    const columns = await dbConn.all("PRAGMA table_info(tenants)");
+    const columnNames = new Set(columns.map(c => c.name));
+    const ensureColumn = async (name, ddl) => {
+        if (!columnNames.has(name)) {
+            console.log(`[schema] Adding ${name} column to tenants table...`);
+            await dbConn.exec(ddl);
+            columnNames.add(name);
+        }
+    };
+
+    await ensureColumn('custom_domain', 'ALTER TABLE tenants ADD COLUMN custom_domain TEXT');
+    await ensureColumn('email_from_name', 'ALTER TABLE tenants ADD COLUMN email_from_name TEXT');
+    await ensureColumn('email_from_address', 'ALTER TABLE tenants ADD COLUMN email_from_address TEXT');
+    await ensureColumn('mailgun_domain', 'ALTER TABLE tenants ADD COLUMN mailgun_domain TEXT');
+    await ensureColumn('mailgun_region', 'ALTER TABLE tenants ADD COLUMN mailgun_region TEXT');
+
+    const defaultFromEnv = process.env.MAIL_FROM || process.env.MAILGUN_FROM || 'CouponGen <no-reply@send.coupongen.it>';
+    const parsed = parseMailFrom(defaultFromEnv);
+
+    if (columnNames.has('email_from_name')) {
+        const fallbackName = parsed.name || DEFAULT_TENANT_NAME || 'CouponGen';
+        await dbConn.run('UPDATE tenants SET email_from_name = COALESCE(email_from_name, ?)', fallbackName);
+    }
+    if (columnNames.has('email_from_address') && parsed.address) {
+        await dbConn.run('UPDATE tenants SET email_from_address = COALESCE(email_from_address, ?)', parsed.address);
+    }
+    if (columnNames.has('mailgun_domain') && process.env.MAILGUN_DOMAIN) {
+        await dbConn.run('UPDATE tenants SET mailgun_domain = COALESCE(mailgun_domain, ?)', process.env.MAILGUN_DOMAIN);
+    }
+    if (columnNames.has('mailgun_region') && process.env.MAILGUN_REGION) {
+        await dbConn.run('UPDATE tenants SET mailgun_region = COALESCE(mailgun_region, ?)', process.env.MAILGUN_REGION);
+    }
 }
 
 // Helper: resolve tenantId for API requests even when not tenant-prefixed
@@ -4700,6 +4752,7 @@ app.post('/api/superadmin/tenants', requireSuperAdmin, async (req, res) => {
         }
         
         const db = await getDb();
+        await ensureTenantEmailColumns(db);
         const slug = toSlug(tenantSlug || tenantName);
         
         // Check slug uniqueness
