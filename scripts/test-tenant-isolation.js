@@ -433,7 +433,7 @@ async function runTests() {
         });
         
         // ===== TEST 3: Campaign Name Uniqueness Per Tenant =====
-        log('\n=== TEST 3: Campaign Name Uniqueness Per Tenant ===');
+        log('\n=== TEST 3: Campaign Name Behavior Per Tenant ===');
         
         const sameCampaignName = 'Same Campaign Name';
         
@@ -473,7 +473,7 @@ async function runTests() {
             }
         });
         
-        await test('Tenant 1 cannot create duplicate campaign name within same tenant', async () => {
+        await test('Tenant 1 can create duplicate campaign name within same tenant (names are not unique)', async () => {
             const res = await makeRequest('POST', `/t/${tenant1Slug}/api/admin/campaigns`, {
                 cookie: tenant1Session,
                 headers: {
@@ -486,9 +486,23 @@ async function runTests() {
                 }
             });
             
-            // Should fail with constraint error
-            if (res.status === 200 || res.status === 201) {
-                throw new Error('Expected constraint error, but campaign was created');
+            // Should succeed - duplicate names are now allowed
+            if (res.status !== 200 && res.status !== 201) {
+                throw new Error(`Expected 200/201, got ${res.status}: ${JSON.stringify(res.body)}`);
+            }
+            
+            // Verify that both campaigns exist with the same name
+            const campaignsRes = await makeRequest('GET', `/t/${tenant1Slug}/api/admin/campaigns`, {
+                cookie: tenant1Session
+            });
+            
+            if (campaignsRes.status !== 200) {
+                throw new Error(`Failed to fetch campaigns: ${campaignsRes.status}`);
+            }
+            
+            const campaignsWithSameName = campaignsRes.body.filter(c => c.name === sameCampaignName);
+            if (campaignsWithSameName.length < 2) {
+                throw new Error(`Expected at least 2 campaigns with name "${sameCampaignName}", found ${campaignsWithSameName.length}`);
             }
         });
         
@@ -567,8 +581,14 @@ async function runTests() {
                 throw new Error('idx_campaigns_code_tenant index not found');
             }
             
-            if (!indexNames.includes('idx_campaigns_name_tenant')) {
-                throw new Error('idx_campaigns_name_tenant index not found');
+            // Verify that unique index on name was removed (names can be duplicated)
+            if (indexNames.includes('idx_campaigns_name_tenant')) {
+                throw new Error('idx_campaigns_name_tenant unique index should not exist (duplicate names are allowed)');
+            }
+            
+            // Verify that non-unique index exists for performance
+            if (!indexNames.includes('idx_campaigns_name_tenant_nonunique')) {
+                throw new Error('idx_campaigns_name_tenant_nonunique index not found');
             }
             
             await db.close();

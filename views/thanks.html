@@ -33,7 +33,7 @@
                 </div>
                 
                 <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
-                    <a href="/" class="primary" style="text-decoration: none; display: inline-block;">
+                    <a id="thanksLink" href="/" class="primary" style="text-decoration: none; display: inline-block;">
                         Torna alla Home
                     </a>
                 </div>
@@ -98,6 +98,14 @@
                         hero.style.backgroundSize = 'cover';
                         hero.style.backgroundPosition = '50% 50%';
                     }
+                }
+
+                // Link custom per la pagina thanks
+                var thanksLink = document.getElementById('thanksLink');
+                if (thanksLink && cfg.customThanksUrl && cfg.customThanksUrl.trim() !== '') {
+                    thanksLink.href = cfg.customThanksUrl;
+                } else if (thanksLink) {
+                    thanksLink.href = '/';
                 }
             } catch(e) {
                 console.warn('Impossibile applicare configurazione UI:', e);

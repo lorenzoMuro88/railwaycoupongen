@@ -1145,7 +1145,8 @@
         async function downloadUsersCsv(button) {
             try {
                 setButtonState(button, 'loading');
-                const response = await fetch('/api/admin/users/export.csv');
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/users/export.csv`);
                 if (!response.ok) {
                     const text = await response.text();
                     throw new Error(text || 'Errore durante l\'esportazione CSV');
@@ -1327,18 +1328,30 @@
 
         async function loadCampaigns() {
             try {
-                const response = await fetch('/api/admin/campaigns-list');
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/campaigns-list`);
                 const campaigns = await response.json();
                 
                 const optionsContainer = document.getElementById('campaignOptions');
                 optionsContainer.innerHTML = '';
                 
+                // Handle both old format (array of strings) and new format (array of objects)
                 campaigns.forEach(campaign => {
+                    // Support both formats for backward compatibility
+                    const campaignName = typeof campaign === 'string' ? campaign : campaign.name;
+                    const campaignId = typeof campaign === 'object' ? campaign.id : null;
+                    const campaignCode = typeof campaign === 'object' ? campaign.code : null;
+                    
+                    // Use name for filtering (backend uses c.name IN (...))
+                    // Display name with code if available to help distinguish duplicates
+                    const displayName = campaignCode ? `${campaignName} (${campaignCode})` : campaignName;
+                    const safeId = campaignId || campaignName.replace(/[^a-zA-Z0-9]/g, '_');
+                    
                     const optionDiv = document.createElement('div');
                     optionDiv.className = 'dropdown-option';
                     optionDiv.innerHTML = `
-                        <input type="checkbox" id="campaign_${campaign}" value="${campaign}" onchange="toggleCampaign('${campaign}')">
-                        <label for="campaign_${campaign}">${campaign}</label>
+                        <input type="checkbox" id="campaign_${safeId}" value="${campaignName}" onchange="toggleCampaign('${campaignName}')">
+                        <label for="campaign_${safeId}">${displayName}</label>
                     `;
                     optionsContainer.appendChild(optionDiv);
                 });

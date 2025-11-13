@@ -309,11 +309,9 @@
 
         async function loadTemplate(){
             try {
-                // Determine the correct API endpoint based on current URL
-                const isTenantScoped = window.location.pathname.includes('/t/');
-                const apiUrl = isTenantScoped ? 
-                    window.location.pathname.replace('/admin/email-template', '/api/admin/email-template') :
-                    '/api/admin/email-template';
+                // Use tenant base for proper tenant isolation
+                const tenantBase = window.__tenantBase || '';
+                const apiUrl = `${tenantBase}/api/admin/email-template`;
                 
                 const r = await fetch(apiUrl);
                 const t = await r.json();
@@ -410,11 +408,9 @@
             try {
                 const { subject, html } = buildTemplateHtml();
                 
-                // Determine the correct API endpoint based on current URL
-                const isTenantScoped = window.location.pathname.includes('/t/');
-                const apiUrl = isTenantScoped ? 
-                    window.location.pathname.replace('/admin/email-template', '/api/admin/email-template') :
-                    '/api/admin/email-template';
+                // Use tenant base for proper tenant isolation
+                const tenantBase = window.__tenantBase || '';
+                const apiUrl = `${tenantBase}/api/admin/email-template`;
                 
                 const r = await fetch(apiUrl, { 
                     method: 'POST', 
@@ -544,10 +540,8 @@
         // Email sender name functions
         async function loadEmailSenderName() {
             try {
-                const isTenantScoped = window.location.pathname.includes('/t/');
-                const apiUrl = isTenantScoped ? 
-                    window.location.pathname.replace('/admin/email-template', '/api/admin/email-from-name') :
-                    '/api/admin/email-from-name';
+                const tenantBase = window.__tenantBase || '';
+                const apiUrl = `${tenantBase}/api/admin/email-from-name`;
                 
                 const response = await fetch(apiUrl);
                 if (response.ok) {
@@ -580,10 +574,8 @@
             setButtonState(saveBtn, 'loading');
 
             try {
-                const isTenantScoped = window.location.pathname.includes('/t/');
-                const apiUrl = isTenantScoped ? 
-                    window.location.pathname.replace('/admin/email-template', '/api/admin/email-from-name') :
-                    '/api/admin/email-from-name';
+                const tenantBase = window.__tenantBase || '';
+                const apiUrl = `${tenantBase}/api/admin/email-from-name`;
 
                 const response = await fetch(apiUrl, {
                     method: 'PUT',
@@ -679,10 +671,8 @@
             setButtonState(sendBtn, 'loading');
 
             try {
-                const isTenantScoped = window.location.pathname.includes('/t/');
-                const apiUrl = isTenantScoped ? 
-                    window.location.pathname.replace('/admin/email-template', '/api/admin/test-email') :
-                    '/api/admin/test-email';
+                const tenantBase = window.__tenantBase || '';
+                const apiUrl = `${tenantBase}/api/admin/test-email`;
 
                 const response = await fetch(`${apiUrl}?to=${encodeURIComponent(testEmail)}`, {
                     method: 'GET'

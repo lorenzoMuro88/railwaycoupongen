@@ -11,6 +11,7 @@
     "test:csrf": "node scripts/test-csrf.js",
     "test:tenant-isolation": "node scripts/test-tenant-isolation.js",
     "test:authorization": "node scripts/test-authorization.js",
+    "test:tenant-auth-users": "node scripts/test-tenant-auth-users.js",
     "test:store": "node scripts/test-store.js",
     "test:superadmin": "node scripts/test-superadmin.js",
     "test:admin-extended": "node scripts/test-admin-extended.js",

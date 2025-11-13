@@ -401,21 +401,25 @@ app.get('/api/public-config', (req, res) => {
 async function tenantLoader(req, res, next) {
     try {
         const { tenantSlug } = req.params;
+        console.log('[TENANT-LOADER] Loading tenant:', tenantSlug, 'for path:', req.path);
         const dbConn = await getDb();
         await ensureTenantEmailColumns(dbConn);
         await ensureFormCustomizationTenantId(dbConn);
         await ensureTenantScopedUniqueConstraints(dbConn);
         const tenant = await dbConn.get('SELECT id, slug, name, custom_domain, email_from_name, email_from_address, mailgun_domain, mailgun_region FROM tenants WHERE slug = ?', tenantSlug);
         if (!tenant) {
+            console.log('[TENANT-LOADER] Tenant not found:', tenantSlug);
             return res.status(404).send('Tenant non trovato');
         }
         req.tenant = tenant;
         req.tenantSlug = tenant.slug;
+        console.log('[TENANT-LOADER] Tenant loaded successfully:', tenant.slug);
         // Simple visibility in logs
         const logContext = logger.withRequest(req);
         logContext.debug({ tenant: tenant.slug }, 'Tenant loaded for request');
         next();
     } catch (e) {
+        console.error('[TENANT-LOADER] Error:', e);
         const logContext = logger.withRequest(req);
         logContext.error({ err: e, tenantSlug: req.params.tenantSlug }, 'tenantLoader error');
         res.status(500).send('Errore tenant');
@@ -1355,11 +1359,18 @@ async function ensureTenantScopedUniqueConstraints(dbConn) {
             logger.debug('Tenant-scoped unique index on campaign_code already exists');
         }
         
-        if (!indexNames.has('idx_campaigns_name_tenant')) {
-            logger.info('Creating tenant-scoped unique index on campaigns(name, tenant_id)');
-            await dbConn.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_name_tenant ON campaigns(name, tenant_id)');
-        } else {
-            logger.debug('Tenant-scoped unique index on name already exists');
+        // Remove unique constraint on name to allow duplicate names per tenant
+        // Campaigns are identified by id and campaign_code, not by name
+        if (indexNames.has('idx_campaigns_name_tenant')) {
+            logger.info('Removing unique constraint on campaigns(name, tenant_id) to allow duplicate names');
+            await dbConn.exec('DROP INDEX IF EXISTS idx_campaigns_name_tenant');
+            indexNames.delete('idx_campaigns_name_tenant');
+        }
+        
+        // Create non-unique index on name for performance (if it doesn't exist)
+        if (!indexNames.has('idx_campaigns_name_tenant_nonunique')) {
+            logger.info('Creating non-unique index on campaigns(name, tenant_id) for query performance');
+            await dbConn.exec('CREATE INDEX IF NOT EXISTS idx_campaigns_name_tenant_nonunique ON campaigns(name, tenant_id)');
         }
         
         // Verify final state
@@ -1596,6 +1607,48 @@ function requireAdmin(req, res, next) {
     }
 }
 
+// Helper function to redirect legacy routes to tenant-aware routes
+async function redirectToTenantAwareRoute(req, res, path) {
+    try {
+        if (!req.session || !req.session.user) {
+            return res.status(403).send('Accesso negato. Tenant non valido.');
+        }
+        
+        const dbConn = await getDb();
+        let tenant;
+        
+        // SuperAdmin can access without tenantId - redirect to first available tenant or use default
+        if (req.session.user.userType === 'superadmin' && !req.session.user.tenantId) {
+            // Try to get first tenant or use default tenant slug
+            tenant = await dbConn.get('SELECT slug FROM tenants ORDER BY id ASC LIMIT 1');
+            if (!tenant) {
+                // No tenants available, but SuperAdmin can still access - use default slug
+                const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || 'default';
+                const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+                return res.redirect(302, `/t/${DEFAULT_TENANT_SLUG}${path}${queryString}`);
+            }
+        } else {
+            // Regular admin: must have tenantId
+            if (!req.session.user.tenantId) {
+                return res.status(403).send('Accesso negato. Tenant non valido.');
+            }
+            tenant = await dbConn.get('SELECT slug FROM tenants WHERE id = ?', req.session.user.tenantId);
+        }
+        
+        if (!tenant || !tenant.slug) {
+            return res.status(403).send('Accesso negato. Tenant non trovato.');
+        }
+        
+        // Preserve query string if present
+        const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+        // Use 302 redirect to ensure URL changes visibly in browser
+        return res.redirect(302, `/t/${tenant.slug}${path}${queryString}`);
+    } catch (error) {
+        console.error(`Error redirecting ${req.path}:`, error);
+        return res.status(500).send('Errore nel reindirizzamento.');
+    }
+}
+
 // Super admin middleware
 function requireSuperAdmin(req, res, next) {
     if (req.session && req.session.user && req.session.user.userType === 'superadmin') {
@@ -1806,10 +1859,6 @@ app.post('/api/signup', async (req, res) => {
                             <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
                                 <p style="font-size: 14px; color: #666666; margin: 0 0 15px 0;">Scansiona il QR Code</p>
                                 <img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto; border: 1px solid #ddd; border-radius: 8px; display: block; margin: 0 auto;">
-                            </div>
-                            <p style="font-size: 16px; color: #333333; margin: 20px 0;">Mostra questo codice in negozio oppure usa il link qui sotto:</p>
-                            <div style="text-align: center; margin: 30px 0;">
-                                <a href="{{redemptionUrl}}" style="display: inline-block; background-color: #2d5a3d; color: #ffffff; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">🚀 Vai alla Cassa</a>
                             </div>
                             <p style="font-size: 14px; color: #666666; margin: 20px 0 0 0;">Grazie per averci scelto!</p>
                         </td>
@@ -2724,6 +2773,8 @@ app.get('/superadmin/logs', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'logs.html'));
 });
 
+// Tenant-aware auth-users routes (moved to after campaigns route - see line 3232)
+
 // Tenant-scoped protected areas (soft-enforce in M2)
 app.use('/t/:tenantSlug/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
 app.use('/t/:tenantSlug/api/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
@@ -3037,6 +3088,194 @@ app.get('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAsS
     }
 });
 
+// Tenant-aware auth-users routes (moved here after campaigns to fix routing)
+app.get('/t/:tenantSlug/api/admin/auth-users', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        console.log('[AUTH-USERS] Tenant-aware GET endpoint called', { path: req.path, tenantSlug: req.params.tenantSlug, tenant: req.tenant?.slug });
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) {
+            console.log('[AUTH-USERS] Access denied - no session or wrong user type');
+            return res.status(403).json({ error: 'Accesso negato' });
+        }
+        const dbConn = await getDb();
+        
+        // Use tenant from path (superadmin can access any tenant)
+        const tenantId = req.tenant.id;
+        console.log('[AUTH-USERS] Processing request for tenant:', tenantId);
+        
+        // Superadmin can see all users if accessing without tenant restriction, but here we're tenant-scoped
+        const rows = await dbConn.all(
+            `SELECT id, username, user_type as userType, is_active as isActive, last_login as lastLogin
+             FROM auth_users
+             WHERE tenant_id = ? AND user_type IN ('admin','store')
+             ORDER BY user_type ASC, username ASC`,
+            tenantId
+        );
+        // Sicurezza extra: non mostrare mai superadmin
+        const filtered = rows.filter(u => u.userType !== 'superadmin');
+        res.json(filtered);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.post('/t/:tenantSlug/api/admin/auth-users', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
+        const { username, password, user_type, tenant_id } = req.body || {};
+        const role = String(user_type || '').toLowerCase();
+        if (!username || !password || !['admin', 'store'].includes(role)) {
+            return res.status(400).json({ error: 'Dati non validi' });
+        }
+        // Solo il Superadmin può creare utenti con ruolo admin
+        if (role === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può creare utenti admin' });
+        }
+        const dbConn = await getDb();
+        // Secure password hashing using bcrypt
+        const passwordHash = await hashPassword(password);
+        
+        // Resolve tenant: SuperAdmin can specify tenant_id in body, otherwise use context
+        let tenantId = tenant_id;
+        if (!tenantId) {
+            tenantId = await getTenantIdForApi(req);
+        }
+        // SuperAdmin can create users without tenant context if tenant_id is provided in body
+        // Regular admin must have tenant context
+        if (!tenantId && sess.userType !== 'superadmin') {
+            return res.status(400).json({ error: 'Tenant non valido' });
+        }
+        if (!tenantId) {
+            return res.status(400).json({ error: 'Tenant ID richiesto' });
+        }
+        
+        try {
+            const result = await dbConn.run(
+                'INSERT INTO auth_users (username, password_hash, user_type, is_active, tenant_id) VALUES (?, ?, ?, 1, ?)',
+                username, passwordHash, role, tenantId
+            );
+            res.json({ id: result.lastID, username, userType: role, isActive: 1 });
+        } catch (err) {
+            if (String(err && err.message || '').includes('UNIQUE')) {
+                return res.status(400).json({ error: 'Username già esistente' });
+            }
+            throw err;
+        }
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.put('/t/:tenantSlug/api/admin/auth-users/:id', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
+        const { username, password, user_type, is_active } = req.body || {};
+        const role = user_type ? String(user_type).toLowerCase() : undefined;
+        if (role && !['admin', 'store'].includes(role)) {
+            return res.status(400).json({ error: 'Ruolo non valido' });
+        }
+        const dbConn = await getDb();
+        
+        // SuperAdmin can modify any user, regular admin only tenant-scoped users
+        let user;
+        if (sess.userType === 'superadmin') {
+            // SuperAdmin can modify any user (no tenant restriction)
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ?', req.params.id);
+        } else {
+            // Regular admin: tenant-scoped
+            const tenantId = await getTenantIdForApi(req);
+            if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        }
+        
+        if (!user) return res.status(404).json({ error: 'Utente non trovato' });
+        if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
+        // Solo il Superadmin può modificare utenti con ruolo admin
+        if (user.user_type === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può modificare utenti admin' });
+        }
+        // Solo il Superadmin può promuovere/demotere a/da admin
+        if (role === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può assegnare il ruolo admin' });
+        }
+        if (user.id === (sess.authUserId || sess.id)) {
+            // Prevent demoting or deactivating self
+            if ((role && role !== 'admin') || (is_active === 0 || is_active === false)) {
+                return res.status(400).json({ error: 'Non puoi disattivare o cambiare ruolo al tuo utente' });
+            }
+        }
+        
+        // Build update dynamically
+        const fields = [];
+        const params = [];
+        if (username && username !== user.username) {
+            fields.push('username = ?');
+            params.push(username);
+        }
+        if (typeof is_active !== 'undefined') {
+            fields.push('is_active = ?');
+            params.push(is_active ? 1 : 0);
+        }
+        if (role) {
+            fields.push('user_type = ?');
+            params.push(role);
+        }
+        if (password) {
+            fields.push('password_hash = ?');
+            const newPasswordHash = await hashPassword(password);
+            params.push(newPasswordHash);
+        }
+        if (fields.length === 0) return res.json({ ok: true });
+        params.push(req.params.id);
+        await dbConn.run(`UPDATE auth_users SET ${fields.join(', ')} WHERE id = ?` , ...params);
+        res.json({ ok: true });
+    } catch (e) {
+        if (String(e && e.message || '').includes('UNIQUE')) {
+            return res.status(400).json({ error: 'Username già esistente' });
+        }
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+app.delete('/t/:tenantSlug/api/admin/auth-users/:id', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const sess = req.session && req.session.user;
+        if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
+        const dbConn = await getDb();
+        
+        // SuperAdmin can delete any user, regular admin only tenant-scoped users
+        let user;
+        if (sess.userType === 'superadmin') {
+            // SuperAdmin can delete any user (no tenant restriction)
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ?', req.params.id);
+        } else {
+            // Regular admin: tenant-scoped
+            const tenantId = await getTenantIdForApi(req);
+            if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        }
+        
+        if (!user) return res.status(404).json({ error: 'Utente non trovato' });
+        if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
+        // Solo il Superadmin può eliminare utenti con ruolo admin
+        if (user.user_type === 'admin' && sess.userType !== 'superadmin') {
+            return res.status(403).json({ error: 'Solo il Superadmin può eliminare utenti admin' });
+        }
+        
+        if (user.id === (sess.authUserId || sess.id)) return res.status(400).json({ error: 'Non puoi eliminare il tuo utente' });
+        await dbConn.run('DELETE FROM auth_users WHERE id = ?', req.params.id);
+        res.json({ ok: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
 // Tenant-scoped: create campaign
 app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
     try {
@@ -3068,9 +3307,10 @@ app.post('/t/:tenantSlug/api/admin/campaigns', tenantLoader, requireSameTenantAs
         res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
     } catch (e) {
         const logContext = logger.withRequest(req);
-        if (e && e.code === 'SQLITE_CONSTRAINT') {
-            logContext.warn({ err: e, campaignName: name, tenant: req.tenant.slug }, 'Campaign name already exists for tenant');
-            return res.status(409).json({ error: 'Nome campagna già esistente per questo tenant' });
+        // Only check for campaign_code uniqueness constraint, not name
+        if (e && e.code === 'SQLITE_CONSTRAINT' && e.message && e.message.includes('campaign_code')) {
+            logContext.warn({ err: e, campaignCode, tenant: req.tenant.slug }, 'Campaign code already exists for tenant');
+            return res.status(409).json({ error: 'Codice campagna già esistente per questo tenant' });
         }
         logContext.error({ err: e, campaignName: name, tenant: req.tenant.slug }, 'Error creating campaign');
         res.status(500).json({ error: 'Errore server' });
@@ -3096,8 +3336,9 @@ app.put('/t/:tenantSlug/api/admin/campaigns/:id', tenantLoader, requireSameTenan
         res.json(updated);
     } catch (e) {
         console.error('update campaign (tenant) error', e);
-        if (e && e.code === 'SQLITE_CONSTRAINT') {
-            return res.status(409).json({ error: 'Nome campagna già esistente' });
+        // Only check for campaign_code uniqueness constraint, not name
+        if (e && e.code === 'SQLITE_CONSTRAINT' && e.message && e.message.includes('campaign_code')) {
+            return res.status(409).json({ error: 'Codice campagna già esistente' });
         }
         res.status(500).json({ error: 'Errore server' });
     }
@@ -3159,6 +3400,8 @@ app.get('/t/:tenantSlug/api/admin/email-from-name', tenantLoader, requireSameTen
     }
 });
 
+// Duplicate routes removed - see routes above (before app.use middleware)
+
 // Tenant-scoped: get campaign by code (for form parameter)
 app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => {
     try {
@@ -3190,49 +3433,13 @@ app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => 
     }
 });
 
-// Legacy endpoint /api/campaigns/:code (tenant-aware for backward compatibility)
-// Tries to infer tenant from session/referer, falls back to global search if not found
+// Legacy endpoint /api/campaigns/:code - DEPRECATED
+// Returns 410 Gone to indicate this endpoint is deprecated
 app.get('/api/campaigns/:code', async (req, res) => {
-    try {
-        const dbConn = await getDb();
-        const tenantId = await getTenantIdForApi(req);
-        
-        let campaign;
-        if (tenantId) {
-            // Try tenant-scoped search first
-            campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, tenantId);
-        }
-        
-        // If not found with tenant, try global search (legacy behavior)
-        if (!campaign) {
-            campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ?', req.params.code);
-        }
-        
-        if (!campaign) {
-            return res.status(404).json({ error: 'Campagna non trovata' });
-        }
-        
-        // Check if campaign is active and not expired
-        if (!campaign.is_active) {
-            return res.status(404).json({ error: 'Campagna non trovata' });
-        }
-        
-        // Check if campaign has expired
-        if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
-            // Auto-deactivate expired campaign
-            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
-            return res.status(404).json({ error: 'Campagna scaduta' });
-        }
-        
-        // Parse form config
-        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
-        campaign.form_config = formConfig;
-        
-        res.json(campaign);
-    } catch (e) {
-        console.error('Error in legacy /api/campaigns/:code:', e);
-        res.status(500).json({ error: 'Errore server' });
-    }
+    return res.status(410).json({ 
+        error: 'Endpoint deprecato. Usa /t/:tenantSlug/api/campaigns/:code',
+        deprecated: true
+    });
 });
 
 app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
@@ -3280,9 +3487,9 @@ app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
         const logContext = logger.withRequest(req);
         logContext.error({ err: e, name: req.body?.name, tenantId, stack: e.stack }, 'Error creating campaign');
         console.error('Error creating campaign:', e);
-        // Check if it's a UNIQUE constraint violation
-        if (e.code === 'SQLITE_CONSTRAINT' || (e.message && e.message.includes('UNIQUE'))) {
-            return res.status(409).json({ error: 'Campagna con questo nome già esistente per questo tenant' });
+        // Only check for campaign_code uniqueness constraint, not name
+        if (e.code === 'SQLITE_CONSTRAINT' && e.message && e.message.includes('campaign_code')) {
+            return res.status(409).json({ error: 'Codice campagna già esistente per questo tenant' });
         }
         // Check if it's a database connection error
         if (e.code === 'SQLITE_BUSY' || e.code === 'SQLITE_LOCKED') {
@@ -3314,8 +3521,9 @@ app.put('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
         res.json(updated);
     } catch (e) {
         console.error('update campaign error', e);
-        if (e && e.code === 'SQLITE_CONSTRAINT') {
-            return res.status(409).json({ error: 'Nome campagna già esistente' });
+        // Only check for campaign_code uniqueness constraint, not name
+        if (e && e.code === 'SQLITE_CONSTRAINT' && e.message && e.message.includes('campaign_code')) {
+            return res.status(409).json({ error: 'Codice campagna già esistente' });
         }
         res.status(500).json({ error: 'Errore server' });
     }
@@ -3403,19 +3611,20 @@ app.put('/api/admin/campaigns/:id/form-config', requireAdmin, async (req, res) =
     }
 });
 
-// API per recuperare tutte le campagne
+// API per recuperare tutte le campagne (restituisce id e name per gestire nomi duplicati)
 app.get('/api/admin/campaigns-list', requireAdmin, async (req, res) => {
     try {
         const dbConn = await getDb();
         const tenantId = await getTenantIdForApi(req);
         if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const campaigns = await dbConn.all(`
-            SELECT DISTINCT name 
+            SELECT id, name, campaign_code
             FROM campaigns 
             WHERE name IS NOT NULL AND name != '' AND tenant_id = ?
-            ORDER BY name
+            ORDER BY name, created_at DESC
         `, tenantId);
-        res.json(campaigns.map(c => c.name));
+        // Return array of objects with id and name for better identification
+        res.json(campaigns.map(c => ({ id: c.id, name: c.name, code: c.campaign_code })));
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Errore server' });
@@ -3994,30 +4203,30 @@ app.post('/api/admin/campaigns/:id/products', requireAdmin, async (req, res) => 
 });
 
 // Admin page
-app.get('/admin', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'admin.html'));
+app.get('/admin', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/admin');
 });
 app.get('/t/:tenantSlug/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'admin.html'));
 });
 
-app.get('/formsetup', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'formsetup.html'));
+app.get('/formsetup', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/formsetup');
 });
 app.get('/t/:tenantSlug/formsetup', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'formsetup.html'));
 });
 
-app.get('/custom-fields', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'custom-fields.html'));
+app.get('/custom-fields', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/custom-fields');
 });
 app.get('/t/:tenantSlug/custom-fields', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'custom-fields.html'));
 });
 
 // New canonical route for aesthetic personalization
-app.get('/form-design', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'form-design.html'));
+app.get('/form-design', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/form-design');
 });
 app.get('/t/:tenantSlug/form-design', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'form-design.html'));
@@ -4042,8 +4251,8 @@ if (ENFORCE_TENANT_PREFIX) {
     });
 }
 
-app.get('/admin/email-template', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
+app.get('/admin/email-template', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/admin/email-template');
 });
 // Tenant-scoped email template APIs
 app.get('/t/:tenantSlug/api/admin/email-template', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
@@ -4098,31 +4307,33 @@ app.get('/t/:tenantSlug/admin/email-template', tenantLoader, requireSameTenantAs
     res.sendFile(path.join(__dirname, 'views', 'email-template.html'));
 });
 
-app.get('/db-utenti', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'db-utenti.html'));
+// Tenant-aware routes for auth-users are defined later (after line 4834)
+
+app.get('/db-utenti', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/db-utenti');
 });
 app.get('/t/:tenantSlug/db-utenti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'db-utenti.html'));
 });
 
 // Utenti (gestione auth_users admin/store)
-app.get('/utenti', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'utenti.html'));
+app.get('/utenti', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/utenti');
 });
 app.get('/t/:tenantSlug/utenti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'utenti.html'));
 });
 
-app.get('/prodotti', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'prodotti.html'));
+app.get('/prodotti', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/prodotti');
 });
 app.get('/t/:tenantSlug/prodotti', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'prodotti.html'));
 });
 
 // Analytics page
-app.get('/analytics', requireAdmin, (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'analytics.html'));
+app.get('/analytics', requireAdmin, async (req, res) => {
+    await redirectToTenantAwareRoute(req, res, '/analytics');
 });
 app.get('/t/:tenantSlug/analytics', tenantLoader, requireSameTenantAsSession, requireRole('admin'), (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'analytics.html'));
@@ -4385,18 +4596,35 @@ app.get('/api/admin/auth-users', requireAdmin, async (req, res) => {
         
         // Resolve tenant from path/referrer/session
         const tenantId = await getTenantIdForApi(req);
-        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
-        const rows = await dbConn.all(
-            `SELECT id, username, user_type as userType, is_active as isActive, last_login as lastLogin
-             FROM auth_users
-             WHERE tenant_id = ? AND user_type IN ('admin','store')
-             ORDER BY user_type ASC, username ASC`,
-            tenantId
-        );
-        // Sicurezza extra: non mostrare mai superadmin
-        const filtered = rows.filter(u => u.userType !== 'superadmin');
-        res.json(filtered);
+        // Superadmin can see all users if no tenant context, otherwise tenant-scoped
+        // Regular admin must have a tenant
+        if (sess.userType === 'superadmin' && !tenantId) {
+            // Superadmin viewing all users across all tenants
+            const rows = await dbConn.all(
+                `SELECT id, username, user_type as userType, is_active as isActive, last_login as lastLogin, tenant_id as tenantId
+                 FROM auth_users
+                 WHERE user_type IN ('admin','store')
+                 ORDER BY user_type ASC, username ASC`
+            );
+            // Sicurezza extra: non mostrare mai superadmin
+            const filtered = rows.filter(u => u.userType !== 'superadmin');
+            res.json(filtered);
+        } else {
+            // Tenant-scoped access (admin or superadmin with tenant context)
+            if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+            
+            const rows = await dbConn.all(
+                `SELECT id, username, user_type as userType, is_active as isActive, last_login as lastLogin
+                 FROM auth_users
+                 WHERE tenant_id = ? AND user_type IN ('admin','store')
+                 ORDER BY user_type ASC, username ASC`,
+                tenantId
+            );
+            // Sicurezza extra: non mostrare mai superadmin
+            const filtered = rows.filter(u => u.userType !== 'superadmin');
+            res.json(filtered);
+        }
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Errore server' });
@@ -4407,7 +4635,7 @@ app.post('/api/admin/auth-users', requireAdmin, async (req, res) => {
     try {
         const sess = req.session && req.session.user;
         if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
-        const { username, password, user_type } = req.body || {};
+        const { username, password, user_type, tenant_id } = req.body || {};
         const role = String(user_type || '').toLowerCase();
         if (!username || !password || !['admin', 'store'].includes(role)) {
             return res.status(400).json({ error: 'Dati non validi' });
@@ -4420,9 +4648,19 @@ app.post('/api/admin/auth-users', requireAdmin, async (req, res) => {
         // Secure password hashing using bcrypt
         const passwordHash = await hashPassword(password);
         
-        // Resolve tenant from path/referrer/session
-        const tenantId = await getTenantIdForApi(req);
-        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        // Resolve tenant: SuperAdmin can specify tenant_id in body, otherwise use context
+        let tenantId = tenant_id;
+        if (!tenantId) {
+            tenantId = await getTenantIdForApi(req);
+        }
+        // SuperAdmin can create users without tenant context if tenant_id is provided in body
+        // Regular admin must have tenant context
+        if (!tenantId && sess.userType !== 'superadmin') {
+            return res.status(400).json({ error: 'Tenant non valido' });
+        }
+        if (!tenantId) {
+            return res.status(400).json({ error: 'Tenant ID richiesto' });
+        }
         
         try {
             const result = await dbConn.run(
@@ -4452,10 +4690,19 @@ app.put('/api/admin/auth-users/:id', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Ruolo non valido' });
         }
         const dbConn = await getDb();
-        // Resolve tenant from path/referrer/session
-        const tenantId = await getTenantIdForApi(req);
-        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
-        const user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        
+        // SuperAdmin can modify any user, regular admin only tenant-scoped users
+        let user;
+        if (sess.userType === 'superadmin') {
+            // SuperAdmin can modify any user (no tenant restriction)
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ?', req.params.id);
+        } else {
+            // Regular admin: tenant-scoped
+            const tenantId = await getTenantIdForApi(req);
+            if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        }
+        
         if (!user) return res.status(404).json({ error: 'Utente non trovato' });
         if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
         // Solo il Superadmin può modificare utenti con ruolo admin
@@ -4512,10 +4759,19 @@ app.delete('/api/admin/auth-users/:id', requireAdmin, async (req, res) => {
         const sess = req.session && req.session.user;
         if (!sess || (sess.userType !== 'admin' && sess.userType !== 'superadmin')) return res.status(403).json({ error: 'Accesso negato' });
         const dbConn = await getDb();
-        // Resolve tenant from path/referrer/session
-        const tenantId = await getTenantIdForApi(req);
-        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
-        const user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        
+        // SuperAdmin can delete any user, regular admin only tenant-scoped users
+        let user;
+        if (sess.userType === 'superadmin') {
+            // SuperAdmin can delete any user (no tenant restriction)
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ?', req.params.id);
+        } else {
+            // Regular admin: tenant-scoped
+            const tenantId = await getTenantIdForApi(req);
+            if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+            user = await dbConn.get('SELECT * FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        }
+        
         if (!user) return res.status(404).json({ error: 'Utente non trovato' });
         if (user.user_type === 'superadmin') return res.status(400).json({ error: 'Operazione non consentita' });
         // Solo il Superadmin può eliminare utenti con ruolo admin
@@ -4532,6 +4788,8 @@ app.delete('/api/admin/auth-users/:id', requireAdmin, async (req, res) => {
         res.status(500).json({ error: 'Errore server' });
     }
 });
+
+// Duplicate routes removed - see routes above (after email-from-name)
 
 // Account management routes (for current user)
 app.get('/account', requireAuth, (req, res) => {
@@ -5029,10 +5287,6 @@ app.post('/api/superadmin/tenants', requireSuperAdmin, async (req, res) => {
                             <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
                                 <p style="font-size: 14px; color: #666666; margin: 0 0 15px 0;">Scansiona il QR Code</p>
                                 <img src="{{qrDataUrl}}" alt="QR Code" style="max-width: 200px; height: auto; border: 1px solid #ddd; border-radius: 8px; display: block; margin: 0 auto;">
-                            </div>
-                            <p style="font-size: 16px; color: #333333; margin: 20px 0;">Mostra questo codice in negozio oppure usa il link qui sotto:</p>
-                            <div style="text-align: center; margin: 30px 0;">
-                                <a href="{{redemptionUrl}}" style="display: inline-block; background-color: #2d5a3d; color: #ffffff; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">🚀 Vai alla Cassa</a>
                             </div>
                             <p style="font-size: 14px; color: #666666; margin: 20px 0 0 0;">Grazie per averci scelto!</p>
                         </td>

@@ -289,7 +289,7 @@
         <header>
             <h1>Configurazione Form</h1>
             <div style="margin-top: 0.75rem; padding-bottom: 2%;">
-                <a href="/custom-fields" class="btn-link" style="padding: 0.7rem 1.4rem; border-radius: 8px; background: var(--white); color: var(--primary-green); border: 2px solid var(--primary-green); text-decoration: none; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; transition: all 0.3s ease; display: inline-block;">Campi Custom</a>
+                <a id="customFieldsLink" href="/custom-fields" class="btn-link" style="padding: 0.7rem 1.4rem; border-radius: 8px; background: var(--white); color: var(--primary-green); border: 2px solid var(--primary-green); text-decoration: none; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; transition: all 0.3s ease; display: inline-block;">Campi Custom</a>
             </div>
         </header>
 
@@ -436,7 +436,8 @@
 
         async function loadCampaigns() {
             try {
-                const response = await fetch('/api/admin/campaigns');
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/campaigns`);
                 const campaigns = await response.json();
                 
                 const select = document.getElementById('campaignSelect');
@@ -469,7 +470,8 @@
             }
 
             try {
-                const response = await fetch(`/api/admin/campaigns/${campaignId}/form-config`);
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/form-config`);
                 const formConfig = await response.json();
                 
                 currentCampaignId = campaignId;
@@ -561,7 +563,8 @@
             }
 
             try {
-                const response = await fetch(`/api/admin/campaigns/${currentCampaignId}/form-config`, {
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/campaigns/${currentCampaignId}/form-config`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'
@@ -653,12 +656,21 @@
         
         // Load navigation
         document.addEventListener('DOMContentLoaded', function() {
+            // Update custom fields link to use tenant base
+            const customFieldsLink = document.getElementById('customFieldsLink');
+            if (customFieldsLink) {
+                const tenantBase = window.__tenantBase || '';
+                customFieldsLink.href = tenantBase + '/custom-fields';
+            }
+            
             fetch('/static/navigation.html')
                 .then(response => response.text())
                 .then(html => {
                     document.getElementById('navigation-container').innerHTML = html;
                     // Set active link for current page
-                    const activeLink = document.querySelector('.nav-link[href="/formsetup"]');
+                    const tenantBase = window.__tenantBase || '';
+                    const activeLink = document.querySelector(`.nav-link[href="${tenantBase}/formsetup"]`) || 
+                                     document.querySelector('.nav-link[href="/formsetup"]');
                     if (activeLink) {
                         activeLink.classList.add('active');
                     }

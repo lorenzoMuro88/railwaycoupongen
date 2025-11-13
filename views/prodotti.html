@@ -468,7 +468,8 @@
             }
             
             try {
-                const response = await fetch('/api/admin/products', {
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/products`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, sku, value, margin_price })
@@ -492,7 +493,8 @@
         // Load products
         async function loadProducts() {
             try {
-                const response = await fetch('/api/admin/products');
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/products`);
                 products = await response.json();
                 displayProducts();
             } catch (error) {

@@ -56,10 +56,11 @@ const path = require('path');
         // Rename new table
         await db.exec('ALTER TABLE campaigns_new RENAME TO campaigns');
         
-        // Recreate indexes
+        // Recreate indexes (without UNIQUE on name to allow duplicate names per tenant)
         await db.exec('CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON campaigns(tenant_id)');
         await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_code_tenant ON campaigns(campaign_code, tenant_id)');
-        await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_name_tenant ON campaigns(name, tenant_id)');
+        // Create non-unique index on name for query performance (campaigns are identified by id and campaign_code, not name)
+        await db.exec('CREATE INDEX IF NOT EXISTS idx_campaigns_name_tenant_nonunique ON campaigns(name, tenant_id)');
         
         console.log('✅ Migration applied successfully. UNIQUE constraint removed from campaigns.name');
     } catch (e) {

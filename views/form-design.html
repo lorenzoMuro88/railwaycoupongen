@@ -824,6 +824,12 @@
                     <label>Placeholder Email</label>
                     <input type="text" id="emailPlaceholder" value="La tua email" placeholder="Inserisci il placeholder per l'email">
                 </div>
+
+                <div class="form-group">
+                    <label>URL Custom Pagina Thanks</label>
+                    <input type="url" id="customThanksUrl" value="" placeholder="https://esempio.com o lascia vuoto per home">
+                    <small style="color: var(--text-medium); font-size: 0.85rem; display: block; margin-top: 0.25rem;">URL a cui puntare il link nella pagina di ringraziamento (lascia vuoto per usare la home)</small>
+                </div>
                 </div>
             </div>
             </div>
@@ -1099,7 +1105,8 @@
                     }
                 }, 8000); // 8 secondi timeout per il caricamento
                 
-                const response = await fetch('/api/admin/form-customization', {
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/form-customization`, {
                     headers: {
                         'Authorization': 'Basic ' + btoa('admin:admin123')
                     },
@@ -1220,7 +1227,8 @@
                 formTitle: document.getElementById('formTitle')?.value || 'Genera il Tuo Coupon',
                 formSubtitle: document.getElementById('formSubtitle')?.value || 'Compila il form per ricevere il tuo coupon personalizzato',
                 buttonText: document.getElementById('buttonText')?.value || 'Genera Coupon',
-                emailPlaceholder: document.getElementById('emailPlaceholder')?.value || 'La tua email'
+                emailPlaceholder: document.getElementById('emailPlaceholder')?.value || 'La tua email',
+                customThanksUrl: document.getElementById('customThanksUrl')?.value || ''
             };
 
             // Salva sempre nel localStorage per sicurezza
@@ -1436,22 +1444,79 @@
             }
         }
         
-        // Load navigation
-        document.addEventListener('DOMContentLoaded', function() {
-            fetch('/static/navigation.html')
-                .then(response => response.text())
-                .then(html => {
-                    document.getElementById('navigation-container').innerHTML = html;
-                    // Set active link for current page
-                    const activeLink = document.querySelector('.nav-link[href="/form-design"]');
-                    if (activeLink) {
-                        activeLink.classList.add('active');
+        // Load navigation - ensure it loads reliably
+        async function loadNavigation() {
+            const container = document.getElementById('navigation-container');
+            if (!container) {
+                console.error('Navigation container not found');
+                // Retry after a short delay
+                setTimeout(loadNavigation, 100);
+                return;
+            }
+            
+            try {
+                // Static files are always served from /static/ regardless of tenant
+                const response = await fetch('/static/navigation.html');
+                if (!response.ok) {
+                    console.error('Failed to load navigation:', response.status, response.statusText);
+                    throw new Error('Failed to load navigation');
+                }
+                const html = await response.text();
+                if (!html || html.trim().length === 0) {
+                    console.error('Navigation HTML is empty');
+                    return;
+                }
+                container.innerHTML = html;
+                
+                // Verify navigation was inserted
+                const insertedNav = container.querySelector('.navbar');
+                if (!insertedNav) {
+                    console.error('Navigation HTML inserted but .navbar not found');
+                    return;
+                }
+                
+                // Set active link for current page - try both with and without tenant prefix
+                const tenantBase = window.__tenantBase || '';
+                const activeLink = document.querySelector(`.nav-link[href="${tenantBase}/form-design"]`) || 
+                                 document.querySelector('.nav-link[href="/form-design"]') ||
+                                 document.querySelector('.sidebar-link[onclick*="form-design"]');
+                if (activeLink) {
+                    activeLink.classList.add('active');
+                }
+                
+                // Also call loadTenantInfo from navigation.js if available
+                if (typeof loadTenantInfo === 'function') {
+                    loadTenantInfo();
+                }
+            } catch (error) {
+                console.error('Error loading navigation:', error);
+                // Retry once after a delay
+                setTimeout(() => {
+                    const retryContainer = document.getElementById('navigation-container');
+                    if (retryContainer) {
+                        fetch('/static/navigation.html')
+                            .then(r => r.text())
+                            .then(html => {
+                                if (html) retryContainer.innerHTML = html;
+                            })
+                            .catch(e => console.error('Retry failed:', e));
                     }
-                })
-                .catch(error => console.error('Error loading navigation:', error));
-            // Load current customization to show header preview
+                }, 500);
+            }
+        }
+        
+        // Load navigation immediately and also on DOMContentLoaded for reliability
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                loadNavigation();
+                // Load current customization to show header preview
+                loadCurrentCustomization();
+            });
+        } else {
+            // DOM already loaded
+            loadNavigation();
             loadCurrentCustomization();
-        });
+        }
 
         let _headerDirty = false;
         function updateSaveButton(){
@@ -1500,7 +1565,8 @@
             reader.onload = async () => {
                 try {
                     status.textContent = 'Caricamento...';
-                    const r = await fetch('/api/admin/upload-image', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ dataUrl: reader.result }) });
+                    const tenantBase = window.__tenantBase || '';
+                    const r = await fetch(`${tenantBase}/api/admin/upload-image`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ dataUrl: reader.result }) });
                     if(!r.ok) throw new Error();
                     const j = await r.json();
                     const img = document.getElementById('headerImage');
@@ -1514,11 +1580,13 @@
                     // Merge and salva nella configurazione admin
                     let currentCfg = {};
                     try {
-                        const cur = await fetch('/api/admin/form-customization');
+                        const tenantBase = window.__tenantBase || '';
+                        const cur = await fetch(`${tenantBase}/api/admin/form-customization`);
                         if (cur.ok) currentCfg = await cur.json();
                     } catch(e) {}
                     currentCfg.headerImageUrl = j.url;
-                    await fetch('/api/admin/form-customization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
+                    const tenantBase = window.__tenantBase || '';
+                    await fetch(`${tenantBase}/api/admin/form-customization`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
                 } catch(e){ status.textContent = 'Errore nel caricamento.'; }
             };
             reader.readAsDataURL(file);
@@ -1526,7 +1594,8 @@
 
         async function loadCurrentCustomization(){
             try{
-                const r = await fetch('/api/admin/form-customization');
+                const tenantBase = window.__tenantBase || '';
+                const r = await fetch(`${tenantBase}/api/admin/form-customization`);
                 if(!r.ok) return;
                 const cfg = await r.json();
                 if (cfg.headerImageUrl){
@@ -1552,7 +1621,8 @@
             const status = document.getElementById('headerUploadStatus');
             try{
                 let currentCfg = {};
-                const cur = await fetch('/api/admin/form-customization');
+                const tenantBase = window.__tenantBase || '';
+                const cur = await fetch(`${tenantBase}/api/admin/form-customization`);
                 if (cur.ok) currentCfg = await cur.json();
                 // se c'è un'immagine in preview, usa quella
                 const img = document.getElementById('headerImage');
@@ -1563,7 +1633,7 @@
                 currentCfg.headerFocalX = isNaN(fx)?0.5:fx;
                 currentCfg.headerFocalY = isNaN(fy)?0.5:fy;
                 // salva nella configurazione admin (tenant-aware)
-                await fetch('/api/admin/form-customization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
+                await fetch(`${tenantBase}/api/admin/form-customization`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentCfg) });
                 status.textContent = 'Configurazione salvata.';
                 _headerDirty = false;
                 updateSaveButton();

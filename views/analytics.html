@@ -214,7 +214,8 @@
         }
 
         async function loadSummary(){
-            const r = await fetch('/api/admin/analytics/summary' + (qsParams()? ('?' + qsParams()) : ''));
+            const tenantBase = window.__tenantBase || '';
+            const r = await fetch(`${tenantBase}/api/admin/analytics/summary` + (qsParams()? ('?' + qsParams()) : ''));
             if(!r.ok) return;
             summaryData = await r.json();
             document.getElementById('kpiCampaigns').textContent = summaryData.totalCampaigns;
@@ -228,7 +229,8 @@
         }
 
         async function loadPerCampaign(){
-            const r = await fetch('/api/admin/analytics/campaigns' + (qsParams()? ('?' + qsParams()) : ''));
+            const tenantBase = window.__tenantBase || '';
+            const r = await fetch(`${tenantBase}/api/admin/analytics/campaigns` + (qsParams()? ('?' + qsParams()) : ''));
             if(!r.ok) return;
             campaignsData = await r.json();
             const tbody = document.getElementById('campaignTable');
@@ -616,7 +618,8 @@
         }
 
         async function loadCampaignOptions(){
-            const r = await fetch('/api/admin/campaigns');
+            const tenantBase = window.__tenantBase || '';
+            const r = await fetch(`${tenantBase}/api/admin/campaigns`);
             if(!r.ok) return;
             campaignsList = await r.json();
             const sel = document.getElementById('campaignFilter');

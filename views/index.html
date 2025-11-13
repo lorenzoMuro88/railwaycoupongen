@@ -142,36 +142,108 @@
             box-sizing: border-box;
         }
         
-        /* Checkbox field styling */
+        /* Checkbox field styling - Enhanced */
         .checkbox-container {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             gap: 0.75rem;
             margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: transparent;
+            border-radius: 8px;
+            border: none;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .checkbox-container:hover {
+            background: rgba(74, 124, 89, 0.03);
         }
         
         .checkbox-container input[type="checkbox"] {
-            width: auto;
+            width: 18px;
+            height: 18px;
             margin: 0;
-            margin-top: 0.2rem;
             flex-shrink: 0;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            border: 2px solid var(--border-medium);
+            border-radius: 4px;
+            background: var(--white);
+            position: relative;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            min-width: 18px;
+            min-height: 18px;
+            flex-shrink: 0;
+        }
+        
+        .checkbox-container input[type="checkbox"]:hover {
+            border-color: var(--accent-green);
+            box-shadow: 0 2px 6px rgba(74, 124, 89, 0.15);
+        }
+        
+        .checkbox-container input[type="checkbox"]:checked {
+            background: var(--primary-green);
+            border-color: var(--primary-green);
+            box-shadow: 
+                0 0 0 2px rgba(74, 124, 89, 0.1),
+                0 2px 6px rgba(45, 90, 61, 0.2);
+        }
+        
+        .checkbox-container input[type="checkbox"]:checked::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -60%) rotate(45deg);
+            width: 5px;
+            height: 9px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            box-sizing: border-box;
+        }
+        
+        .checkbox-container input[type="checkbox"]:focus {
+            outline: none;
+            box-shadow: 
+                0 0 0 4px rgba(74, 124, 89, 0.15),
+                0 2px 8px rgba(74, 124, 89, 0.2);
         }
         
         .checkbox-label {
             font-size: 0.95rem;
-            line-height: 1.5;
+            line-height: 1.6;
             color: var(--text-dark);
             cursor: pointer;
             margin: 0;
+            font-weight: 400;
+            user-select: none;
+            flex: 1;
+            word-wrap: break-word;
         }
         
         .checkbox-label a {
-            color: #007bff;
-            text-decoration: underline;
+            color: var(--accent-green);
+            text-decoration: none;
+            font-weight: 500;
+            border-bottom: 1px solid transparent;
+            transition: all 0.2s ease;
+            position: relative;
+            white-space: nowrap !important;
+            display: inline !important;
         }
         
         .checkbox-label a:hover {
-            color: #0056b3;
+            color: var(--primary-green);
+            border-bottom-color: var(--primary-green);
+        }
+        
+        .checkbox-label a:focus {
+            outline: 2px solid var(--accent-green);
+            outline-offset: 2px;
+            border-radius: 2px;
         }
         
         @media (max-width: 768px) {
@@ -517,9 +589,46 @@
                         
                         // Create checkbox text with privacy link if provided
                         let checkboxText = field.checkboxText || field.name;
-                        if (field.privacyLink && checkboxText.includes('privacy')) {
-                            // Replace "privacy" text with a link
-                            checkboxText = checkboxText.replace(/privacy/i, `<a href="${field.privacyLink}" target="_blank" style="color: #007bff; text-decoration: underline;">privacy</a>`);
+                        if (field.privacyLink) {
+                            // Try to find and replace privacy-related terms with a link
+                            // Check for various Italian privacy-related terms (ordered by specificity)
+                            const privacyTerms = [
+                                { pattern: /informativa\s+(?:sulla\s+)?privacy/gi, replacement: 'informativa sulla privacy' },
+                                { pattern: /informativa\s+privacy/gi, replacement: 'informativa privacy' },
+                                { pattern: /normativa\s+privacy/gi, replacement: 'normativa privacy' },
+                                { pattern: /trattamento\s+dati/gi, replacement: 'trattamento dati' },
+                                { pattern: /\binformativa\b/gi, replacement: 'informativa' },
+                                { pattern: /\bprivacy\b/gi, replacement: 'privacy' }
+                            ];
+                            
+                            let linkInserted = false;
+                            for (const term of privacyTerms) {
+                                // Create a new regex for each check to avoid lastIndex issues
+                                const regex = new RegExp(term.pattern.source, term.pattern.flags);
+                                const match = checkboxText.match(regex);
+                                if (match) {
+                                    const matchIndex = checkboxText.indexOf(match[0]);
+                                    let beforeText = checkboxText.substring(0, matchIndex);
+                                    let afterText = checkboxText.substring(matchIndex + match[0].length);
+                                    
+                                    // Replace any spaces before the match with non-breaking spaces
+                                    beforeText = beforeText.replace(/\s+$/, (spaces) => '\u00A0'.repeat(spaces.length));
+                                    
+                                    // Create the link
+                                    const linkHtml = `<a href="${field.privacyLink}" target="_blank" rel="noopener noreferrer" style="white-space: nowrap; display: inline;">${term.replacement}</a>`;
+                                    
+                                    // Wrap everything in a span to prevent line breaks
+                                    checkboxText = `<span style="white-space: nowrap;">${beforeText}${linkHtml}</span>${afterText}`;
+                                    
+                                    linkInserted = true;
+                                    break; // Only replace the first match
+                                }
+                            }
+                            
+                            // If no privacy term found but link is provided, append link at the end
+                            if (!linkInserted && field.privacyLink) {
+                                checkboxText = `<span style="white-space: nowrap;">${checkboxText}\u00A0<a href="${field.privacyLink}" target="_blank" rel="noopener noreferrer" style="white-space: nowrap; display: inline;">(leggi di più)</a></span>`;
+                            }
                         }
                         
                         label.innerHTML = checkboxText + (field.required ? ' *' : '');
@@ -527,6 +636,50 @@
                         checkboxContainer.appendChild(checkbox);
                         checkboxContainer.appendChild(label);
                         fieldGroup.appendChild(checkboxContainer);
+                    } else if (field.type === 'radiobox') {
+                        // Create radiobox field
+                        const label = document.createElement('label');
+                        label.innerHTML = `${field.name}${field.required ? ' *' : ''}`;
+                        
+                        const radioboxContainer = document.createElement('div');
+                        radioboxContainer.className = 'radiobox-container';
+                        radioboxContainer.style.display = 'flex';
+                        radioboxContainer.style.flexDirection = 'column';
+                        radioboxContainer.style.gap = '0.75rem';
+                        radioboxContainer.style.marginTop = '0.5rem';
+                        
+                        // Get options from field configuration
+                        const options = field.radioboxOptions || ['Opzione 1', 'Opzione 2'];
+                        
+                        options.forEach((optionText, optionIndex) => {
+                            if (!optionText || optionText.trim() === '') return; // Skip empty options
+                            
+                            const optionContainer = document.createElement('div');
+                            optionContainer.style.display = 'flex';
+                            optionContainer.style.alignItems = 'center';
+                            optionContainer.style.gap = '0.5rem';
+                            
+                            const radio = document.createElement('input');
+                            radio.type = 'radio';
+                            radio.id = `${field.id}_option_${optionIndex}`;
+                            radio.name = field.id;
+                            radio.value = optionText;
+                            radio.required = field.required;
+                            
+                            const radioLabel = document.createElement('label');
+                            radioLabel.setAttribute('for', `${field.id}_option_${optionIndex}`);
+                            radioLabel.textContent = optionText;
+                            radioLabel.style.margin = '0';
+                            radioLabel.style.fontWeight = 'normal';
+                            radioLabel.style.cursor = 'pointer';
+                            
+                            optionContainer.appendChild(radio);
+                            optionContainer.appendChild(radioLabel);
+                            radioboxContainer.appendChild(optionContainer);
+                        });
+                        
+                        label.appendChild(radioboxContainer);
+                        fieldGroup.appendChild(label);
                     } else {
                         // Create regular input field
                         const label = document.createElement('label');
@@ -629,12 +782,35 @@
             }
 
             // Check custom fields
-            const customFields = document.querySelectorAll('.custom-field input, .custom-field textarea');
-            for (const field of customFields) {
-                if (field.required && !field.value.trim()) {
-                    const fieldName = field.closest('label').textContent.replace(' *', '').trim();
-                    showError(`Il campo "${fieldName}" è obbligatorio`);
-                    return false;
+            const customFieldGroups = document.querySelectorAll('.custom-field');
+            for (const fieldGroup of customFieldGroups) {
+                const requiredField = fieldGroup.querySelector('[required]');
+                if (requiredField) {
+                    // Handle radiobox fields
+                    if (requiredField.type === 'radio') {
+                        const radioGroup = fieldGroup.querySelectorAll(`input[name="${requiredField.name}"]`);
+                        const isChecked = Array.from(radioGroup).some(radio => radio.checked);
+                        if (!isChecked) {
+                            const fieldName = fieldGroup.querySelector('label').textContent.replace(' *', '').trim();
+                            showError(`Il campo "${fieldName}" è obbligatorio`);
+                            return false;
+                        }
+                    } else {
+                        // Handle other input types (text, number, checkbox, textarea)
+                        if (!requiredField.value.trim() && requiredField.type !== 'checkbox') {
+                            const fieldName = requiredField.closest('label')?.textContent.replace(' *', '').trim() || 
+                                            requiredField.closest('.custom-field')?.querySelector('label')?.textContent.replace(' *', '').trim() || 
+                                            'Campo';
+                            showError(`Il campo "${fieldName}" è obbligatorio`);
+                            return false;
+                        }
+                        // For checkboxes, check if they're checked when required
+                        if (requiredField.type === 'checkbox' && requiredField.required && !requiredField.checked) {
+                            const fieldName = requiredField.closest('label')?.textContent.replace(' *', '').trim() || 'Campo';
+                            showError(`Il campo "${fieldName}" è obbligatorio`);
+                            return false;
+                        }
+                    }
                 }
             }
 

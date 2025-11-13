@@ -1211,7 +1211,8 @@
         async function loadProductsForSelection() {
             console.log('Loading products for selection...');
             try {
-                const response = await fetch('/api/admin/products');
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/products`);
                 if (!response.ok) {
                     console.error('Failed to load products:', response.status);
                     return;
@@ -1554,7 +1555,8 @@
             }
             
             try {
-                const r = await fetch('/api/admin/campaigns', {
+                const tenantBase = window.__tenantBase || '';
+                const r = await fetch(`${tenantBase}/api/admin/campaigns`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, description, discount_type: discountType, discount_value: discountValue, expiry_date: expiryDate || null })
@@ -1607,7 +1609,8 @@
         
         async function loadCampaigns(){
             try {
-                const r = await fetch('/api/admin/campaigns');
+                const tenantBase = window.__tenantBase || '';
+                const r = await fetch(`${tenantBase}/api/admin/campaigns`);
                 const tbody = document.getElementById('campaignsTable');
                 if(!r.ok){
                     tbody.innerHTML = '<tr><td colspan="8">Errore nel caricamento</td></tr>';
