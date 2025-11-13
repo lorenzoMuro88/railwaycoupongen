@@ -1140,6 +1140,77 @@ async function getDb() {
         // Ensure tenant-scoped unique constraints (remove global indexes, create tenant-scoped ones)
         await ensureTenantScopedUniqueConstraints(db);
         
+        // Migration: Remove UNIQUE constraint from campaigns.name in table definition
+        // SQLite doesn't support ALTER TABLE to remove UNIQUE constraints, so we need to recreate the table
+        try {
+            const tableInfo = await db.all("SELECT sql FROM sqlite_master WHERE type='table' AND name='campaigns'");
+            const tableSql = tableInfo.length > 0 ? (tableInfo[0].sql || '') : '';
+            logger.debug({ tableSql: tableSql.substring(0, 300) }, 'Checking campaigns table definition for UNIQUE constraint on name');
+            
+            // Check if there's a UNIQUE constraint on name
+            // Look for patterns like "name TEXT NOT NULL UNIQUE" or "name TEXT UNIQUE" but not "name, tenant_id" UNIQUE
+            const upperSql = tableSql.toUpperCase();
+            
+            // More specific check: look for "name TEXT NOT NULL UNIQUE" or "name TEXT UNIQUE" pattern
+            // This pattern indicates a UNIQUE constraint directly on the name column
+            const hasExplicitUniqueOnName = upperSql.match(/NAME\s+TEXT\s+(NOT\s+NULL\s+)?UNIQUE/) !== null;
+            
+            // Also check if there's a UNIQUE constraint on name that's not tenant-scoped
+            // We look for the pattern where name has UNIQUE but it's not part of a composite index with tenant_id
+            // The regex checks for "name" followed by "UNIQUE" without "tenant_id" in between
+            const hasGlobalUniqueOnName = hasExplicitUniqueOnName || 
+                                         (upperSql.includes('NAME') && 
+                                          upperSql.includes('UNIQUE') &&
+                                          !upperSql.match(/NAME.*TENANT_ID.*UNIQUE|UNIQUE.*TENANT_ID.*NAME/));
+            
+            const shouldMigrate = hasGlobalUniqueOnName;
+            
+            logger.info({ hasGlobalUniqueOnName, hasExplicitUniqueOnName, shouldMigrate, tableInfoLength: tableInfo.length, hasSql: !!tableInfo[0]?.sql, tableSql: tableSql.substring(0, 200) }, 'UNIQUE constraint check result');
+            
+            if (tableInfo.length > 0 && tableInfo[0].sql && shouldMigrate) {
+                logger.info('Removing UNIQUE constraint from campaigns.name by recreating table');
+                
+                // Create new table without UNIQUE on name
+                await db.exec(`
+                    CREATE TABLE campaigns_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        campaign_code TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        is_active BOOLEAN DEFAULT 0,
+                        discount_type TEXT NOT NULL DEFAULT 'percent',
+                        discount_value TEXT NOT NULL,
+                        form_config TEXT DEFAULT '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}, "phone": {"visible": false, "required": false}, "address": {"visible": false, "required": false}, "allergies": {"visible": false, "required": false}, "customFields": []}',
+                        expiry_date DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        tenant_id INTEGER
+                    )
+                `);
+                
+                // Copy data from old table to new table
+                await db.exec(`
+                    INSERT INTO campaigns_new (id, campaign_code, name, description, is_active, discount_type, discount_value, form_config, expiry_date, created_at, tenant_id)
+                    SELECT id, campaign_code, name, description, is_active, discount_type, discount_value, form_config, expiry_date, created_at, tenant_id
+                    FROM campaigns
+                `);
+                
+                // Drop old table
+                await db.exec('DROP TABLE campaigns');
+                
+                // Rename new table
+                await db.exec('ALTER TABLE campaigns_new RENAME TO campaigns');
+                
+                // Recreate indexes
+                await db.exec('CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON campaigns(tenant_id)');
+                await ensureTenantScopedUniqueConstraints(db);
+                
+                logger.info('Successfully removed UNIQUE constraint from campaigns.name');
+            }
+        } catch (e) {
+            logger.error({ err: e }, 'Error removing UNIQUE constraint from campaigns.name');
+            // Don't fail the migration if this fails - it might already be fixed
+        }
+        
         logger.info({ version: currentVersion }, 'Database migration completed successfully');
         
         // Create some initial sample logs for testing
@@ -1245,33 +1316,55 @@ async function ensureFormCustomizationTenantId(dbConn) {
 async function ensureTenantScopedUniqueConstraints(dbConn) {
     if (!dbConn) return;
     try {
-        // Check if tenant-scoped unique indexes exist
-        const indexes = await dbConn.all("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='campaigns'");
+        // Get all indexes with their SQL definitions to check for UNIQUE constraints
+        const indexes = await dbConn.all("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='campaigns'");
         const indexNames = new Set(indexes.map(idx => idx.name));
         
+        logger.debug({ indexes: indexes.map(idx => ({ name: idx.name, sql: idx.sql })) }, 'Current indexes on campaigns table');
+        
         // Remove old global unique indexes if they exist
-        if (indexNames.has('idx_campaigns_code')) {
-            logger.debug('Removing global unique index on campaign_code');
-            await dbConn.exec('DROP INDEX IF EXISTS idx_campaigns_code');
+        // Check both by name and by SQL definition
+        for (const idx of indexes) {
+            const sql = (idx.sql || '').toUpperCase();
+            const isUnique = sql.includes('UNIQUE');
+            const isGlobal = !idx.name.includes('tenant') && !idx.name.includes('_tenant');
+            
+            // Remove global unique indexes on campaign_code
+            if (idx.name === 'idx_campaigns_code' || (isUnique && isGlobal && sql.includes('CAMPAIGN_CODE'))) {
+                logger.info(`Removing global unique index on campaign_code: ${idx.name}`);
+                await dbConn.exec(`DROP INDEX IF EXISTS ${idx.name}`);
+                indexNames.delete(idx.name);
+            }
+            
+            // Remove global unique indexes on name
+            if (isUnique && isGlobal && (sql.includes('NAME') || idx.name.includes('name'))) {
+                logger.info(`Removing global unique index on name: ${idx.name} (SQL: ${idx.sql})`);
+                await dbConn.exec(`DROP INDEX IF EXISTS ${idx.name}`);
+                indexNames.delete(idx.name);
+            }
         }
         
-        // Check for any global unique index on name (should not exist, but check anyway)
-        const nameIndexes = indexes.filter(idx => idx.name && idx.name.includes('name') && !idx.name.includes('tenant'));
-        for (const idx of nameIndexes) {
-            logger.debug(`Removing global unique index on name: ${idx.name}`);
-            await dbConn.exec(`DROP INDEX IF EXISTS ${idx.name}`);
-        }
+        // Also check for any UNIQUE constraint in table definition (though SQLite doesn't support dropping these easily)
+        // We'll rely on indexes being tenant-scoped
         
         // Create tenant-scoped unique indexes
         if (!indexNames.has('idx_campaigns_code_tenant')) {
-            logger.debug('Creating tenant-scoped unique index on campaigns(campaign_code, tenant_id)');
+            logger.info('Creating tenant-scoped unique index on campaigns(campaign_code, tenant_id)');
             await dbConn.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_code_tenant ON campaigns(campaign_code, tenant_id)');
+        } else {
+            logger.debug('Tenant-scoped unique index on campaign_code already exists');
         }
         
         if (!indexNames.has('idx_campaigns_name_tenant')) {
-            logger.debug('Creating tenant-scoped unique index on campaigns(name, tenant_id)');
+            logger.info('Creating tenant-scoped unique index on campaigns(name, tenant_id)');
             await dbConn.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_name_tenant ON campaigns(name, tenant_id)');
+        } else {
+            logger.debug('Tenant-scoped unique index on name already exists');
         }
+        
+        // Verify final state
+        const finalIndexes = await dbConn.all("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='campaigns'");
+        logger.debug({ finalIndexes: finalIndexes.map(idx => ({ name: idx.name, sql: idx.sql })) }, 'Final indexes on campaigns table');
     } catch (e) {
         logger.error({ err: e }, 'Error ensuring tenant-scoped unique constraints');
     }
@@ -3143,6 +3236,7 @@ app.get('/api/campaigns/:code', async (req, res) => {
 });
 
 app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
+    let tenantId = null;
     try {
         const { name, description, discount_type, discount_value, expiry_date } = req.body;
         if (typeof name !== 'string' || !name.trim()) {
@@ -3160,8 +3254,12 @@ app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
         }
         
         const dbConn = await getDb();
-        const tenantId = await getTenantIdForApi(req);
-        if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+        tenantId = await getTenantIdForApi(req);
+        if (!tenantId) {
+            const logContext = logger.withRequest(req);
+            logContext.warn({ name, discount_type }, 'Campaign creation failed: invalid tenant');
+            return res.status(400).json({ error: 'Tenant non valido' });
+        }
         
         const campaignCode = generateId(12).toUpperCase();
         const defaultFormConfig = JSON.stringify({ 
@@ -3174,12 +3272,22 @@ app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
             customFields: []
         });
         const result = await dbConn.run(
-            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, expiry_date, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, expiry_date || null, tenantId
+            'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, tenant_id, is_active, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)',
+            campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, tenantId, expiry_date || null
         );
         res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
     } catch (e) {
-        console.error(e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, name: req.body?.name, tenantId, stack: e.stack }, 'Error creating campaign');
+        console.error('Error creating campaign:', e);
+        // Check if it's a UNIQUE constraint violation
+        if (e.code === 'SQLITE_CONSTRAINT' || (e.message && e.message.includes('UNIQUE'))) {
+            return res.status(409).json({ error: 'Campagna con questo nome già esistente per questo tenant' });
+        }
+        // Check if it's a database connection error
+        if (e.code === 'SQLITE_BUSY' || e.code === 'SQLITE_LOCKED') {
+            return res.status(503).json({ error: 'Database temporaneamente occupato, riprova tra qualche istante' });
+        }
         res.status(500).json({ error: 'Errore server' });
     }
 });

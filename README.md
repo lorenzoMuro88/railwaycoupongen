@@ -168,29 +168,37 @@ Se `RECAPTCHA_ENABLED=true`, inserisci il tag script con la `RECAPTCHA_SITE_KEY`
 
 ## 🚀 Deploy in Produzione
 
-1. **Configura HTTPS**
-2. **Imposta credenziali sicure** in `.env`
-3. **Configura provider email reale**
-4. **Considera backup automatici** del database SQLite
-5. **Usa un process manager** come PM2
+### Railway (Raccomandato)
 
-### Docker (consigliato)
+Il progetto è configurato per il deploy su Railway con Nixpacks. Vedi `docs/DEPLOY_RAILWAY.md` per istruzioni dettagliate.
 
-```bash
-docker compose up -d --build
-# App su :3000, Redis incluso, volumi per data e uploads
-```
+**Vantaggi:**
+- ✅ Deploy automatico da GitHub
+- ✅ SSL automatico
+- ✅ Volume persistente per database e uploads
+- ✅ Zero configurazione
 
-Nginx come reverse proxy: vedi `nginx.conf.example`. Abilita HTTPS (Let’s Encrypt) e redirect 80→443.
+**Deploy rapido:**
+1. Collega il repository a Railway
+2. Configura le variabili d'ambiente dal dashboard
+3. Il deploy parte automaticamente
 
-### Esempio con PM2
+### Deploy Locale con PM2
 
 ```bash
 npm install -g pm2
-pm2 start server.js --name "couponen"
+pm2 start server.js --name "couongen"
 pm2 startup
 pm2 save
 ```
+
+### Checklist Produzione
+
+1. **Configura HTTPS** (automatico su Railway)
+2. **Imposta credenziali sicure** in `.env`
+3. **Configura provider email reale**
+4. **Considera backup automatici** del database SQLite
+5. **Usa un process manager** come PM2 (per deploy locale)
 
 ## 📁 Struttura Progetto
 
@@ -202,9 +210,8 @@ CouponGenCloud/
 ├── server.js            # Server principale
 ├── package.json         # Dipendenze
 ├── env.example          # Template configurazione
-├── Dockerfile           # Container build
-├── docker-compose.yml   # App + Redis
-├── nginx.conf.example   # Reverse proxy
+├── nixpacks.toml        # Configurazione build Railway
+├── railway.json         # Configurazione deploy Railway
 └── README.md           # Documentazione
 ```
 
