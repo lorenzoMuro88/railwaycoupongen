@@ -1061,9 +1061,29 @@
         }
         
         // Legacy function for campaign loading errors - show notification but keep form visible
+        // Exception: hide form if link is already used
         function showCampaignError(message) {
             showError(message);
-            // Ensure form stays visible
+            
+            // Hide form if link is already used
+            if (message && (message.includes('già utilizzato') || message.includes('Link già utilizzato'))) {
+                const form = document.querySelector('form');
+                if (form) {
+                    form.style.display = 'none';
+                }
+                const header = document.getElementById('publicHeader');
+                if (header) {
+                    header.style.display = 'none';
+                }
+                const footer = document.querySelector('.site-footer');
+                if (footer) {
+                    footer.style.display = 'none';
+                }
+                // Keep main container visible to show the error notification
+                return;
+            }
+            
+            // For other errors, ensure form stays visible
             const form = document.querySelector('form');
             if (form) {
                 form.style.display = 'block';
