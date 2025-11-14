@@ -495,11 +495,24 @@
             try {
                 const tenantBase = window.__tenantBase || '';
                 const response = await fetch(`${tenantBase}/api/admin/products`);
+                
+                if (!response.ok) {
+                    // Check if response is JSON
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const error = await response.json();
+                        throw new Error(error.error || `Errore ${response.status}: ${response.statusText}`);
+                    } else {
+                        // Response is HTML (404/403 page)
+                        throw new Error(`Errore ${response.status}: ${response.statusText}`);
+                    }
+                }
+                
                 products = await response.json();
                 displayProducts();
             } catch (error) {
                 console.error('Error loading products:', error);
-                document.getElementById('productsTable').innerHTML = '<tr><td colspan="7">Errore nel caricamento</td></tr>';
+                document.getElementById('productsTable').innerHTML = `<tr><td colspan="7">Errore nel caricamento: ${error.message}</td></tr>`;
             }
         }
         
@@ -594,15 +607,21 @@
             const margin_price = parseFloat(document.getElementById('editProductMargin').value);
             
             try {
-                const response = await fetch(`/api/admin/products/${id}`, {
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/products/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, sku, value, margin_price })
                 });
                 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert(error.error || 'Errore durante l\'aggiornamento del prodotto');
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const error = await response.json();
+                        alert(error.error || 'Errore durante l\'aggiornamento del prodotto');
+                    } else {
+                        alert(`Errore ${response.status}: ${response.statusText}`);
+                    }
                     return;
                 }
                 
@@ -622,13 +641,19 @@
             }
             
             try {
-                const response = await fetch(`/api/admin/products/${productId}`, {
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/products/${productId}`, {
                     method: 'DELETE'
                 });
                 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert(error.error || 'Errore durante l\'eliminazione del prodotto');
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const error = await response.json();
+                        alert(error.error || 'Errore durante l\'eliminazione del prodotto');
+                    } else {
+                        alert(`Errore ${response.status}: ${response.statusText}`);
+                    }
                     return;
                 }
                 

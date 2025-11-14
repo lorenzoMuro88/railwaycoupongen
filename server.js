@@ -1603,6 +1603,10 @@ function requireAdmin(req, res, next) {
     if (req.session && req.session.user && (req.session.user.userType === 'admin' || req.session.user.userType === 'superadmin')) {
         return next();
     } else {
+        // If it's an API request, return JSON
+        if (req.path.startsWith('/api/')) {
+            return res.status(403).json({ error: 'Accesso negato. Richiesto ruolo Admin.' });
+        }
         return res.status(403).send('Accesso negato. Richiesto ruolo Admin.');
     }
 }
@@ -4139,6 +4143,87 @@ app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
         const tenantId = await getTenantIdForApi(req);
         if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         const result = await dbConn.run('DELETE FROM products WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Prodotto non trovato' });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting product:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Tenant-aware Products API (these routes are handled by the middleware at line 2784)
+app.get('/t/:tenantSlug/api/admin/products', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const products = await dbConn.all('SELECT * FROM products WHERE tenant_id = ? ORDER BY created_at DESC', req.tenant.id);
+        res.json(products);
+    } catch (error) {
+        console.error('Error fetching products:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.post('/t/:tenantSlug/api/admin/products', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { name, value, margin_price, sku } = req.body;
+        if (typeof name !== 'string' || !name.trim()) {
+            return res.status(400).json({ error: 'Nome non valido' });
+        }
+        if (isNaN(parseFloat(value)) || isNaN(parseFloat(margin_price))) {
+            return res.status(400).json({ error: 'Valori numerici non validi' });
+        }
+        
+        if (!name || !value || !margin_price) {
+            return res.status(400).json({ error: 'Name, value and margin_price are required' });
+        }
+        
+        const dbConn = await getDb();
+        const result = await dbConn.run(
+            'INSERT INTO products (name, value, margin_price, sku, tenant_id) VALUES (?, ?, ?, ?, ?)',
+            [name, parseFloat(value), parseFloat(margin_price), sku || null, req.tenant.id]
+        );
+        
+        res.json({ id: result.lastID, success: true });
+    } catch (error) {
+        console.error('Error creating product:', error);
+        if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+            res.status(400).json({ error: 'SKU already exists' });
+        } else {
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+});
+
+app.put('/t/:tenantSlug/api/admin/products/:id', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { name, value, margin_price, sku } = req.body;
+        if (typeof name !== 'string' || !name.trim()) {
+            return res.status(400).json({ error: 'Nome non valido' });
+        }
+        if (isNaN(parseFloat(value)) || isNaN(parseFloat(margin_price))) {
+            return res.status(400).json({ error: 'Valori numerici non validi' });
+        }
+        const dbConn = await getDb();
+        const result = await dbConn.run(
+            'UPDATE products SET name = ?, value = ?, margin_price = ?, sku = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?',
+            [name, parseFloat(value), parseFloat(margin_price), sku || null, req.params.id, req.tenant.id]
+        );
+        if (result.changes === 0) return res.status(404).json({ error: 'Prodotto non trovato' });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating product:', error);
+        if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+            res.status(400).json({ error: 'SKU already exists' });
+        } else {
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+});
+
+app.delete('/t/:tenantSlug/api/admin/products/:id', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const result = await dbConn.run('DELETE FROM products WHERE id = ? AND tenant_id = ?', req.params.id, req.tenant.id);
         if (result.changes === 0) return res.status(404).json({ error: 'Prodotto non trovato' });
         res.json({ success: true });
     } catch (error) {
