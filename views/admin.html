@@ -42,7 +42,7 @@
         .controls input, .controls select {
             padding: 0.8rem;
             border: 2px solid var(--border-light);
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 0.9rem;
         }
         
@@ -51,7 +51,7 @@
             color: var(--white);
             border: none;
             padding: 0.8rem 1.5rem;
-            border-radius: 8px;
+            border-radius: 12px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -138,10 +138,11 @@
             border: 2px solid var(--primary-green);
             border-radius: 12px;
             box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-            z-index: 1000;
+            z-index: 10000;
             max-height: 300px;
             overflow-y: auto;
             display: none;
+            margin-top: 4px;
         }
         
         .dropdown-menu.show {
@@ -757,7 +758,7 @@
         padding-left: 0.75rem !important;
         padding-right: 2.5rem !important;
         border: 2px solid var(--border-light) !important;
-        border-radius: 8px !important;
+        border-radius: 12px !important;
         font-size: 0.9rem;
         background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
         background-repeat: no-repeat;
@@ -892,7 +893,7 @@
         .form-links-controls select {
             padding: 0.6rem 1rem;
             border: 2px solid var(--border-light);
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 0.9rem;
             flex: 1;
             min-width: 200px;
@@ -1235,11 +1236,12 @@
     </style>
     </head>
 <body>
+    <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
     <script src="/static/navigation.js"></script>
     <!-- Navigation Bar -->
     <div id="navigation-container"></div>
 
-    <main class="container">
+    <main id="main-content" class="container">
         <div class="admin-header">
             <h1>Area Admin</h1>
             <p>Gestisci campagne e monitora i coupon</p>
@@ -1589,17 +1591,37 @@
             const dropdown = document.getElementById('discountTypeDropdown');
             const trigger = document.querySelector('.dropdown-trigger');
             
+            const isOpen = dropdown.classList.contains('show');
+            
+            // Close all other dropdowns first
+            document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                if (menu !== dropdown) {
+                    menu.classList.remove('show');
+                }
+            });
+            document.querySelectorAll('.dropdown-trigger.open').forEach(trig => {
+                if (trig !== trigger) {
+                    trig.classList.remove('open');
+                }
+            });
+            
+            // Toggle current dropdown
             dropdown.classList.toggle('show');
             trigger.classList.toggle('open');
             
-            // Close dropdown when clicking outside
-            document.addEventListener('click', function closeDropdown(e) {
-                if (!e.target.closest('.dropdown-container')) {
-                    dropdown.classList.remove('show');
-                    trigger.classList.remove('open');
-                    document.removeEventListener('click', closeDropdown);
-                }
-            });
+            // Close dropdown when clicking outside (only if opening)
+            if (!isOpen) {
+                setTimeout(() => {
+                    const closeDropdown = function(e) {
+                        if (!e.target.closest('.dropdown-container') && !e.target.closest('.dropdown-menu')) {
+                            dropdown.classList.remove('show');
+                            trigger.classList.remove('open');
+                            document.removeEventListener('click', closeDropdown);
+                        }
+                    };
+                    document.addEventListener('click', closeDropdown, { once: true });
+                }, 0);
+            }
         }
         
         function selectDiscountType(value, text) {
@@ -2041,6 +2063,34 @@
             });
         }
         
+        // Funzione unificata per gestire link multipli e lista link
+        async function showFormLinksManager(campaignId, campaignName) {
+            // Chiudi il menu
+            const menu = document.getElementById(`actions-${campaignId}`);
+            if (menu) menu.classList.remove('show');
+            
+            try {
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/form-links`, {
+                    credentials: 'same-origin'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Errore nel caricamento dei link');
+                }
+                
+                const data = await response.json();
+                displayFormLinksList(campaignId, campaignName, data.links, data.statistics);
+            } catch (error) {
+                showModal({
+                    title: 'Errore',
+                    message: error.message || 'Errore nel caricamento dei link',
+                    type: 'error',
+                    showCancel: false
+                });
+            }
+        }
+        
         async function showFormLinksList(campaignId, campaignName) {
             try {
                 const tenantBase = window.__tenantBase || '';
@@ -2064,6 +2114,80 @@
             }
         }
         
+        // Funzione per generare nuovi link dal modale
+        async function generateNewLinksFromModal(campaignId, campaignName) {
+            showModal({
+                title: `Genera Link Parametrici per "${campaignName}"`,
+                message: `
+                    <div style="text-align: left;">
+                        <p style="margin-bottom: 1rem;">Quanti link vuoi generare? (ogni link può essere usato una sola volta)</p>
+                        <input type="number" id="linkCountInputModal" min="1" max="1000" value="10" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem;" />
+                        <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 0.5rem;">
+                            Massimo 1000 link per richiesta
+                        </p>
+                    </div>
+                `,
+                type: 'info',
+                showCancel: true,
+                onConfirm: async () => {
+                    const count = parseInt(document.getElementById('linkCountInputModal').value);
+                    if (!count || count < 1 || count > 1000) {
+                        showModal({
+                            title: 'Errore',
+                            message: 'Inserisci un numero tra 1 e 1000',
+                            type: 'error',
+                            showCancel: false
+                        });
+                        return;
+                    }
+                    
+                    try {
+                        const tenantBase = window.__tenantBase || '';
+                        const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/form-links`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            credentials: 'same-origin',
+                            body: JSON.stringify({ count })
+                        });
+                        
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Errore nella generazione dei link');
+                        }
+                        
+                        const data = await response.json();
+                        showToast(`${data.links.length} link generati con successo!`, 'success');
+                        
+                        // Ricarica la lista dei link nel modale
+                        await showFormLinksManager(campaignId, campaignName);
+                        
+                        // Reload campaign list to show updated statistics
+                        setTimeout(() => {
+                            loadCampaigns();
+                        }, 500);
+                    } catch (error) {
+                        showModal({
+                            title: 'Errore',
+                            message: error.message || 'Errore nella generazione dei link',
+                            type: 'error',
+                            showCancel: false
+                        });
+                    }
+                }
+            });
+            
+            // Focus input after modal is shown
+            setTimeout(() => {
+                const input = document.getElementById('linkCountInputModal');
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            }, 100);
+        }
+        
         // State management for form links
         let formLinksState = {
             allLinks: [],
@@ -2084,12 +2208,40 @@
             const tenantSlug = tenantBase.replace('/t/', '').split('/')[0] || '';
             const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
             
+            // Build generate button HTML
+            const generateButtonHtml = `
+                <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0;">
+                    <button onclick="generateNewLinksFromModal(${campaignId}, '${campaignName.replace(/'/g, "\\'")}')" 
+                            style="background: var(--primary-green); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; margin: 0 auto;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            <circle cx="12" cy="12" r="1"/>
+                        </svg>
+                        Genera Nuovi Link
+                    </button>
+                </div>
+            `;
+            
             if (links.length === 0) {
                 showModal({
-                    title: `Link per "${campaignName}"`,
-                    message: '<p>Nessun link parametrico generato per questa campagna.</p>',
+                    title: `Link Parametrici - "${campaignName}"`,
+                    message: `
+                        <div class="form-links-container">
+                            ${generateButtonHtml}
+                            <div style="text-align: center; padding: 2rem;">
+                                <p style="font-size: 1.1rem; color: var(--text-medium); margin-bottom: 1rem;">
+                                    Nessun link parametrico generato per questa campagna.
+                                </p>
+                                <p style="font-size: 0.9rem; color: var(--text-light);">
+                                    Clicca sul pulsante sopra per generare i primi link.
+                                </p>
+                            </div>
+                        </div>
+                    `,
                     type: 'info',
-                    showCancel: false
+                    showCancel: false,
+                    large: true
                 });
                 return;
             }
@@ -2180,7 +2332,7 @@
                         <span>Seleziona Tutti</span>
                     </label>
                     <button class="bulk-action-btn btn-export-csv" onclick="exportFormLinksCSV('${campaignId}', '${campaignName}')" id="exportCsvBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                             <polyline points="7 10 12 15 17 10"/>
                             <line x1="12" y1="15" x2="12" y2="3"/>
@@ -2188,7 +2340,7 @@
                         Esporta CSV
                             </button>
                     <button class="bulk-action-btn btn-export-txt" onclick="exportFormLinksTXT('${campaignId}', '${campaignName}')" id="exportTxtBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                             <polyline points="14 2 14 8 20 8"/>
                             <line x1="16" y1="13" x2="8" y2="13"/>
@@ -2198,7 +2350,7 @@
                         Esporta TXT
                     </button>
                     <button class="bulk-action-btn btn-copy-selected" onclick="copySelectedFormLinks('${campaignId}', '${campaignName}')" id="copySelectedBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                         </svg>
@@ -2242,6 +2394,7 @@
                 title: `Link Parametrici - "${campaignName}"`,
                 message: `
                     <div class="form-links-container">
+                        ${generateButtonHtml}
                         ${statsHtml}
                         ${controlsHtml}
                         ${tableHtml}
@@ -2370,7 +2523,7 @@
                                 <div class="action-buttons">
                                     ${!link.isUsed ? `
                                         <button class="btn-icon btn-copy" onclick="copyFormLink('${link.formUrl}', ${globalIndex})" title="Copia link">
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
                                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                                             </svg>
@@ -2801,19 +2954,13 @@
                                         </svg>
                                         Link
                                     </button>
-                                    <button onclick="generateFormLinks(${camp.id}, '${camp.name}', '${camp.campaign_code || ''}')" title="Genera link parametrici">
+                                    <button onclick="showFormLinksManager(${camp.id}, '${(camp.name || '').replace(/'/g, "\\'")}')" title="Gestisci link parametrici">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
                                             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
                                             <circle cx="12" cy="12" r="1"/>
                                         </svg>
-                                        Link Multipli
-                                    </button>
-                                    <button onclick="showFormLinksList(${camp.id}, '${camp.name}')" title="Visualizza link parametrici">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M4 7h16M4 12h16M4 17h16"/>
-                                        </svg>
-                                        Lista Link
+                                        Genera
                                     </button>
                                     <button onclick="${camp.is_active ? 'deactivateCampaign' : 'activateCampaign'}(${camp.id}, '${camp.expiry_date || ''}')">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3421,6 +3568,7 @@
                 .catch(error => console.error('Error loading navigation:', error));
         });
     </script>
+    <script src="/static/notifications.js"></script>
 </body>
 </html>
 

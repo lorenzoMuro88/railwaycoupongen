@@ -442,6 +442,24 @@ async function runTests() {
             if (!Array.isArray(res.body)) throw new Error('Should return JSON array');
         });
 
+        await test('Export: Legacy endpoint CSV export works', async () => {
+            const res = await makeRequest('GET', `/api/admin/analytics/export?format=csv`, {
+                cookie: adminSession
+            });
+            if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+            if (!res.headers['content-type'] || !res.headers['content-type'].includes('text/csv')) {
+                throw new Error('Should return CSV content type');
+            }
+        });
+
+        await test('Export: Legacy endpoint JSON export works', async () => {
+            const res = await makeRequest('GET', `/api/admin/analytics/export?format=json`, {
+                cookie: adminSession
+            });
+            if (res.status !== 200) throw new Error(`Expected 200, got ${res.status}`);
+            if (!Array.isArray(res.body)) throw new Error('Should return JSON array');
+        });
+
         // Cleanup
         await cleanupTestData();
 

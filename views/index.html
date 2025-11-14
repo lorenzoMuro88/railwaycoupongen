@@ -10,13 +10,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body style="margin:0;">
+    <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
     <!-- Full-bleed header image -->
     <div id="publicHeader" style="display:none; width:100%; height:38vh; min-height:220px; max-height:400px; overflow:hidden; position:relative; box-shadow: 0 8px 20px rgba(0,0,0,.15); background-size: cover; background-position: 50% 50%; background-repeat:no-repeat;">
         <img id="publicHeaderImg" src="" alt="Header" style="width:100%; height:100%; object-fit:cover; object-position:center; display:block;"/>
         <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.25) 0%, rgba(0,0,0,0) 50%); pointer-events:none;"></div>
     </div>
 
-    <main class="container">
+    <main id="main-content" class="container">
         <div class="text-center mb-2">
             <h1>CouponGen</h1>
             <p style="color: var(--text-medium); font-size: 1.2rem; margin-bottom: 2rem;">
@@ -388,7 +389,88 @@
             }
         }).catch(() => {});
 
+        // Setup form validation
+        function setupFormValidation() {
+            const form = document.getElementById('couponForm');
+            if (!form) return;
+            
+            // Debounce utility
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            }
+            
+            // Validate individual field
+            function validateField(field) {
+                const value = field.value.trim();
+                const fieldType = field.type;
+                
+                // Clear previous errors
+                clearFieldError(field);
+                
+                // Skip validation if field is empty and not required
+                if (!value && !field.required) {
+                    return true;
+                }
+                
+                // Required field validation
+                if (field.required && !value) {
+                    const label = field.closest('label')?.textContent?.replace(' *', '').trim() || 
+                                 field.closest('.form-group')?.querySelector('label')?.textContent?.replace(' *', '').trim() ||
+                                 'Campo';
+                    showFieldError(field, `${label} è obbligatorio`);
+                    return false;
+                }
+                
+                // Email validation
+                if (fieldType === 'email' && value) {
+                    if (!isValidEmail(value)) {
+                        showFieldError(field, 'Inserisci un indirizzo email valido');
+                        return false;
+                    } else {
+                        markFieldValid(field);
+                        return true;
+                    }
+                }
+                
+                // If we get here, field is valid
+                if (value) {
+                    markFieldValid(field);
+                }
+                return true;
+            }
+            
+            // Get all form fields
+            const fields = form.querySelectorAll('input, textarea, select');
+            
+            fields.forEach(field => {
+                // Validate on blur
+                field.addEventListener('blur', () => {
+                    validateField(field);
+                });
+                
+                // Validate on input (debounced) - only if field has value
+                field.addEventListener('input', debounce(() => {
+                    if (field.value.length > 0) {
+                        validateField(field);
+                    } else {
+                        clearFieldError(field);
+                    }
+                }, 300));
+            });
+        }
+        
         if (form) {
+            // Setup real-time validation
+            setupFormValidation();
+            
             form.addEventListener('submit', function(e) {
                 if (!validateForm()) {
                     e.preventDefault();
@@ -456,7 +538,7 @@
                         errorMessage = 'Campagna non trovata o scaduta';
                     }
                     
-                    showError(errorMessage);
+                    showCampaignError(errorMessage);
                     return;
                 }
                 
@@ -465,7 +547,7 @@
                 
             } catch (error) {
                 console.error('Errore:', error);
-                showError('Questo coupon non esiste o è scaduto');
+                showCampaignError('Questo coupon non esiste o è scaduto');
             }
             
             // Apply custom styling regardless of campaign
@@ -801,41 +883,53 @@
             const addressField = document.querySelector('input[name="address"]');
             const allergiesField = document.querySelector('textarea[name="allergies"]');
 
+            let isValid = true;
+            
             // Email is always required
             if (!email) {
-                showError('L\'indirizzo email è obbligatorio');
-                return false;
-            }
-
-            if (!isValidEmail(email)) {
-                showError('Inserisci un indirizzo email valido');
-                return false;
+                showFieldError(emailField, 'L\'indirizzo email è obbligatorio');
+                isValid = false;
+            } else if (!isValidEmail(email)) {
+                showFieldError(emailField, 'Inserisci un indirizzo email valido');
+                isValid = false;
+            } else {
+                markFieldValid(emailField);
             }
 
             // Check required fields only
             if (firstNameField && firstNameField.required && !firstNameField.value.trim()) {
-                showError('Il nome è obbligatorio');
-                return false;
+                showFieldError(firstNameField, 'Il nome è obbligatorio');
+                isValid = false;
+            } else if (firstNameField) {
+                clearFieldError(firstNameField);
             }
 
             if (lastNameField && lastNameField.required && !lastNameField.value.trim()) {
-                showError('Il cognome è obbligatorio');
-                return false;
+                showFieldError(lastNameField, 'Il cognome è obbligatorio');
+                isValid = false;
+            } else if (lastNameField) {
+                clearFieldError(lastNameField);
             }
 
             if (phoneField && phoneField.required && !phoneField.value.trim()) {
-                showError('Il numero di telefono è obbligatorio');
-                return false;
+                showFieldError(phoneField, 'Il numero di telefono è obbligatorio');
+                isValid = false;
+            } else if (phoneField) {
+                clearFieldError(phoneField);
             }
 
             if (addressField && addressField.required && !addressField.value.trim()) {
-                showError('L\'indirizzo è obbligatorio');
-                return false;
+                showFieldError(addressField, 'L\'indirizzo è obbligatorio');
+                isValid = false;
+            } else if (addressField) {
+                clearFieldError(addressField);
             }
 
             if (allergiesField && allergiesField.required && !allergiesField.value.trim()) {
-                showError('Le informazioni sulle allergie sono obbligatorie');
-                return false;
+                showFieldError(allergiesField, 'Le informazioni sulle allergie sono obbligatorie');
+                isValid = false;
+            } else if (allergiesField) {
+                clearFieldError(allergiesField);
             }
 
             // Check custom fields
@@ -849,8 +943,14 @@
                         const isChecked = Array.from(radioGroup).some(radio => radio.checked);
                         if (!isChecked) {
                             const fieldName = fieldGroup.querySelector('label').textContent.replace(' *', '').trim();
-                            showError(`Il campo "${fieldName}" è obbligatorio`);
-                            return false;
+                            // Show error on first radio button
+                            if (radioGroup.length > 0) {
+                                showFieldError(radioGroup[0], `Il campo "${fieldName}" è obbligatorio`);
+                            }
+                            isValid = false;
+                        } else {
+                            // Clear errors if valid
+                            radioGroup.forEach(radio => clearFieldError(radio));
                         }
                     } else {
                         // Handle other input types (text, number, checkbox, textarea)
@@ -858,20 +958,33 @@
                             const fieldName = requiredField.closest('label')?.textContent.replace(' *', '').trim() || 
                                             requiredField.closest('.custom-field')?.querySelector('label')?.textContent.replace(' *', '').trim() || 
                                             'Campo';
-                            showError(`Il campo "${fieldName}" è obbligatorio`);
-                            return false;
+                            showFieldError(requiredField, `Il campo "${fieldName}" è obbligatorio`);
+                            isValid = false;
+                        } else if (requiredField.type !== 'checkbox') {
+                            clearFieldError(requiredField);
                         }
                         // For checkboxes, check if they're checked when required
                         if (requiredField.type === 'checkbox' && requiredField.required && !requiredField.checked) {
                             const fieldName = requiredField.closest('label')?.textContent.replace(' *', '').trim() || 'Campo';
-                            showError(`Il campo "${fieldName}" è obbligatorio`);
-                            return false;
+                            showFieldError(requiredField, `Il campo "${fieldName}" è obbligatorio`);
+                            isValid = false;
+                        } else if (requiredField.type === 'checkbox') {
+                            clearFieldError(requiredField);
                         }
                     }
                 }
             }
 
-            return true;
+            if (!isValid) {
+                // Scroll to first error
+                const firstError = document.querySelector('.error');
+                if (firstError) {
+                    firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    firstError.focus();
+                }
+            }
+            
+            return isValid;
         }
         
         function isValidEmail(email) {
@@ -879,85 +992,86 @@
             return emailRegex.test(email);
         }
         
-        function showError(message) {
-            const form = document.querySelector('form');
+        // Show field error inline
+        function showFieldError(field, message) {
+            const fieldGroup = field.closest('.form-group') || field.closest('.custom-field');
+            if (!fieldGroup) return;
             
-            // Hide the entire form
-            form.style.display = 'none';
-            
-            // Ensure data-campaign attribute is removed
-            document.body.removeAttribute('data-campaign');
-            
-            // Hide the footer
-            const footer = document.querySelector('.site-footer');
-            if (footer) {
-                footer.style.display = 'none';
+            // Remove existing error message
+            const existingError = fieldGroup.querySelector('.error-message');
+            if (existingError) {
+                existingError.remove();
             }
             
-            // Hide main container
+            // Add error class to field
+            field.classList.add('error');
+            field.classList.remove('valid');
+            field.setAttribute('aria-invalid', 'true');
+            
+            // Create error message element
+            const errorMsg = document.createElement('span');
+            errorMsg.className = 'error-message';
+            errorMsg.textContent = message;
+            errorMsg.setAttribute('role', 'alert');
+            errorMsg.id = field.id + '-error';
+            field.setAttribute('aria-describedby', errorMsg.id);
+            
+            // Insert error message after field or label
+            const label = fieldGroup.querySelector('label');
+            if (label && label.contains(field)) {
+                label.appendChild(errorMsg);
+            } else {
+                fieldGroup.appendChild(errorMsg);
+            }
+        }
+        
+        // Clear field error
+        function clearFieldError(field) {
+            const fieldGroup = field.closest('.form-group') || field.closest('.custom-field');
+            if (!fieldGroup) return;
+            
+            field.classList.remove('error');
+            field.removeAttribute('aria-invalid');
+            field.removeAttribute('aria-describedby');
+            
+            const errorMsg = fieldGroup.querySelector('.error-message');
+            if (errorMsg) {
+                errorMsg.remove();
+            }
+        }
+        
+        // Mark field as valid
+        function markFieldValid(field) {
+            field.classList.add('valid');
+            field.classList.remove('error');
+            field.removeAttribute('aria-invalid');
+            clearFieldError(field);
+        }
+        
+        // Show error message (for server/network errors - uses notification system)
+        function showError(message) {
+            // Use global notification system
+            if (typeof window.showError === 'function') {
+                window.showError(message);
+            } else {
+                // Fallback if notifications.js not loaded
+                console.error('Error:', message);
+                alert(message);
+            }
+        }
+        
+        // Legacy function for campaign loading errors - show notification but keep form visible
+        function showCampaignError(message) {
+            showError(message);
+            // Ensure form stays visible
+            const form = document.querySelector('form');
+            if (form) {
+                form.style.display = 'block';
+            }
             const mainContainer = document.querySelector('main.container');
             if (mainContainer) {
-                mainContainer.style.display = 'none';
+                mainContainer.style.display = 'block';
             }
-            
-            // Hide header if visible
-            const header = document.getElementById('publicHeader');
-            if (header) {
-                header.style.display = 'none';
-            }
-            
-            // Load tenant colors and create gradient, then show error message
-            loadTenantGradient(() => {
-                // Remove existing error/fallback containers
-                const existingError = document.querySelector('.error-fallback-container');
-                if (existingError) {
-                    existingError.remove();
-                }
-                
-                // Ensure error message styles exist
-                if (!document.getElementById('errorMessageStyles')) {
-                    const style = document.createElement('style');
-                    style.id = 'errorMessageStyles';
-                    style.textContent = `
-                        .error-fallback-message {
-                            color: white;
-                            font-size: 1.2rem;
-                            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-                        }
-                        @media (max-width: 768px) {
-                            .error-fallback-message {
-                                font-size: 1.1rem;
-                            }
-                        }
-                        @media (max-width: 480px) {
-                            .error-fallback-message {
-                                font-size: 1rem;
-                            }
-                        }
-                    `;
-                    document.head.appendChild(style);
-                }
-                
-                // Create centered fallback container with error message
-                const fallbackContainer = document.createElement('div');
-                fallbackContainer.className = 'error-fallback-container';
-                fallbackContainer.style.cssText = `
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    z-index: 1;
-                    text-align: center;
-                    max-width: 90%;
-                `;
-                
-                const errorMessage = document.createElement('div');
-                errorMessage.className = 'error-fallback-message';
-                errorMessage.textContent = message;
-                
-                fallbackContainer.appendChild(errorMessage);
-                document.body.appendChild(fallbackContainer);
-            });
         }
 
         // Load tenant colors and create gradient background
@@ -1280,6 +1394,7 @@
         }
     </script>
     
+    <script src="/static/notifications.js"></script>
 </body>
 </html>
 

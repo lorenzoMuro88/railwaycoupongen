@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CouponGen - Genera Coupon Personalizzati con QR Code</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .hero-section {
+            background: var(--gradient-primary);
+            color: var(--white);
+            padding: 4rem 2rem;
+            text-align: center;
+            border-radius: 0 0 40px 40px;
+            margin-bottom: 3rem;
+            box-shadow: 0 8px 32px rgba(45, 90, 61, 0.2);
+        }
+        
+        .hero-section h1 {
+            color: var(--white);
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .hero-section p {
+            font-size: 1.25rem;
+            opacity: 0.95;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .how-it-works {
+            margin: 4rem 0;
+        }
+        
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        
+        .step-card {
+            background: var(--white);
+            border: 2px solid var(--border-light);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            text-align: center;
+            transition: all var(--transition-base);
+            box-shadow: 0 2px 8px var(--shadow-xs);
+        }
+        
+        .step-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px var(--shadow-medium);
+            border-color: var(--accent-green);
+        }
+        
+        .step-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1.5rem;
+            background: var(--light-green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary-green);
+        }
+        
+        .step-card h3 {
+            color: var(--primary-green);
+            margin: 0 0 0.75rem 0;
+            font-size: 1.25rem;
+        }
+        
+        .step-card p {
+            color: var(--text-medium);
+            margin: 0;
+            line-height: 1.6;
+        }
+        
+        .features-section {
+            background: var(--light-green);
+            padding: 3rem 2rem;
+            border-radius: var(--radius-lg);
+            margin: 4rem 0;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+        
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            min-width: 40px;
+            color: var(--accent-green);
+        }
+        
+        .feature-item h4 {
+            color: var(--primary-green);
+            margin: 0 0 0.5rem 0;
+            font-size: 1.1rem;
+        }
+        
+        .feature-item p {
+            color: var(--text-medium);
+            margin: 0;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .cta-section {
+            text-align: center;
+            margin: 4rem 0;
+            padding: 3rem 2rem;
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 4px 16px var(--shadow-light);
+        }
+        
+        .cta-section h2 {
+            margin-top: 0;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            margin-top: 1.5rem;
+            padding: 1rem 2.5rem;
+            font-size: 1.1rem;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-light);
+            border-top: 1px solid var(--border-light);
+            margin-top: 4rem;
+        }
+        
+        @media (max-width: 768px) {
+            .hero-section {
+                padding: 3rem 1.5rem;
+            }
+            
+            .hero-section h1 {
+                font-size: 2rem;
+            }
+            
+            .hero-section p {
+                font-size: 1.1rem;
+            }
+            
+            .steps-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
+    
+    <main id="main-content">
+        <!-- Hero Section -->
+        <div class="hero-section">
+            <h1>CouponGen</h1>
+            <p>Genera coupon personalizzati con QR code e inviali via email ai tuoi clienti in modo semplice e professionale</p>
+        </div>
+        
+        <div class="container">
+            <!-- How It Works Section -->
+            <section class="how-it-works">
+                <h2 style="text-align: center; margin-bottom: 1rem;">Come Funziona</h2>
+                <p style="text-align: center; color: var(--text-medium); max-width: 600px; margin: 0 auto 2rem;">
+                    Tre semplici passaggi per creare e distribuire i tuoi coupon personalizzati
+                </p>
+                
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+                            </svg>
+                        </div>
+                        <h3>1. Richiedi il Coupon</h3>
+                        <p>Compila il form con i tuoi dati e le informazioni richieste per generare il tuo coupon personalizzato</p>
+                    </div>
+                    
+                    <div class="step-card">
+                        <div class="step-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="currentColor"/>
+                            </svg>
+                        </div>
+                        <h3>2. Ricevi via Email</h3>
+                        <p>Ricevi il tuo coupon con QR code direttamente nella tua casella email, pronto per essere utilizzato</p>
+                    </div>
+                    
+                    <div class="step-card">
+                        <div class="step-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zM16 13h2v2h-2zM16 17h2v2h-2zM20 13h2v2h-2zM20 17h2v2h-2z" fill="currentColor"/>
+                            </svg>
+                        </div>
+                        <h3>3. Presenta il QR Code</h3>
+                        <p>Mostra il QR code al negozio per riscattare il tuo coupon in modo rapido e sicuro</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Features Section -->
+            <section class="features-section">
+                <h2 style="text-align: center; margin-top: 0; margin-bottom: 1rem;">Perché Scegliere CouponGen</h2>
+                <p style="text-align: center; color: var(--text-medium); max-width: 600px; margin: 0 auto 2rem;">
+                    Una soluzione completa per la gestione dei coupon digitali
+                </p>
+                
+                <div class="features-grid">
+                    <div class="feature-item">
+                        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+                        </svg>
+                        <div>
+                            <h4>QR Code Integrato</h4>
+                            <p>Ogni coupon include un QR code univoco per una verifica rapida e sicura</p>
+                        </div>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="currentColor"/>
+                        </svg>
+                        <div>
+                            <h4>Invio Automatico</h4>
+                            <p>Ricevi i coupon direttamente via email senza dover scaricare o stampare nulla</p>
+                        </div>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" fill="currentColor"/>
+                        </svg>
+                        <div>
+                            <h4>Sicuro e Affidabile</h4>
+                            <p>Sistema sicuro con tracciamento e verifica dei coupon riscattati</p>
+                        </div>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+                        </svg>
+                        <div>
+                            <h4>Personalizzabile</h4>
+                            <p>Crea campagne personalizzate con campi custom e design su misura</p>
+                        </div>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" fill="currentColor"/>
+                        </svg>
+                        <div>
+                            <h4>Analytics Integrati</h4>
+                            <p>Monitora l'utilizzo dei coupon con statistiche e report dettagliati</p>
+                        </div>
+                    </div>
+                    
+                    <div class="feature-item">
+                        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+                        </svg>
+                        <div>
+                            <h4>Facile da Usare</h4>
+                            <p>Interfaccia intuitiva e semplice per gestire tutte le tue campagne</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- CTA Section -->
+            <section class="cta-section">
+                <h2>Pronto per Iniziare?</h2>
+                <p style="color: var(--text-medium); max-width: 500px; margin: 0 auto;">
+                    Accedi al form per richiedere il tuo primo coupon personalizzato
+                </p>
+                <div id="cta-buttons" style="margin-top: 1.5rem;">
+                    <!-- Will be populated by JavaScript if default tenant exists -->
+                    <p style="color: var(--text-light); font-style: italic;">
+                        Contatta il tuo negozio per ottenere il link al form coupon
+                    </p>
+                </div>
+            </section>
+        </div>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2024 CouponGen. Tutti i diritti riservati.</p>
+        </footer>
+    </main>
+    
+    <script>
+        // Check if default tenant exists and show CTA button
+        (async function() {
+            try {
+                const response = await fetch('/api/check-default-tenant');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.hasDefaultTenant && data.tenantSlug) {
+                        const ctaButtons = document.getElementById('cta-buttons');
+                        ctaButtons.innerHTML = `
+                            <a href="/t/${data.tenantSlug}" class="button primary cta-button">
+                                Richiedi il Tuo Coupon
+                            </a>
+                        `;
+                    }
+                }
+            } catch (error) {
+                // Silently fail - default message already shown
+                console.log('Default tenant check failed:', error);
+            }
+        })();
+    </script>
+</body>
+</html>
+

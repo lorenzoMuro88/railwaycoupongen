@@ -42,8 +42,8 @@
 <body>
     <script src="/static/navigation.js"></script>
     <div id="navigation-container"></div>
-
-    <main class="container">
+    <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
+    <main id="main-content" class="container">
         <div class="page-header" style="text-align: center; margin-bottom: 2rem;">
             <h1>Analytics</h1>
             <p style="color: var(--text-medium);">Panoramica delle performance e della marginalità</p>
@@ -54,11 +54,11 @@
             <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
                 <div>
                     <label for="campaignFilter" style="display:block; color:var(--text-medium); font-size:0.9rem;">Campagna</label>
-                    <select id="campaignFilter" style="min-width:220px; padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;"></select>
+                    <select id="campaignFilter" style="min-width:220px; padding:0.5rem; border:1px solid var(--border-light); border-radius:12px;"></select>
                 </div>
                 <div>
                     <label for="statusFilter" style="display:block; color:var(--text-medium); font-size:0.9rem;">Stato</label>
-                    <select id="statusFilter" style="min-width:150px; padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;">
+                    <select id="statusFilter" style="min-width:150px; padding:0.5rem; border:1px solid var(--border-light); border-radius:12px;">
                         <option value="">Tutti</option>
                         <option value="active">Solo Attivi</option>
                         <option value="redeemed">Solo Bruciati</option>
@@ -66,11 +66,11 @@
                 </div>
                 <div>
                     <label for="startDate" style="display:block; color:var(--text-medium); font-size:0.9rem;">Dal</label>
-                    <input type="date" id="startDate" style="padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;" />
+                    <input type="date" id="startDate" style="padding:0.5rem; border:1px solid var(--border-light); border-radius:12px;" />
                 </div>
                 <div>
                     <label for="endDate" style="display:block; color:var(--text-medium); font-size:0.9rem;">Al</label>
-                    <input type="date" id="endDate" style="padding:0.5rem; border:1px solid var(--border-light); border-radius:8px;" />
+                    <input type="date" id="endDate" style="padding:0.5rem; border:1px solid var(--border-light); border-radius:12px;" />
                 </div>
                 <button id="applyFilters" class="primary">APPLICA</button>
                 <button id="clearFilters" class="secondary">PULISCI</button>
@@ -337,6 +337,13 @@
             
             const ctx = document.getElementById('campaignsChart').getContext('2d');
             const colors = themeColors();
+            
+            // Calculate max value to add padding above bars
+            const maxIssued = Math.max(...campaignsData.map(c => c.issued));
+            const maxRedeemed = Math.max(...campaignsData.map(c => c.redeemed));
+            const maxValue = Math.max(maxIssued, maxRedeemed);
+            const suggestedMax = maxValue > 0 ? Math.ceil(maxValue * 1.15) : 10; // Add 15% padding
+            
             campaignsChartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -376,6 +383,7 @@
                         },
                         y: {
                             beginAtZero: true,
+                            suggestedMax: suggestedMax,
                             grid: {
                                 color: colors.border,
                                 drawBorder: false
@@ -924,6 +932,7 @@
                 .catch(error => console.error('Error loading navigation:', error));
         });
     </script>
+    <script src="/static/notifications.js"></script>
     <footer class="site-footer">CouponGen</footer>
 </body>
 </html>

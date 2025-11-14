@@ -391,10 +391,11 @@
     </style>
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
     <script src="/static/navigation.js"></script>
     <!-- Navigation Bar -->
     <div id="navigation-container"></div>
-    <div class="superadmin-container">
+    <main id="main-content" class="superadmin-container">
         <div class="superadmin-header">
             <h1>Super Admin</h1>
             <p>Gestione tenant e monitoraggio sistema</p>
@@ -605,7 +606,7 @@
                 <div class="loading">Caricamento utenti admin...</div>
             </div>
         </div>
-    </div>
+    </main>
     
     <!-- Project-consistent footer -->
     <footer class="site-footer">
@@ -1011,18 +1012,37 @@
             }
         });
         
+        // Use global notification system
         function showError(message) {
-            const errorElement = document.getElementById('errorMessage');
-            errorElement.textContent = message;
-            errorElement.classList.add('show');
-            setTimeout(() => errorElement.classList.remove('show'), 5000);
+            if (typeof window.showError === 'function') {
+                window.showError(message);
+            } else {
+                // Fallback if notifications.js not loaded
+                const errorElement = document.getElementById('errorMessage');
+                if (errorElement) {
+                    errorElement.textContent = message;
+                    errorElement.classList.add('show');
+                    setTimeout(() => errorElement.classList.remove('show'), 5000);
+                } else {
+                    alert(message);
+                }
+            }
         }
         
         function showSuccess(message) {
-            const successElement = document.getElementById('successMessage');
-            successElement.textContent = message;
-            successElement.classList.add('show');
-            setTimeout(() => successElement.classList.remove('show'), 5000);
+            if (typeof window.showSuccess === 'function') {
+                window.showSuccess(message);
+            } else {
+                // Fallback if notifications.js not loaded
+                const successElement = document.getElementById('successMessage');
+                if (successElement) {
+                    successElement.textContent = message;
+                    successElement.classList.add('show');
+                    setTimeout(() => successElement.classList.remove('show'), 5000);
+                } else {
+                    alert(message);
+                }
+            }
         }
         
         // Create Tenant Modal Functions
@@ -1230,6 +1250,7 @@
         // Load data on page load
         document.addEventListener('DOMContentLoaded', loadData);
     </script>
+    <script src="/static/notifications.js"></script>
 </body>
 </html>
 

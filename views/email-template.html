@@ -93,12 +93,13 @@
     </style>
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/css/suneditor.min.css">
     <script src="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/suneditor.min.js"></script>
     <script src="/static/navigation.js"></script>
     <div id="navigation-container"></div>
 
-    <main class="container">
+    <main id="main-content" class="container">
         <h1>Personalizza Template Email</h1>
         <p class="hint">Parametri modificabili (nessun codice necessario). Variabili automatiche: 
             <span class="token">{{firstName}}</span> <span class="token">{{lastName}}</span> 
@@ -692,10 +693,18 @@
             }
         }
 
+        // Use global notification system
         function showNotification(message, type) {
-            // Create a simple notification
-            const notification = document.createElement('div');
-            notification.style.cssText = `
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(message, type);
+            } else if (type === 'success' && typeof window.showSuccess === 'function') {
+                window.showSuccess(message);
+            } else if (type === 'error' && typeof window.showError === 'function') {
+                window.showError(message);
+            } else {
+                // Fallback if notifications.js not loaded
+                const notification = document.createElement('div');
+                notification.style.cssText = `
                 position: fixed;
                 top: 20px;
                 right: 20px;
@@ -731,6 +740,7 @@
                 .catch(error => console.error('Error loading navigation:', error));
         });
     </script>
+    <script src="/static/notifications.js"></script>
 </body>
 </html>
 

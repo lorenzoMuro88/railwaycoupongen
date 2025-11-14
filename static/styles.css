@@ -23,6 +23,35 @@
   --gradient-gold: linear-gradient(135deg, var(--gold-accent) 0%, #f4d03f 100%);
   --surface-elevated: rgba(255, 255, 255, 0.8);
   --backdrop-blur: blur(20px);
+  
+  /* Spacing Scale */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  
+  /* Border Radius Scale */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  
+  /* Transition Timing */
+  --transition-fast: 150ms;
+  --transition-base: 250ms;
+  --transition-slow: 350ms;
+  
+  /* Z-index Scale */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-notification: 10000;
 }
 
 * {
@@ -911,6 +940,403 @@ code {
   padding: 0 .5rem;
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+/* ============================================
+   UI/UX IMPROVEMENTS - Notification System
+   ============================================ */
+.notification-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 400px;
+  width: calc(100% - 2rem);
+  pointer-events: none;
+}
+
+.notification {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--white);
+  border-radius: 12px;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 8px 24px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateX(400px);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.notification.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.notification-success {
+  border-left-color: var(--accent-green);
+  background: linear-gradient(135deg, var(--light-green) 0%, var(--white) 100%);
+}
+
+.notification-error {
+  border-left-color: var(--accent-red);
+  background: linear-gradient(135deg, #fdf2f2 0%, var(--white) 100%);
+}
+
+.notification-warning {
+  border-left-color: var(--gold-accent);
+  background: linear-gradient(135deg, #fffbf0 0%, var(--white) 100%);
+}
+
+.notification-info {
+  border-left-color: #74c0fc;
+  background: linear-gradient(135deg, #e7f5ff 0%, var(--white) 100%);
+}
+
+.notification-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.notification-success .notification-icon {
+  color: var(--accent-green);
+}
+
+.notification-error .notification-icon {
+  color: var(--accent-red);
+}
+
+.notification-warning .notification-icon {
+  color: var(--gold-accent);
+}
+
+.notification-info .notification-icon {
+  color: #74c0fc;
+}
+
+.notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-message {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.notification-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  cursor: pointer;
+  color: var(--text-light);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-top: -2px;
+}
+
+.notification-close:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-dark);
+}
+
+.notification-close:focus {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .notification-container {
+    top: 0.5rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    max-width: none;
+    width: auto;
+  }
+  
+  .notification {
+    padding: 0.875rem 1rem;
+  }
+  
+  .notification-message {
+    font-size: 0.9rem;
+  }
+}
+
+/* ============================================
+   ACCESSIBILITY IMPROVEMENTS
+   ============================================ */
+
+/* Enhanced focus states for keyboard navigation */
+*:focus-visible {
+  outline: 3px solid var(--accent-green);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+/* Skip link for screen readers */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--primary-green);
+  color: var(--white);
+  padding: 0.75rem 1.5rem;
+  text-decoration: none;
+  border-radius: 0 0 8px 0;
+  z-index: 10001;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: 3px solid var(--gold-accent);
+  outline-offset: 2px;
+}
+
+/* Screen reader only content */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ============================================
+   MOBILE UX IMPROVEMENTS
+   ============================================ */
+
+/* Minimum touch target size (44x44px) */
+button,
+a,
+input[type="checkbox"],
+input[type="radio"],
+.nav-link,
+.sidebar-link {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Responsive table - convert to cards on mobile */
+@media (max-width: 768px) {
+  .responsive-table {
+    display: block;
+  }
+  
+  .responsive-table thead {
+    display: none;
+  }
+  
+  .responsive-table tbody {
+    display: block;
+  }
+  
+  .responsive-table tr {
+    display: block;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    padding: 1rem;
+    background: var(--white);
+    box-shadow: 0 2px 8px var(--shadow-xs);
+  }
+  
+  .responsive-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border: none;
+    border-bottom: 1px solid var(--border-light);
+  }
+  
+  .responsive-table td:last-child {
+    border-bottom: none;
+  }
+  
+  .responsive-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--text-medium);
+    margin-right: 1rem;
+    flex-shrink: 0;
+  }
+  
+  .responsive-table td:last-child::after {
+    content: '';
+  }
+}
+
+/* Form improvements for mobile */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* Prevents zoom on iOS */
+    min-height: 44px;
+  }
+  
+  label {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+  }
+}
+
+/* ============================================
+   DESIGN TOKENS - Spacing & Layout
+   ============================================ */
+/* Design tokens aggiunti a :root esistente sopra */
+
+/* ============================================
+   IMPROVED FORM VALIDATION STYLES
+   ============================================ */
+.form-group {
+  position: relative;
+}
+
+.form-group input.error,
+.form-group select.error,
+.form-group textarea.error {
+  border-color: var(--accent-red);
+  background: #fdf2f2;
+}
+
+.form-group input.valid,
+.form-group select.valid,
+.form-group textarea.valid {
+  border-color: var(--accent-green);
+}
+
+.form-group .error-message {
+  display: block;
+  color: var(--accent-red);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-group .success-message {
+  display: block;
+  color: var(--accent-green);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-group .error-message::before {
+  content: '⚠';
+  font-size: 1rem;
+}
+
+.form-group .success-message::before {
+  content: '✓';
+  font-size: 1rem;
+}
+
+/* Empty state styles */
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--text-medium);
+}
+
+.empty-state-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1.5rem;
+  opacity: 0.5;
+}
+
+.empty-state h3 {
+  color: var(--text-dark);
+  margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+  color: var(--text-medium);
+  margin-bottom: 1.5rem;
+}
+
+/* Loading skeleton */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--border-light) 0%,
+    rgba(255, 255, 255, 0.5) 50%,
+    var(--border-light) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-text {
+  height: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-title {
+  height: 1.5rem;
+  width: 60%;
+  margin-bottom: 1rem;
+}
+
+.skeleton-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
 }
 
 
