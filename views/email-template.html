@@ -240,7 +240,7 @@
                         </div>
                         <div class="form-group">
                             <label>Testo meccanica</label>
-                            <textarea id="mechanicsText" class="text-block">Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.</textarea>
+                            <textarea id="mechanicsText" class="text-block">Mostra questo codice in negozio oppure usa il link qui sotto.</textarea>
                             <div class="controls-actions" style="justify-content:flex-start; gap:.35rem; margin-top:.35rem;">
                                 <button id="saveMechanics" type="button" class="btn btn-secondary" style="padding:.35rem .7rem; text-transform:none;" disabled onclick="saveSection('mechanics')">Salva</button>
                             </div>
@@ -336,7 +336,7 @@
             const tmpDiv = document.createElement('div'); tmpDiv.innerHTML = rawGreeting;
             const greeting = (tmpDiv.textContent || tmpDiv.innerText || 'Ciao').replace(/\s+/g, ' ').trim();
             const introText = (window.sunEditors?.intro?.getContents() || document.getElementById('introText').value || 'Ecco il tuo coupon personale');
-            const mechanicsText = (window.sunEditors?.mechanics?.getContents() || document.getElementById('mechanicsText').value || 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.');
+            const mechanicsText = (window.sunEditors?.mechanics?.getContents() || document.getElementById('mechanicsText').value || 'Mostra questo codice in negozio oppure usa il link qui sotto.');
             const footerText = (window.sunEditors?.footer?.getContents() || document.getElementById('footerText').value || 'Grazie per averci scelto');
 
             // Email HTML responsive semplice, con tabelle e stili inline
@@ -442,8 +442,8 @@
             else document.getElementById('introText').value = 'Ecco il tuo coupon personale';
             if (window.sunEditors?.footer) window.sunEditors.footer.setContents('Grazie per averci scelto');
             else document.getElementById('footerText').value = 'Grazie per averci scelto';
-            if (window.sunEditors?.mechanics) window.sunEditors.mechanics.setContents('Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.');
-            else document.getElementById('mechanicsText').value = 'Puoi presentare questo codice in negozio oppure usare il pulsante qui sotto per aprire la pagina di cassa.';
+            if (window.sunEditors?.mechanics) window.sunEditors.mechanics.setContents('Mostra questo codice in negozio oppure usa il link qui sotto.');
+            else document.getElementById('mechanicsText').value = 'Mostra questo codice in negozio oppure usa il link qui sotto.';
 
             // disabilita i piccoli salva
             ['saveGreeting','saveIntro','saveFooter','saveMechanics'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = true; });

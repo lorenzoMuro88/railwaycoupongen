@@ -2692,6 +2692,25 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             <p>Grazie!</p>`;
         }
 
+        // Remove "Vai alla Cassa" button if present in template (cleanup from DB)
+        // This removes buttons/links with "Vai alla Cassa" text, including emoji variations
+        // Match various HTML patterns that might contain the button
+        const buttonPatterns = [
+            // Link with "Vai alla Cassa" text (case insensitive, with optional emoji)
+            /<a[^>]*>[\s\S]*?(?:🚀\s*)?[\s\S]*?Vai\s+alla\s+Cassa[\s\S]*?<\/a>/gi,
+            // Button element
+            /<button[^>]*>[\s\S]*?(?:🚀\s*)?[\s\S]*?Vai\s+alla\s+Cassa[\s\S]*?<\/button>/gi,
+            // Div containing link with button styling
+            /<div[^>]*>[\s\S]*?<a[^>]*>[\s\S]*?(?:🚀\s*)?[\s\S]*?Vai\s+alla\s+Cassa[\s\S]*?<\/a>[\s\S]*?<\/div>/gi,
+            // Paragraph containing the button
+            /<p[^>]*>[\s\S]*?<a[^>]*>[\s\S]*?(?:🚀\s*)?[\s\S]*?Vai\s+alla\s+Cassa[\s\S]*?<\/a>[\s\S]*?<\/p>/gi,
+            // Centered div with button
+            /<div[^>]*style[^>]*text-align[^>]*:?\s*center[^>]*>[\s\S]*?<a[^>]*>[\s\S]*?(?:🚀\s*)?[\s\S]*?Vai\s+alla\s+Cassa[\s\S]*?<\/a>[\s\S]*?<\/div>/gi,
+        ];
+        buttonPatterns.forEach(pattern => {
+            templateHtml = templateHtml.replace(pattern, '');
+        });
+
         // Replace {{qrDataUrl}} with cid:coupon-qr for inline attachment (before other replacements)
         // Mailgun uses filename without extension as CID reference
         const htmlTemplate = templateHtml.replaceAll('{{qrDataUrl}}', 'cid:coupon-qr.png');
