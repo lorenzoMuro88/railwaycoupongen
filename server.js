@@ -3796,6 +3796,24 @@ app.get('/api/admin/campaigns-list', requireAdmin, async (req, res) => {
     }
 });
 
+// Tenant-aware version of campaigns-list endpoint
+app.get('/t/:tenantSlug/api/admin/campaigns-list', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const campaigns = await dbConn.all(`
+            SELECT id, name, campaign_code
+            FROM campaigns 
+            WHERE name IS NOT NULL AND name != '' AND tenant_id = ?
+            ORDER BY name, created_at DESC
+        `, req.tenant.id);
+        // Return array of objects with id and name for better identification
+        res.json(campaigns.map(c => ({ id: c.id, name: c.name, code: c.campaign_code })));
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
 // Database utenti API
 app.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
