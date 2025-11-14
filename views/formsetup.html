@@ -437,7 +437,14 @@
         async function loadCampaigns() {
             try {
                 const tenantBase = window.__tenantBase || '';
-                const response = await fetch(`${tenantBase}/api/admin/campaigns`);
+                const response = await fetch(`${tenantBase}/api/admin/campaigns`, {
+                    credentials: 'same-origin'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 const campaigns = await response.json();
                 
                 const select = document.getElementById('campaignSelect');
@@ -471,7 +478,19 @@
 
             try {
                 const tenantBase = window.__tenantBase || '';
-                const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/form-config`);
+                const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/form-config`, {
+                    credentials: 'same-origin'
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    // Check if response is HTML (error page) instead of JSON
+                    if (errorText.trim().startsWith('<!')) {
+                        throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 const formConfig = await response.json();
                 
                 currentCampaignId = campaignId;
@@ -566,6 +585,7 @@
                 const tenantBase = window.__tenantBase || '';
                 const response = await fetch(`${tenantBase}/api/admin/campaigns/${currentCampaignId}/form-config`, {
                     method: 'PUT',
+                    credentials: 'same-origin',
                     headers: {
                         'Content-Type': 'application/json'
                     },

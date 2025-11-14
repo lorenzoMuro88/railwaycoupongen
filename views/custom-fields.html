@@ -605,7 +605,14 @@
         async function loadCampaigns() {
             try {
                 const tenantBase = window.__tenantBase || '';
-                const response = await fetch(`${tenantBase}/api/admin/campaigns`);
+                const response = await fetch(`${tenantBase}/api/admin/campaigns`, {
+                    credentials: 'same-origin'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 const campaigns = await response.json();
                 
                 const select = document.getElementById('campaignSelect');
@@ -642,7 +649,19 @@
         async function loadCustomFields(campaignId) {
             try {
                 const tenantBase = window.__tenantBase || '';
-                const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/custom-fields`);
+                const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/custom-fields`, {
+                    credentials: 'same-origin'
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    // Check if response is HTML (error page) instead of JSON
+                    if (errorText.trim().startsWith('<!')) {
+                        throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 customFields = await response.json();
                 renderCustomFields();
             } catch (error) {

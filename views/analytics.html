@@ -214,10 +214,16 @@
         }
 
         async function loadSummary(){
-            const tenantBase = window.__tenantBase || '';
-            const r = await fetch(`${tenantBase}/api/admin/analytics/summary` + (qsParams()? ('?' + qsParams()) : ''));
-            if(!r.ok) return;
-            summaryData = await r.json();
+            try {
+                const tenantBase = window.__tenantBase || '';
+                const r = await fetch(`${tenantBase}/api/admin/analytics/summary` + (qsParams()? ('?' + qsParams()) : ''), {
+                    credentials: 'same-origin'
+                });
+                if(!r.ok) {
+                    console.error('Failed to load analytics summary:', r.status);
+                    return;
+                }
+                summaryData = await r.json();
             document.getElementById('kpiCampaigns').textContent = summaryData.totalCampaigns;
             document.getElementById('kpiIssued').textContent = summaryData.totalCouponsIssued;
             document.getElementById('kpiRedeemed').textContent = summaryData.totalCouponsRedeemed;
@@ -226,26 +232,38 @@
             document.getElementById('kpiEstDiscountRedeemed').textContent = euro(summaryData.estimatedDiscountRedeemed);
             document.getElementById('kpiGrossMargin').textContent = euro(summaryData.estimatedGrossMarginOnRedeemed);
             document.getElementById('kpiNetMargin').textContent = euro(summaryData.estimatedNetMarginAfterDiscount);
+            } catch (error) {
+                console.error('Error loading analytics summary:', error);
+            }
         }
 
         async function loadPerCampaign(){
-            const tenantBase = window.__tenantBase || '';
-            const r = await fetch(`${tenantBase}/api/admin/analytics/campaigns` + (qsParams()? ('?' + qsParams()) : ''));
-            if(!r.ok) return;
-            campaignsData = await r.json();
-            const tbody = document.getElementById('campaignTable');
-            tbody.innerHTML = campaignsData.map(c => `
-                <tr>
-                    <td>${c.name}</td>
-                    <td>${c.issued}</td>
-                    <td>${c.redeemed}</td>
-                    <td>${pct(c.redemptionRate||0)}</td>
-                    <td>${euro(c.estDiscountIssued)}</td>
-                    <td>${euro(c.estDiscountRedeemed)}</td>
-                    <td>${euro(c.estGrossMarginRedeemed)}</td>
-                    <td>${euro(c.estNetMarginAfterDiscount)}</td>
-                </tr>
-            `).join('');
+            try {
+                const tenantBase = window.__tenantBase || '';
+                const r = await fetch(`${tenantBase}/api/admin/analytics/campaigns` + (qsParams()? ('?' + qsParams()) : ''), {
+                    credentials: 'same-origin'
+                });
+                if(!r.ok) {
+                    console.error('Failed to load campaigns analytics:', r.status);
+                    return;
+                }
+                campaignsData = await r.json();
+                const tbody = document.getElementById('campaignTable');
+                tbody.innerHTML = campaignsData.map(c => `
+                    <tr>
+                        <td>${c.name}</td>
+                        <td>${c.issued}</td>
+                        <td>${c.redeemed}</td>
+                        <td>${pct(c.redemptionRate||0)}</td>
+                        <td>${euro(c.estDiscountIssued)}</td>
+                        <td>${euro(c.estDiscountRedeemed)}</td>
+                        <td>${euro(c.estGrossMarginRedeemed)}</td>
+                        <td>${euro(c.estNetMarginAfterDiscount)}</td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading campaigns analytics:', error);
+            }
         }
 
         function createRedemptionChart() {
@@ -618,12 +636,21 @@
         }
 
         async function loadCampaignOptions(){
-            const tenantBase = window.__tenantBase || '';
-            const r = await fetch(`${tenantBase}/api/admin/campaigns`);
-            if(!r.ok) return;
-            campaignsList = await r.json();
-            const sel = document.getElementById('campaignFilter');
-            sel.innerHTML = '<option value="">Tutte</option>' + campaignsList.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            try {
+                const tenantBase = window.__tenantBase || '';
+                const r = await fetch(`${tenantBase}/api/admin/campaigns`, {
+                    credentials: 'same-origin'
+                });
+                if(!r.ok) {
+                    console.error('Failed to load campaign options:', r.status);
+                    return;
+                }
+                campaignsList = await r.json();
+                const sel = document.getElementById('campaignFilter');
+                sel.innerHTML = '<option value="">Tutte</option>' + campaignsList.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            } catch (error) {
+                console.error('Error loading campaign options:', error);
+            }
         }
 
         function clearAndReload(){
