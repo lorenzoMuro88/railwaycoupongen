@@ -3438,6 +3438,54 @@ app.put('/t/:tenantSlug/api/admin/campaigns/:id/form-config', tenantLoader, requ
     }
 });
 
+// Tenant-scoped: get campaign custom fields
+app.get('/t/:tenantSlug/api/admin/campaigns/:id/custom-fields', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, req.tenant.id);
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        const formConfig = JSON.parse(campaign.form_config || '{"customFields": []}');
+        res.json(formConfig.customFields || []);
+    } catch (error) {
+        console.error('Error fetching custom fields:', error);
+        res.status(500).json({ error: 'Errore nel recupero dei campi custom' });
+    }
+});
+
+// Tenant-scoped: update campaign custom fields
+app.put('/t/:tenantSlug/api/admin/campaigns/:id/custom-fields', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { customFields } = req.body;
+        const dbConn = await getDb();
+        
+        // Controlla il limite di 5 campi custom
+        if (customFields && customFields.length > 5) {
+            return res.status(400).json({ error: 'Limite massimo di 5 campi custom per campagna' });
+        }
+        
+        // Get current form config
+        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, req.tenant.id);
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        const formConfig = JSON.parse(campaign.form_config || '{"customFields": []}');
+        formConfig.customFields = customFields || [];
+        
+        // Update campaign
+        const result = await dbConn.run('UPDATE campaigns SET form_config = ? WHERE id = ? AND tenant_id = ?', JSON.stringify(formConfig), req.params.id, req.tenant.id);
+        if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating custom fields:', error);
+        res.status(500).json({ error: 'Errore nell\'aggiornamento dei campi custom' });
+    }
+});
+
 // Duplicate routes removed - see routes above (before app.use middleware)
 
 // Tenant-scoped: get campaign by code (for form parameter)
