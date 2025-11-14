@@ -823,6 +823,415 @@
             flex-shrink: 0;
             opacity: 0.8;
         }
+
+        /* Form Links Improved UI Styles */
+        .form-links-container {
+            text-align: left;
+            max-width: 100%;
+        }
+
+        .form-links-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: var(--light-green);
+            border-radius: 12px;
+            border: 2px solid var(--border-light);
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-medium);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-total .stat-value { color: var(--text-medium); }
+        .stat-available .stat-value { color: var(--primary-green); }
+        .stat-used .stat-value { color: var(--text-medium); }
+
+        .progress-bar-container {
+            margin-top: 0.5rem;
+            height: 8px;
+            background: var(--border-light);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--gradient-primary);
+            transition: width 0.3s ease;
+        }
+
+        .form-links-controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .form-links-controls input[type="text"],
+        .form-links-controls select {
+            padding: 0.6rem 1rem;
+            border: 2px solid var(--border-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .form-links-controls input[type="text"]:focus,
+        .form-links-controls select:focus {
+            outline: none;
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(74, 124, 89, 0.1);
+        }
+
+        .form-links-table-container {
+            overflow-x: auto;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            max-height: 60vh;
+            overflow-y: auto;
+            background: white;
+        }
+        
+        /* Ensure modal body can scroll when content is large */
+        .modal.large-modal .modal-body {
+            max-height: calc(90vh - 200px);
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .form-links-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .form-links-table thead {
+            position: sticky;
+            top: 0;
+            background: var(--primary-green);
+            color: white;
+            z-index: 10;
+        }
+
+        .form-links-table th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .form-links-table th:hover {
+            background: var(--dark-green);
+        }
+
+        .form-links-table th.sortable::after {
+            content: ' ↕';
+            opacity: 0.5;
+            font-size: 0.7rem;
+        }
+
+        .form-links-table th.sort-asc::after {
+            content: ' ↑';
+            opacity: 1;
+        }
+
+        .form-links-table th.sort-desc::after {
+            content: ' ↓';
+            opacity: 1;
+        }
+
+        .form-links-table td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .form-links-table tbody tr {
+            transition: background 0.2s ease;
+        }
+
+        .form-links-table tbody tr:hover {
+            background: var(--light-green);
+        }
+
+        .form-links-table tbody tr.used {
+            opacity: 0.7;
+        }
+
+        .link-token {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: var(--primary-green);
+            word-break: break-all;
+        }
+
+        .link-url {
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            color: #666;
+            word-break: break-all;
+            max-width: 300px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.3rem 0.7rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-available {
+            background: var(--light-green);
+            color: var(--primary-green);
+        }
+
+        .status-used {
+            background: var(--border-light);
+            color: var(--text-medium);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-icon {
+            padding: 0.4rem 0.6rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .btn-copy {
+            background: var(--primary-green);
+            color: white;
+        }
+
+        .btn-copy:hover {
+            background: var(--dark-green);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(74, 124, 89, 0.3);
+        }
+
+        .btn-copy.copied {
+            background: var(--accent-green);
+        }
+
+        .form-links-bulk-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f5f5f5;
+            border-radius: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .bulk-action-btn {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .bulk-action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-export-csv {
+            background: var(--text-medium);
+            color: white;
+        }
+
+        .btn-export-csv:hover:not(:disabled) {
+            background: var(--text-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-export-txt {
+            background: var(--text-medium);
+            color: white;
+        }
+
+        .btn-export-txt:hover:not(:disabled) {
+            background: var(--text-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-copy-selected {
+            background: var(--primary-green);
+            color: white;
+        }
+
+        .btn-copy-selected:hover:not(:disabled) {
+            background: var(--dark-green);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(74, 124, 89, 0.3);
+        }
+
+        .form-links-pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+
+        .pagination-info {
+            font-size: 0.9rem;
+            color: var(--text-medium);
+        }
+
+        .pagination-controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .pagination-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: var(--light-green);
+            border-color: var(--primary-green);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination-page-size {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .pagination-page-size select {
+            padding: 0.4rem 0.6rem;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            background: var(--primary-green);
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            animation: slideIn 0.3s ease;
+            max-width: 300px;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.error {
+            background: var(--accent-red);
+        }
+
+        .toast.success {
+            background: var(--accent-green);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-medium);
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            opacity: 0.3;
+            margin-bottom: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .form-links-table-container {
+                font-size: 0.8rem;
+            }
+
+            .form-links-table th,
+            .form-links-table td {
+                padding: 0.5rem;
+            }
+
+            .form-links-controls {
+                flex-direction: column;
+            }
+
+            .form-links-controls input,
+            .form-links-controls select {
+                width: 100%;
+            }
+        }
     </style>
     </head>
 <body>
@@ -1069,17 +1478,24 @@
     <script>
         // Modal System
         function showModal(options) {
-            const { title, message, type = 'info', showCancel = false, onConfirm, onCancel } = options;
+            const { title, message, type = 'info', showCancel = false, onConfirm, onCancel, large = false } = options;
+            
+            // Determine if this is a large modal (for form links)
+            const isLargeModal = large || title.includes('Link Parametrici') || message.includes('form-links-container');
+            const modalClass = isLargeModal ? `modal ${type} large-modal` : `modal ${type}`;
+            
+            // Determine text alignment - left for form links, center for others
+            const textAlign = isLargeModal ? 'left' : 'center';
             
             const modalHtml = `
                 <div class="modal-overlay" id="modalOverlay">
-                    <div class="modal ${type}">
+                    <div class="${modalClass}">
                         <div class="modal-header">
                             <h3 class="modal-title">${title}</h3>
                             <button class="modal-close" onclick="closeModal()">&times;</button>
                         </div>
                         <div class="modal-body" style="padding:1.5rem 1.25rem;">
-                            <div style="font-size:1.1rem; color: var(--text-dark); line-height: 1.6; text-align: center;">${message}</div>
+                            <div style="font-size:1.1rem; color: var(--text-dark); line-height: 1.6; text-align: ${textAlign};">${message}</div>
                         </div>
                         <div class="modal-footer">
                             ${showCancel ? '<button class="modal-btn modal-btn-secondary" onclick="closeModal()">Annulla</button>' : ''}
@@ -1481,7 +1897,8 @@
             if (menu) menu.classList.remove('show');
             
             const baseUrl = window.location.origin;
-            const formUrl = `${baseUrl}/?campaign=${campaignCode}`;
+            const tenantBase = window.__tenantBase || '';
+            const formUrl = `${baseUrl}${tenantBase}/?campaign=${campaignCode}`;
             
             // Create modal to show the link
             showModal({
@@ -1521,6 +1938,729 @@
                     });
                 }
             });
+        }
+        
+        async function generateFormLinks(campaignId, campaignName, campaignCode) {
+            // Chiudi il menu
+            const menu = document.getElementById(`actions-${campaignId}`);
+            if (menu) menu.classList.remove('show');
+            
+            // Show input modal for count
+            showModal({
+                title: `Genera Link Parametrici per "${campaignName}"`,
+                message: `
+                    <div style="text-align: left;">
+                        <p style="margin-bottom: 1rem;">Quanti link vuoi generare? (ogni link può essere usato una sola volta)</p>
+                        <input type="number" id="linkCountInput" min="1" max="1000" value="10" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem;" />
+                        <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 0.5rem;">
+                            Massimo 1000 link per richiesta
+                        </p>
+                    </div>
+                `,
+                type: 'info',
+                showCancel: true,
+                onConfirm: async () => {
+                    const count = parseInt(document.getElementById('linkCountInput').value);
+                    if (!count || count < 1 || count > 1000) {
+                        showModal({
+                            title: 'Errore',
+                            message: 'Inserisci un numero tra 1 e 1000',
+                            type: 'error',
+                            showCancel: false
+                        });
+                        return;
+                    }
+                    
+                    try {
+                        const tenantBase = window.__tenantBase || '';
+                        const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/form-links`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            credentials: 'same-origin',
+                            body: JSON.stringify({ count })
+                        });
+                        
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Errore nella generazione dei link');
+                        }
+                        
+                        const data = await response.json();
+                        showFormLinksModal(campaignId, campaignName, data.links);
+                    } catch (error) {
+                        showModal({
+                            title: 'Errore',
+                            message: error.message || 'Errore nella generazione dei link',
+                            type: 'error',
+                            showCancel: false
+                        });
+                    }
+                }
+            });
+            
+            // Focus input after modal is shown
+            setTimeout(() => {
+                const input = document.getElementById('linkCountInput');
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            }, 100);
+        }
+        
+        function showFormLinksModal(campaignId, campaignName, links) {
+            // After generating links, show the improved list view
+            // First reload the links list to get full data with statistics
+            showFormLinksList(campaignId, campaignName);
+            showToast(`${links.length} link generati con successo!`, 'success');
+            
+                    // Reload campaign list to show updated statistics
+            setTimeout(() => {
+                    loadCampaigns();
+            }, 500);
+        }
+        
+        function copyToClipboard(text, index) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Link copiato!', 'success');
+                // Show temporary feedback
+                const buttons = document.querySelectorAll('button[onclick*="copyToClipboard"]');
+                if (buttons[index]) {
+                    const originalText = buttons[index].textContent;
+                    buttons[index].textContent = 'Copiato!';
+                    buttons[index].style.background = '#4caf50';
+                    setTimeout(() => {
+                        buttons[index].textContent = originalText;
+                        buttons[index].style.background = 'var(--primary-green)';
+                    }, 1000);
+                }
+            }).catch(() => {
+                showToast('Impossibile copiare il link', 'error');
+            });
+        }
+        
+        async function showFormLinksList(campaignId, campaignName) {
+            try {
+                const tenantBase = window.__tenantBase || '';
+                const response = await fetch(`${tenantBase}/api/admin/campaigns/${campaignId}/form-links`, {
+                    credentials: 'same-origin'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Errore nel caricamento dei link');
+                }
+                
+                const data = await response.json();
+                displayFormLinksList(campaignId, campaignName, data.links, data.statistics);
+            } catch (error) {
+                showModal({
+                    title: 'Errore',
+                    message: error.message || 'Errore nel caricamento dei link',
+                    type: 'error',
+                    showCancel: false
+                });
+            }
+        }
+        
+        // State management for form links
+        let formLinksState = {
+            allLinks: [],
+            filteredLinks: [],
+            displayedLinks: [],
+            currentPage: 1,
+            pageSize: 25,
+            filterStatus: 'all',
+            searchQuery: '',
+            sortColumn: 'created_at',
+            sortDirection: 'desc',
+            selectedLinks: new Set()
+        };
+        
+        function displayFormLinksList(campaignId, campaignName, links, statistics) {
+            const baseUrl = window.location.origin;
+            const tenantBase = window.__tenantBase || '';
+            const tenantSlug = tenantBase.replace('/t/', '').split('/')[0] || '';
+            const basePath = tenantSlug ? `/t/${tenantSlug}` : '';
+            
+            if (links.length === 0) {
+                showModal({
+                    title: `Link per "${campaignName}"`,
+                    message: '<p>Nessun link parametrico generato per questa campagna.</p>',
+                    type: 'info',
+                    showCancel: false
+                });
+                return;
+            }
+            
+            // Initialize state
+            formLinksState.allLinks = links.map(link => ({
+                ...link,
+                formUrl: `${baseUrl}${basePath}/?form=${link.token}`,
+                isUsed: link.used_at !== null
+            }));
+            formLinksState.filteredLinks = [...formLinksState.allLinks];
+            formLinksState.selectedLinks = new Set();
+            formLinksState.currentPage = 1;
+            formLinksState.searchQuery = '';
+            formLinksState.filterStatus = 'all';
+            
+            // Build statistics HTML with progress bar
+            const usagePercent = statistics.total > 0 ? (statistics.used / statistics.total * 100) : 0;
+            const statsHtml = `
+                <div class="form-links-stats">
+                    <div class="stat-card stat-total">
+                        <div class="stat-value">${statistics.total}</div>
+                        <div class="stat-label">Totali</div>
+                            </div>
+                    <div class="stat-card stat-available">
+                        <div class="stat-value">${statistics.available}</div>
+                        <div class="stat-label">Disponibili</div>
+                        </div>
+                    <div class="stat-card stat-used">
+                        <div class="stat-value">${statistics.used}</div>
+                        <div class="stat-label">Usati</div>
+                    </div>
+                    <div class="stat-card" style="grid-column: 1 / -1;">
+                        <div class="stat-label" style="margin-bottom: 0.5rem;">Tasso di Utilizzo</div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${usagePercent}%"></div>
+                        </div>
+                        <div style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-medium);">
+                            ${usagePercent.toFixed(1)}% utilizzati
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Build controls HTML
+            const controlsHtml = `
+                <div class="form-links-controls">
+                    <select id="formLinksFilterStatus" onchange="filterFormLinks('${campaignId}', '${campaignName}')">
+                        <option value="all">Tutti</option>
+                        <option value="available">Disponibili</option>
+                        <option value="used">Usati</option>
+                    </select>
+                    <input type="text" id="formLinksSearch" placeholder="Cerca per token o URL..." 
+                           oninput="searchFormLinks('${campaignId}', '${campaignName}')" 
+                           style="flex: 2; min-width: 250px;" />
+                </div>
+            `;
+            
+            // Build table HTML
+            const tableHtml = `
+                <div class="form-links-table-container" id="formLinksTableContainer">
+                    <table class="form-links-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" id="selectAllLinks" onchange="toggleSelectAllFormLinks('${campaignId}', '${campaignName}', this)" />
+                                </th>
+                                <th class="sortable" onclick="sortFormLinks('token', '${campaignId}', '${campaignName}')">Token</th>
+                                <th class="sortable" onclick="sortFormLinks('url', '${campaignId}', '${campaignName}')">Link Completo</th>
+                                <th class="sortable" onclick="sortFormLinks('status', '${campaignId}', '${campaignName}')">Stato</th>
+                                <th class="sortable" onclick="sortFormLinks('created_at', '${campaignId}', '${campaignName}')">Data Creazione</th>
+                                <th class="sortable" onclick="sortFormLinks('used_at', '${campaignId}', '${campaignName}')">Data Utilizzo</th>
+                                <th style="width: 100px;">Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="formLinksTableBody">
+                            <!-- Table rows will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            // Build bulk actions HTML
+            const bulkActionsHtml = `
+                <div class="form-links-bulk-actions">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="selectAllLinksBulk" onchange="toggleSelectAllFormLinks('${campaignId}', '${campaignName}', this)" />
+                        <span>Seleziona Tutti</span>
+                    </label>
+                    <button class="bulk-action-btn btn-export-csv" onclick="exportFormLinksCSV('${campaignId}', '${campaignName}')" id="exportCsvBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Esporta CSV
+                            </button>
+                    <button class="bulk-action-btn btn-export-txt" onclick="exportFormLinksTXT('${campaignId}', '${campaignName}')" id="exportTxtBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                            <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        Esporta TXT
+                    </button>
+                    <button class="bulk-action-btn btn-copy-selected" onclick="copySelectedFormLinks('${campaignId}', '${campaignName}')" id="copySelectedBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                        Copia Selezionati
+                    </button>
+                    </div>
+                `;
+            
+            // Build pagination HTML
+            const paginationHtml = `
+                <div class="form-links-pagination">
+                    <div class="pagination-info" id="formLinksPaginationInfo">
+                        <!-- Pagination info will be inserted here -->
+                        </div>
+                    <div class="pagination-controls">
+                        <button class="pagination-btn" id="prevPageBtn" onclick="changeFormLinksPage(-1, '${campaignId}', '${campaignName}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; margin-right: 0.25rem;">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                            Precedente
+                        </button>
+                        <div class="pagination-page-size">
+                            <span>Righe per pagina:</span>
+                            <select id="formLinksPageSize" onchange="changeFormLinksPageSize('${campaignId}', '${campaignName}')">
+                                <option value="25" ${formLinksState.pageSize === 25 ? 'selected' : ''}>25</option>
+                                <option value="50" ${formLinksState.pageSize === 50 ? 'selected' : ''}>50</option>
+                                <option value="100" ${formLinksState.pageSize === 100 ? 'selected' : ''}>100</option>
+                            </select>
+                        </div>
+                        <button class="pagination-btn" id="nextPageBtn" onclick="changeFormLinksPage(1, '${campaignId}', '${campaignName}')">
+                            Successivo
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; margin-left: 0.25rem;">
+                                <polyline points="9 18 15 12 9 6"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            showModal({
+                title: `Link Parametrici - "${campaignName}"`,
+                message: `
+                    <div class="form-links-container">
+                        ${statsHtml}
+                        ${controlsHtml}
+                        ${tableHtml}
+                        ${bulkActionsHtml}
+                        ${paginationHtml}
+                    </div>
+                `,
+                type: 'info',
+                showCancel: false,
+                large: true,
+                onConfirm: () => {
+                    // Cleanup
+                    formLinksState.selectedLinks.clear();
+                }
+            });
+            
+            // Initial render after modal is shown
+            setTimeout(() => {
+                updateFormLinksTable(campaignId, campaignName, statistics);
+            }, 100);
+        }
+        
+        function updateFormLinksTable(campaignId, campaignName, statistics) {
+            // Apply filters and search
+            let filtered = [...formLinksState.allLinks];
+            
+            // Filter by status
+            if (formLinksState.filterStatus === 'available') {
+                filtered = filtered.filter(link => !link.isUsed);
+            } else if (formLinksState.filterStatus === 'used') {
+                filtered = filtered.filter(link => link.isUsed);
+            }
+            
+            // Apply search
+            if (formLinksState.searchQuery) {
+                const query = formLinksState.searchQuery.toLowerCase();
+                filtered = filtered.filter(link => 
+                    link.token.toLowerCase().includes(query) || 
+                    link.formUrl.toLowerCase().includes(query)
+                );
+            }
+            
+            // Apply sorting
+            filtered.sort((a, b) => {
+                let aVal, bVal;
+                switch (formLinksState.sortColumn) {
+                    case 'token':
+                        aVal = a.token;
+                        bVal = b.token;
+                        break;
+                    case 'url':
+                        aVal = a.formUrl;
+                        bVal = b.formUrl;
+                        break;
+                    case 'status':
+                        aVal = a.isUsed ? 1 : 0;
+                        bVal = b.isUsed ? 1 : 0;
+                        break;
+                    case 'created_at':
+                        aVal = new Date(a.created_at).getTime();
+                        bVal = new Date(b.created_at).getTime();
+                        break;
+                    case 'used_at':
+                        aVal = a.used_at ? new Date(a.used_at).getTime() : 0;
+                        bVal = b.used_at ? new Date(b.used_at).getTime() : 0;
+                        break;
+                    default:
+                        return 0;
+                }
+                
+                if (aVal < bVal) return formLinksState.sortDirection === 'asc' ? -1 : 1;
+                if (aVal > bVal) return formLinksState.sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            formLinksState.filteredLinks = filtered;
+            
+            // Pagination
+            const totalPages = Math.ceil(filtered.length / formLinksState.pageSize);
+            const startIndex = (formLinksState.currentPage - 1) * formLinksState.pageSize;
+            const endIndex = startIndex + formLinksState.pageSize;
+            formLinksState.displayedLinks = filtered.slice(startIndex, endIndex);
+            
+            // Update table body
+            const tbody = document.getElementById('formLinksTableBody');
+            if (!tbody) return;
+            
+            if (formLinksState.displayedLinks.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="empty-state">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            <p>Nessun link trovato</p>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = formLinksState.displayedLinks.map((link, index) => {
+                    const globalIndex = startIndex + index;
+                    const isSelected = formLinksState.selectedLinks.has(link.id);
+                    const createdDate = new Date(link.created_at).toLocaleDateString('it-IT');
+                    const usedDate = link.used_at ? new Date(link.used_at).toLocaleDateString('it-IT') : '-';
+                    const usedTime = link.used_at ? new Date(link.used_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '';
+                    
+                    return `
+                        <tr class="${link.isUsed ? 'used' : ''}">
+                            <td>
+                                <input type="checkbox" ${link.isUsed ? 'disabled' : ''} 
+                                       ${isSelected ? 'checked' : ''} 
+                                       onchange="toggleFormLinkSelection(${link.id}, '${campaignId}', '${campaignName}', this)" />
+                            </td>
+                            <td><span class="link-token">${link.token}</span></td>
+                            <td><span class="link-url" title="${link.formUrl}">${link.formUrl}</span></td>
+                            <td>
+                                <span class="status-badge ${link.isUsed ? 'status-used' : 'status-available'}">
+                                    ${link.isUsed ? 'Usato' : 'Disponibile'}
+                                </span>
+                            </td>
+                            <td>${createdDate}</td>
+                            <td>${link.used_at ? `${usedDate} ${usedTime}` : '-'}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    ${!link.isUsed ? `
+                                        <button class="btn-icon btn-copy" onclick="copyFormLink('${link.formUrl}', ${globalIndex})" title="Copia link">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                            </svg>
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            
+            // Update pagination info and controls
+            const paginationInfo = document.getElementById('formLinksPaginationInfo');
+            if (paginationInfo) {
+                paginationInfo.textContent = `Mostrando ${startIndex + 1}-${Math.min(endIndex, filtered.length)} di ${filtered.length} link`;
+            }
+            
+            const prevBtn = document.getElementById('prevPageBtn');
+            const nextBtn = document.getElementById('nextPageBtn');
+            if (prevBtn) prevBtn.disabled = formLinksState.currentPage === 1;
+            if (nextBtn) nextBtn.disabled = formLinksState.currentPage >= totalPages;
+            
+            // Update sort indicators
+            document.querySelectorAll('.form-links-table th.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (th.textContent.includes('Token') && formLinksState.sortColumn === 'token') {
+                    th.classList.add(formLinksState.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                } else if (th.textContent.includes('Link') && formLinksState.sortColumn === 'url') {
+                    th.classList.add(formLinksState.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                } else if (th.textContent.includes('Stato') && formLinksState.sortColumn === 'status') {
+                    th.classList.add(formLinksState.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                } else if (th.textContent.includes('Creazione') && formLinksState.sortColumn === 'created_at') {
+                    th.classList.add(formLinksState.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                } else if (th.textContent.includes('Utilizzo') && formLinksState.sortColumn === 'used_at') {
+                    th.classList.add(formLinksState.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+            
+            // Update bulk action buttons
+            const selectedCount = formLinksState.selectedLinks.size;
+            const exportCsvBtn = document.getElementById('exportCsvBtn');
+            const exportTxtBtn = document.getElementById('exportTxtBtn');
+            const copySelectedBtn = document.getElementById('copySelectedBtn');
+            
+            if (exportCsvBtn) exportCsvBtn.disabled = selectedCount === 0;
+            if (exportTxtBtn) exportTxtBtn.disabled = selectedCount === 0;
+            if (copySelectedBtn) copySelectedBtn.disabled = selectedCount === 0;
+            
+            // Update "Select All" checkboxes state
+            const availableInFiltered = formLinksState.filteredLinks.filter(l => !l.isUsed);
+            const selectedInFiltered = availableInFiltered.filter(l => formLinksState.selectedLinks.has(l.id));
+            const allSelected = availableInFiltered.length > 0 && selectedInFiltered.length === availableInFiltered.length;
+            const someSelected = selectedInFiltered.length > 0 && selectedInFiltered.length < availableInFiltered.length;
+            
+            const selectAllCheckbox = document.getElementById('selectAllLinks');
+            const selectAllBulkCheckbox = document.getElementById('selectAllLinksBulk');
+            
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = allSelected;
+                selectAllCheckbox.indeterminate = someSelected;
+            }
+            if (selectAllBulkCheckbox) {
+                selectAllBulkCheckbox.checked = allSelected;
+                selectAllBulkCheckbox.indeterminate = someSelected;
+            }
+        }
+        
+        function filterFormLinks(campaignId, campaignName) {
+            const filterSelect = document.getElementById('formLinksFilterStatus');
+            if (filterSelect) {
+                formLinksState.filterStatus = filterSelect.value;
+                formLinksState.currentPage = 1;
+                const stats = {
+                    total: formLinksState.allLinks.length,
+                    available: formLinksState.allLinks.filter(l => !l.isUsed).length,
+                    used: formLinksState.allLinks.filter(l => l.isUsed).length
+                };
+                updateFormLinksTable(campaignId, campaignName, stats);
+            }
+        }
+        
+        function searchFormLinks(campaignId, campaignName) {
+            const searchInput = document.getElementById('formLinksSearch');
+            if (searchInput) {
+                formLinksState.searchQuery = searchInput.value;
+                formLinksState.currentPage = 1;
+                const stats = {
+                    total: formLinksState.allLinks.length,
+                    available: formLinksState.allLinks.filter(l => !l.isUsed).length,
+                    used: formLinksState.allLinks.filter(l => l.isUsed).length
+                };
+                updateFormLinksTable(campaignId, campaignName, stats);
+            }
+        }
+        
+        function sortFormLinks(column, campaignId, campaignName) {
+            if (formLinksState.sortColumn === column) {
+                formLinksState.sortDirection = formLinksState.sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                formLinksState.sortColumn = column;
+                formLinksState.sortDirection = 'asc';
+            }
+            const stats = {
+                total: formLinksState.allLinks.length,
+                available: formLinksState.allLinks.filter(l => !l.isUsed).length,
+                used: formLinksState.allLinks.filter(l => l.isUsed).length
+            };
+            updateFormLinksTable(campaignId, campaignName, stats);
+        }
+        
+        function changeFormLinksPage(delta, campaignId, campaignName) {
+            const totalPages = Math.ceil(formLinksState.filteredLinks.length / formLinksState.pageSize);
+            const newPage = formLinksState.currentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                formLinksState.currentPage = newPage;
+                const stats = {
+                    total: formLinksState.allLinks.length,
+                    available: formLinksState.allLinks.filter(l => !l.isUsed).length,
+                    used: formLinksState.allLinks.filter(l => l.isUsed).length
+                };
+                updateFormLinksTable(campaignId, campaignName, stats);
+            }
+        }
+        
+        function changeFormLinksPageSize(campaignId, campaignName) {
+            const pageSizeSelect = document.getElementById('formLinksPageSize');
+            if (pageSizeSelect) {
+                formLinksState.pageSize = parseInt(pageSizeSelect.value);
+                formLinksState.currentPage = 1;
+                const stats = {
+                    total: formLinksState.allLinks.length,
+                    available: formLinksState.allLinks.filter(l => !l.isUsed).length,
+                    used: formLinksState.allLinks.filter(l => l.isUsed).length
+                };
+                updateFormLinksTable(campaignId, campaignName, stats);
+            }
+        }
+        
+        function toggleFormLinkSelection(linkId, campaignId, campaignName, checkboxElement) {
+            const checkbox = checkboxElement || document.querySelector(`input[onchange*="toggleFormLinkSelection(${linkId}"]`);
+            const shouldSelect = checkbox ? checkbox.checked : !formLinksState.selectedLinks.has(linkId);
+            
+            if (shouldSelect) {
+                formLinksState.selectedLinks.add(linkId);
+            } else {
+                formLinksState.selectedLinks.delete(linkId);
+            }
+            
+            const stats = {
+                total: formLinksState.allLinks.length,
+                available: formLinksState.allLinks.filter(l => !l.isUsed).length,
+                used: formLinksState.allLinks.filter(l => l.isUsed).length
+            };
+            updateFormLinksTable(campaignId, campaignName, stats);
+        }
+        
+        function toggleSelectAllFormLinks(campaignId, campaignName, checkboxElement) {
+            const checkbox = checkboxElement || document.getElementById('selectAllLinks') || document.getElementById('selectAllLinksBulk');
+            if (!checkbox) return;
+            
+            // Select all available links from filtered results, not just displayed ones
+            const availableLinks = formLinksState.filteredLinks.filter(l => !l.isUsed);
+            
+            if (checkbox.checked) {
+                // Select all available links
+                availableLinks.forEach(link => formLinksState.selectedLinks.add(link.id));
+            } else {
+                // Deselect all available links
+                availableLinks.forEach(link => formLinksState.selectedLinks.delete(link.id));
+            }
+            
+            // Sync both checkboxes
+            const otherCheckbox = checkbox.id === 'selectAllLinks' 
+                ? document.getElementById('selectAllLinksBulk')
+                : document.getElementById('selectAllLinks');
+            if (otherCheckbox) {
+                otherCheckbox.checked = checkbox.checked;
+                otherCheckbox.indeterminate = false;
+            }
+            checkbox.indeterminate = false;
+            
+            const stats = {
+                total: formLinksState.allLinks.length,
+                available: formLinksState.allLinks.filter(l => !l.isUsed).length,
+                used: formLinksState.allLinks.filter(l => l.isUsed).length
+            };
+            updateFormLinksTable(campaignId, campaignName, stats);
+        }
+        
+        function copyFormLink(url, index) {
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('Link copiato!', 'success');
+                // Update button state
+                const buttons = document.querySelectorAll('.btn-copy');
+                if (buttons[index]) {
+                    buttons[index].classList.add('copied');
+                    const svg = buttons[index].querySelector('svg');
+                    if (svg) {
+                        svg.innerHTML = '<path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+                    }
+                    setTimeout(() => {
+                        buttons[index].classList.remove('copied');
+                        if (svg) {
+                            svg.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
+                        }
+                    }, 2000);
+                }
+            }).catch(() => {
+                showToast('Errore nella copia', 'error');
+            });
+        }
+        
+        function copySelectedFormLinks(campaignId, campaignName) {
+            const selectedLinks = formLinksState.allLinks.filter(l => formLinksState.selectedLinks.has(l.id));
+            if (selectedLinks.length === 0) {
+                showToast('Nessun link selezionato', 'error');
+                return;
+            }
+            
+            const linksText = selectedLinks.map(l => l.formUrl).join('\n');
+            navigator.clipboard.writeText(linksText).then(() => {
+                showToast(`${selectedLinks.length} link copiati!`, 'success');
+            }).catch(() => {
+                showToast('Errore nella copia', 'error');
+            });
+        }
+        
+        function exportFormLinksCSV(campaignId, campaignName) {
+            const selectedLinks = formLinksState.allLinks.filter(l => formLinksState.selectedLinks.has(l.id));
+            const linksToExport = selectedLinks.length > 0 ? selectedLinks : formLinksState.filteredLinks;
+            
+            if (linksToExport.length === 0) {
+                showToast('Nessun link da esportare', 'error');
+                return;
+            }
+            
+            const csvHeader = 'Token,Link,Stato,Data Creazione,Data Utilizzo\n';
+            const csvRows = linksToExport.map(link => {
+                const status = link.isUsed ? 'Usato' : 'Disponibile';
+                const createdDate = new Date(link.created_at).toLocaleString('it-IT');
+                const usedDate = link.used_at ? new Date(link.used_at).toLocaleString('it-IT') : '';
+                return `"${link.token}","${link.formUrl}","${status}","${createdDate}","${usedDate}"`;
+            }).join('\n');
+            
+            const csvContent = csvHeader + csvRows;
+            const safeName = campaignName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            downloadFile(csvContent, `form-links-${safeName}-${Date.now()}.csv`, 'text/csv');
+            showToast(`Esportati ${linksToExport.length} link in CSV`, 'success');
+        }
+        
+        function exportFormLinksTXT(campaignId, campaignName) {
+            const selectedLinks = formLinksState.allLinks.filter(l => formLinksState.selectedLinks.has(l.id));
+            const linksToExport = selectedLinks.length > 0 ? selectedLinks : formLinksState.filteredLinks;
+            
+            if (linksToExport.length === 0) {
+                showToast('Nessun link da esportare', 'error');
+                return;
+            }
+            
+            const txtContent = linksToExport.map(l => l.formUrl).join('\n');
+            const safeName = campaignName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            downloadFile(txtContent, `form-links-${safeName}-${Date.now()}.txt`, 'text/plain');
+            showToast(`Esportati ${linksToExport.length} link in TXT`, 'success');
+        }
+        
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 3000);
         }
         
         async function createCampaign(e){
@@ -1660,6 +2800,20 @@
                                             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
                                         </svg>
                                         Link
+                                    </button>
+                                    <button onclick="generateFormLinks(${camp.id}, '${camp.name}', '${camp.campaign_code || ''}')" title="Genera link parametrici">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                            <circle cx="12" cy="12" r="1"/>
+                                        </svg>
+                                        Link Multipli
+                                    </button>
+                                    <button onclick="showFormLinksList(${camp.id}, '${camp.name}')" title="Visualizza link parametrici">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M4 7h16M4 12h16M4 17h16"/>
+                                        </svg>
+                                        Lista Link
                                     </button>
                                     <button onclick="${camp.is_active ? 'deactivateCampaign' : 'activateCampaign'}(${camp.id}, '${camp.expiry_date || ''}')">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

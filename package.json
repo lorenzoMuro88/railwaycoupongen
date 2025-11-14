@@ -21,6 +21,7 @@
     "db:migrate-email": "node scripts/migrate-tenant-email.js",
     "test:tenant-email": "node scripts/test-tenant-email-config.js",
     "test:campaigns-list": "node scripts/test-campaigns-list-endpoint.js",
+    "test:form-links": "node scripts/test-form-links.js",
     "server:start": "node scripts/server-control.js start",
     "server:stop": "node scripts/server-control.js stop",
     "server:restart": "node scripts/server-control.js restart",

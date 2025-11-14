@@ -160,17 +160,19 @@ async function setupTestTenants() {
     log('Setting up test tenants...');
     
     // Create tenant 1
-    const tenant1Name = `Test Tenant 1 - ${Date.now()}`;
-    tenant1Slug = `test-tenant-1-${Date.now()}`;
+    const timestamp = Date.now();
+    const tenant1Name = `Test Tenant 1 - ${timestamp}`;
+    tenant1Slug = `test-tenant-1-${timestamp}`;
+    const tenant1AdminUsername = `admin1-${timestamp}`;
     const createTenant1Res = await makeRequest('POST', '/api/superadmin/tenants', {
         cookie: superadminSession,
         headers: {
             'X-CSRF-Token': superadminCsrfToken
         },
         body: {
-            name: tenant1Name,
-            slug: tenant1Slug,
-            adminUsername: `admin1-${Date.now()}`,
+            tenantName: tenant1Name,
+            tenantSlug: tenant1Slug,
+            adminUsername: tenant1AdminUsername,
             adminPassword: 'admin123'
         }
     });
@@ -179,20 +181,21 @@ async function setupTestTenants() {
         throw new Error(`Failed to create tenant 1: ${createTenant1Res.status} - ${JSON.stringify(createTenant1Res.body)}`);
     }
     
-    tenant1Id = createTenant1Res.body.id || createTenant1Res.body.tenantId;
+    tenant1Id = createTenant1Res.body.id || createTenant1Res.body.tenantId || createTenant1Res.body.tenant?.id;
     
     // Create tenant 2
-    const tenant2Name = `Test Tenant 2 - ${Date.now()}`;
-    tenant2Slug = `test-tenant-2-${Date.now()}`;
+    const tenant2Name = `Test Tenant 2 - ${timestamp}`;
+    tenant2Slug = `test-tenant-2-${timestamp}`;
+    const tenant2AdminUsername = `admin2-${timestamp}`;
     const createTenant2Res = await makeRequest('POST', '/api/superadmin/tenants', {
         cookie: superadminSession,
         headers: {
             'X-CSRF-Token': superadminCsrfToken
         },
         body: {
-            name: tenant2Name,
-            slug: tenant2Slug,
-            adminUsername: `admin2-${Date.now()}`,
+            tenantName: tenant2Name,
+            tenantSlug: tenant2Slug,
+            adminUsername: tenant2AdminUsername,
             adminPassword: 'admin123'
         }
     });
@@ -201,17 +204,17 @@ async function setupTestTenants() {
         throw new Error(`Failed to create tenant 2: ${createTenant2Res.status} - ${JSON.stringify(createTenant2Res.body)}`);
     }
     
-    tenant2Id = createTenant2Res.body.id || createTenant2Res.body.tenantId;
+    tenant2Id = createTenant2Res.body.id || createTenant2Res.body.tenantId || createTenant2Res.body.tenant?.id;
     
     log(`Tenant 1 ID: ${tenant1Id}, Slug: ${tenant1Slug}`);
     log(`Tenant 2 ID: ${tenant2Id}, Slug: ${tenant2Slug}`);
     
-    // Login as tenant admins
-    const tenant1Admin = createTenant1Res.body.adminUsername || `admin1-${Date.now()}`;
-    const tenant2Admin = createTenant2Res.body.adminUsername || `admin2-${Date.now()}`;
+    // Login as tenant admins - use the usernames we sent in the request
+    // Wait a bit for the users to be created in the database
+    await new Promise(resolve => setTimeout(resolve, 500));
     
-    tenant1AdminSession = await login(tenant1Admin, 'admin123', 'admin');
-    tenant2AdminSession = await login(tenant2Admin, 'admin123', 'admin');
+    tenant1AdminSession = await login(tenant1AdminUsername, 'admin123', 'admin');
+    tenant2AdminSession = await login(tenant2AdminUsername, 'admin123', 'admin');
 }
 
 async function createTestCampaign(tenantSlug, sessionCookie, campaignName) {
@@ -417,4 +420,5 @@ runTests().catch(error => {
     console.error(error);
     process.exit(1);
 });
+
 

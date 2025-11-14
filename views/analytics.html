@@ -692,13 +692,23 @@
             const groupBy = document.querySelector('input[name="temporalGroup"]:checked').value;
             
             console.log('Creating temporal chart with groupBy:', groupBy);
-            const url = '/api/admin/analytics/temporal' + (qsParams()? ('?' + qsParams() + '&groupBy=' + groupBy) : '?groupBy=' + groupBy);
+            const tenantBase = window.__tenantBase || '';
+            const url = `${tenantBase}/api/admin/analytics/temporal` + (qsParams()? ('?' + qsParams() + '&groupBy=' + groupBy) : '?groupBy=' + groupBy);
             console.log('Fetching URL:', url);
             
             fetch(url)
-                .then(r => r.json())
+                .then(r => {
+                    if (!r.ok) {
+                        throw new Error(`HTTP error! status: ${r.status}`);
+                    }
+                    return r.json();
+                })
                 .then(data => {
-                    if (data.length === 0) return;
+                    if (!data || data.length === 0) {
+                        // Show empty state message
+                        console.warn('No temporal data available');
+                        return;
+                    }
                     
                     temporalChartInstance = new Chart(ctx, {
                         type: 'line',
@@ -865,12 +875,17 @@
                             }
                         }
                     });
+                })
+                .catch(error => {
+                    console.error('Error loading temporal chart data:', error);
+                    // Optionally show error message to user
                 });
         }
 
         function exportToCSV() {
+            const tenantBase = window.__tenantBase || '';
             const params = qsParams();
-            const url = '/api/admin/analytics/export' + (params ? ('?' + params) : '');
+            const url = `${tenantBase}/api/admin/analytics/export` + (params ? ('?' + params) : '');
             window.open(url, '_blank');
         }
 

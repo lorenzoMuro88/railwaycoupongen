@@ -1,0 +1,1125 @@
+{
+  "timestamp": "2025-11-14T09:40:50.829Z",
+  "summary": {
+    "totalEndpoints": 157,
+    "coveredEndpoints": 88,
+    "uncoveredEndpoints": 69,
+    "coveragePercentage": "56.1",
+    "totalFunctions": 57,
+    "uncoveredFunctions": 54
+  },
+  "uncoveredEndpoints": [
+    {
+      "method": "GET",
+      "path": "/access",
+      "line": 134,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/signup",
+      "line": 138,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public-config",
+      "line": 393,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/api/signup",
+      "line": 1818,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/tenant-info",
+      "line": 1967,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/logout",
+      "line": 1991,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/store-login",
+      "line": 2014,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/test-email",
+      "line": 2024,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/test-coupon-email",
+      "line": 2058,
+      "type": "endpoint"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/email-from-name",
+      "line": 2111,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/email-from-name",
+      "line": 2136,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/admin/test-email",
+      "line": 2155,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/upload-image",
+      "line": 2288,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/t/:tenantSlug/api/admin/upload-image",
+      "line": 2325,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/static/uploads/:tenantSlug/:filename",
+      "line": 2359,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/uploads/:tenantSlug/:filename",
+      "line": 2367,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/uploads/:filename",
+      "line": 2427,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/form-customization",
+      "line": 2476,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug",
+      "line": 2568,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/thanks",
+      "line": 2572,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/thanks",
+      "line": 2575,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/superadmin-login",
+      "line": 2772,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/store",
+      "line": 2810,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/coupons/:code",
+      "line": 2815,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/coupons/:code",
+      "line": 2836,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/store/coupons/search",
+      "line": 2967,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/api/coupons/:code/redeem",
+      "line": 3027,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/t/:tenantSlug/api/coupons/:code/redeem",
+      "line": 3053,
+      "type": "endpoint"
+    },
+    {
+      "method": "PUT",
+      "path": "/t/:tenantSlug/api/admin/email-from-name",
+      "line": 3393,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/admin/email-from-name",
+      "line": 3415,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/campaigns/:code",
+      "line": 3511,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/:code",
+      "line": 3543,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/products",
+      "line": 4227,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/products",
+      "line": 4240,
+      "type": "endpoint"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/products/:id",
+      "line": 4273,
+      "type": "endpoint"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/products/:id",
+      "line": 4301,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/admin/products",
+      "line": 4316,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/t/:tenantSlug/api/admin/products",
+      "line": 4327,
+      "type": "endpoint"
+    },
+    {
+      "method": "PUT",
+      "path": "/t/:tenantSlug/api/admin/products/:id",
+      "line": 4358,
+      "type": "endpoint"
+    },
+    {
+      "method": "DELETE",
+      "path": "/t/:tenantSlug/api/admin/products/:id",
+      "line": 4384,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/admin",
+      "line": 4455,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/formsetup",
+      "line": 4459,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/formsetup",
+      "line": 4462,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/custom-fields",
+      "line": 4466,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/custom-fields",
+      "line": 4469,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/form-design",
+      "line": 4474,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/form-design",
+      "line": 4477,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/form-setup",
+      "line": 4483,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/form-setup",
+      "line": 4484,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/views/form-setup.html",
+      "line": 4485,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/admin/email-template",
+      "line": 4552,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/db-utenti",
+      "line": 4558,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/db-utenti",
+      "line": 4561,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/utenti",
+      "line": 4566,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/utenti",
+      "line": 4569,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/prodotti",
+      "line": 4573,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/prodotti",
+      "line": 4576,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/analytics",
+      "line": 4584,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/analytics/export",
+      "line": 4767,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/account",
+      "line": 5041,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/account",
+      "line": 5045,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/api/account/profile",
+      "line": 5050,
+      "type": "endpoint"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/account/profile",
+      "line": 5083,
+      "type": "endpoint"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/account/password",
+      "line": 5105,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/redeem/:code",
+      "line": 5167,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/redeem/:code",
+      "line": 5174,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/t/:tenantSlug/api/brand-settings",
+      "line": 5443,
+      "type": "endpoint"
+    },
+    {
+      "method": "POST",
+      "path": "/api/superadmin/login",
+      "line": 5596,
+      "type": "endpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/superadmin/tenants/:id/brand",
+      "line": 5820,
+      "type": "endpoint"
+    }
+  ],
+  "uncoveredFunctions": [
+    {
+      "name": "generateId",
+      "line": 20,
+      "type": "function"
+    },
+    {
+      "name": "csrfIfProtectedRoute",
+      "line": 47,
+      "type": "function"
+    },
+    {
+      "name": "checkLoginRateLimit",
+      "line": 170,
+      "type": "function"
+    },
+    {
+      "name": "recordLoginFailure",
+      "line": 185,
+      "type": "function"
+    },
+    {
+      "name": "recordLoginSuccess",
+      "line": 194,
+      "type": "function"
+    },
+    {
+      "name": "normalizeEmailForKey",
+      "line": 210,
+      "type": "function"
+    },
+    {
+      "name": "getEmailKey",
+      "line": 214,
+      "type": "function"
+    },
+    {
+      "name": "checkIpSubmitLimit",
+      "line": 219,
+      "type": "function"
+    },
+    {
+      "name": "recordIpSubmit",
+      "line": 235,
+      "type": "function"
+    },
+    {
+      "name": "checkEmailDailyLimit",
+      "line": 245,
+      "type": "function"
+    },
+    {
+      "name": "recordEmailSubmit",
+      "line": 264,
+      "type": "function"
+    },
+    {
+      "name": "cleanupRateLimiters",
+      "line": 275,
+      "type": "function"
+    },
+    {
+      "name": "checkSubmitRateLimit",
+      "line": 325,
+      "type": "function"
+    },
+    {
+      "name": "requireSameTenantAsSession",
+      "line": 430,
+      "type": "function"
+    },
+    {
+      "name": "requireRole",
+      "line": 459,
+      "type": "function"
+    },
+    {
+      "name": "parseMailFrom",
+      "line": 1244,
+      "type": "function"
+    },
+    {
+      "name": "buildTransport",
+      "line": 1404,
+      "type": "function"
+    },
+    {
+      "name": "toSlug",
+      "line": 1529,
+      "type": "function"
+    },
+    {
+      "name": "requireAuth",
+      "line": 1594,
+      "type": "function"
+    },
+    {
+      "name": "requireAdmin",
+      "line": 1602,
+      "type": "function"
+    },
+    {
+      "name": "requireSuperAdmin",
+      "line": 1657,
+      "type": "function"
+    },
+    {
+      "name": "requireStore",
+      "line": 1666,
+      "type": "function"
+    },
+    {
+      "name": "verifyRecaptchaToken",
+      "line": 354,
+      "type": "function"
+    },
+    {
+      "name": "verifyRecaptchaIfEnabled",
+      "line": 377,
+      "type": "function"
+    },
+    {
+      "name": "tenantLoader",
+      "line": 401,
+      "type": "function"
+    },
+    {
+      "name": "getDb",
+      "line": 540,
+      "type": "function"
+    },
+    {
+      "name": "ensureTenantEmailColumns",
+      "line": 1259,
+      "type": "function"
+    },
+    {
+      "name": "ensureFormCustomizationTenantId",
+      "line": 1295,
+      "type": "function"
+    },
+    {
+      "name": "ensureTenantScopedUniqueConstraints",
+      "line": 1320,
+      "type": "function"
+    },
+    {
+      "name": "getTenantIdForApi",
+      "line": 1385,
+      "type": "function"
+    },
+    {
+      "name": "logAction",
+      "line": 1562,
+      "type": "function"
+    },
+    {
+      "name": "redirectToTenantAwareRoute",
+      "line": 1615,
+      "type": "function"
+    },
+    {
+      "name": "verifyPassword",
+      "line": 1675,
+      "type": "function"
+    },
+    {
+      "name": "hashPassword",
+      "line": 1684,
+      "type": "function"
+    },
+    {
+      "name": "isFirstAdmin",
+      "line": 1691,
+      "type": "function"
+    },
+    {
+      "name": "gracefulShutdown",
+      "line": 6280,
+      "type": "function"
+    },
+    {
+      "name": "generateSecureSecret",
+      "line": 477,
+      "type": "function"
+    },
+    {
+      "name": "generateSecurePassword",
+      "line": 1096,
+      "type": "function"
+    },
+    {
+      "name": "sql",
+      "line": 1332,
+      "type": "function"
+    },
+    {
+      "name": "transportLabel",
+      "line": 1521,
+      "type": "function"
+    },
+    {
+      "name": "displayName",
+      "line": 1540,
+      "type": "function"
+    },
+    {
+      "name": "senderName",
+      "line": 2039,
+      "type": "function"
+    },
+    {
+      "name": "tenantSlug",
+      "line": 2309,
+      "type": "function"
+    },
+    {
+      "name": "escapeCsv",
+      "line": 3924,
+      "type": "function"
+    },
+    {
+      "name": "to",
+      "line": 5264,
+      "type": "function"
+    },
+    {
+      "name": "addr",
+      "line": 5314,
+      "type": "function"
+    },
+    {
+      "name": "mgDomain",
+      "line": 5315,
+      "type": "function"
+    },
+    {
+      "name": "mgRegion",
+      "line": 5316,
+      "type": "function"
+    },
+    {
+      "name": "hostDomain",
+      "line": 5317,
+      "type": "function"
+    },
+    {
+      "name": "defaultFromEnv",
+      "line": 5492,
+      "type": "function"
+    },
+    {
+      "name": "offset",
+      "line": 5843,
+      "type": "function"
+    },
+    {
+      "name": "ensureColumn",
+      "line": 1263,
+      "type": "function"
+    },
+    {
+      "name": "tableHasColumn",
+      "line": 6044,
+      "type": "function"
+    },
+    {
+      "name": "safeDelete",
+      "line": 6055,
+      "type": "function"
+    }
+  ],
+  "endpointCategories": {
+    "SuperAdmin": [
+      {
+        "method": "GET",
+        "path": "/superadmin-login",
+        "line": 2772,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/api/superadmin/login",
+        "line": 5596,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/superadmin/tenants/:id/brand",
+        "line": 5820,
+        "type": "endpoint"
+      }
+    ],
+    "Admin": [
+      {
+        "method": "GET",
+        "path": "/api/admin/test-email",
+        "line": 2024,
+        "type": "endpoint"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/admin/email-from-name",
+        "line": 2111,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/admin/email-from-name",
+        "line": 2136,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/admin/test-email",
+        "line": 2155,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/api/admin/upload-image",
+        "line": 2288,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/t/:tenantSlug/api/admin/upload-image",
+        "line": 2325,
+        "type": "endpoint"
+      },
+      {
+        "method": "PUT",
+        "path": "/t/:tenantSlug/api/admin/email-from-name",
+        "line": 3393,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/admin/email-from-name",
+        "line": 3415,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/admin/products",
+        "line": 4227,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/api/admin/products",
+        "line": 4240,
+        "type": "endpoint"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/admin/products/:id",
+        "line": 4273,
+        "type": "endpoint"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/admin/products/:id",
+        "line": 4301,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/admin/products",
+        "line": 4316,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/t/:tenantSlug/api/admin/products",
+        "line": 4327,
+        "type": "endpoint"
+      },
+      {
+        "method": "PUT",
+        "path": "/t/:tenantSlug/api/admin/products/:id",
+        "line": 4358,
+        "type": "endpoint"
+      },
+      {
+        "method": "DELETE",
+        "path": "/t/:tenantSlug/api/admin/products/:id",
+        "line": 4384,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/admin",
+        "line": 4455,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/admin/form-setup",
+        "line": 4483,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/admin/email-template",
+        "line": 4552,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/admin/analytics/export",
+        "line": 4767,
+        "type": "endpoint"
+      }
+    ],
+    "Store": [
+      {
+        "method": "GET",
+        "path": "/store-login",
+        "line": 2014,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/store",
+        "line": 2810,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/store/coupons/search",
+        "line": 2967,
+        "type": "endpoint"
+      }
+    ],
+    "Public": [
+      {
+        "method": "GET",
+        "path": "/api/public-config",
+        "line": 393,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/api/signup",
+        "line": 1818,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/tenant-info",
+        "line": 1967,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/logout",
+        "line": 1991,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/test-coupon-email",
+        "line": 2058,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/uploads/:tenantSlug/:filename",
+        "line": 2367,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/uploads/:filename",
+        "line": 2427,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/form-customization",
+        "line": 2476,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug",
+        "line": 2568,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/thanks",
+        "line": 2575,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/coupons/:code",
+        "line": 2815,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/coupons/:code",
+        "line": 2836,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/api/coupons/:code/redeem",
+        "line": 3027,
+        "type": "endpoint"
+      },
+      {
+        "method": "POST",
+        "path": "/t/:tenantSlug/api/coupons/:code/redeem",
+        "line": 3053,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/campaigns/:code",
+        "line": 3511,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/campaigns/:code",
+        "line": 3543,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/formsetup",
+        "line": 4462,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/custom-fields",
+        "line": 4469,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/form-design",
+        "line": 4477,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/db-utenti",
+        "line": 4561,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/utenti",
+        "line": 4569,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/prodotti",
+        "line": 4576,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/analytics",
+        "line": 4584,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/account",
+        "line": 5045,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/api/account/profile",
+        "line": 5050,
+        "type": "endpoint"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/account/profile",
+        "line": 5083,
+        "type": "endpoint"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/account/password",
+        "line": 5105,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/redeem/:code",
+        "line": 5174,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/t/:tenantSlug/api/brand-settings",
+        "line": 5443,
+        "type": "endpoint"
+      }
+    ],
+    "Other": [
+      {
+        "method": "GET",
+        "path": "/access",
+        "line": 134,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/signup",
+        "line": 138,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/static/uploads/:tenantSlug/:filename",
+        "line": 2359,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/thanks",
+        "line": 2572,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/formsetup",
+        "line": 4459,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/custom-fields",
+        "line": 4466,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/form-design",
+        "line": 4474,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/form-setup",
+        "line": 4484,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/views/form-setup.html",
+        "line": 4485,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/db-utenti",
+        "line": 4558,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/utenti",
+        "line": 4566,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/prodotti",
+        "line": 4573,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/account",
+        "line": 5041,
+        "type": "endpoint"
+      },
+      {
+        "method": "GET",
+        "path": "/redeem/:code",
+        "line": 5167,
+        "type": "endpoint"
+      }
+    ]
+  }
+}

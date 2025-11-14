@@ -339,9 +339,10 @@
     </style>
     
     <script>
-        // Get campaign parameter from URL
+        // Get campaign parameter from URL (support both campaign and form)
         const urlParams = new URLSearchParams(window.location.search);
         const campaignId = urlParams.get('campaign');
+        const formToken = urlParams.get('form');
         
         // Set form action based on tenant mode
         const form = document.getElementById('couponForm');
@@ -357,9 +358,13 @@
             form.action = '/submit';
         }
         
-        // Load campaign info if campaign parameter is present
-        if (campaignId) {
-            // Add data-campaign attribute to body to show header
+        // Load campaign info if campaign or form parameter is present
+        if (formToken) {
+            // New parametric form link
+            document.body.setAttribute('data-campaign', 'true');
+            loadCampaignInfo(null, formToken);
+        } else if (campaignId) {
+            // Legacy campaign link
             document.body.setAttribute('data-campaign', 'true');
             loadCampaignInfo(campaignId);
         } else {
@@ -401,7 +406,7 @@
             });
         }
         
-        async function loadCampaignInfo(campaignId) {
+        async function loadCampaignInfo(campaignId, formToken) {
             try {
                 // Determine if we're in tenant mode by checking the URL path
                 const isTenantMode = window.location.pathname.startsWith('/t/');
@@ -411,16 +416,47 @@
                     // Extract tenant slug from URL path
                     const pathParts = window.location.pathname.split('/');
                     const tenantSlug = pathParts[2]; // /t/{tenantSlug}/...
-                    apiUrl = `/t/${tenantSlug}/api/campaigns/${campaignId}`;
+                    
+                    if (formToken) {
+                        // Use form token parameter
+                        apiUrl = `/t/${tenantSlug}/api/campaigns/DUMMY?form=${encodeURIComponent(formToken)}`;
+                    } else {
+                        // Legacy: use campaign code
+                        apiUrl = `/t/${tenantSlug}/api/campaigns/${campaignId}`;
+                    }
                 } else {
                     // Legacy mode - use global endpoint
-                    apiUrl = `/api/campaigns/${campaignId}`;
+                    if (formToken) {
+                        apiUrl = `/api/campaigns/DUMMY?form=${encodeURIComponent(formToken)}`;
+                    } else {
+                        apiUrl = `/api/campaigns/${campaignId}`;
+                    }
                 }
                 
                 const response = await fetch(apiUrl);
                 
                 if (!response.ok) {
-                    showError('Questo coupon non esiste o è scaduto');
+                    // Check if response is JSON
+                    const contentType = response.headers.get('content-type');
+                    let errorMessage = 'Questo coupon non esiste o è scaduto';
+                    
+                    if (contentType && contentType.includes('application/json')) {
+                        try {
+                            const error = await response.json();
+                            errorMessage = error.error || errorMessage;
+                        } catch (e) {
+                            // Ignore JSON parse errors
+                        }
+                    }
+                    
+                    // Handle specific status codes
+                    if (response.status === 410) {
+                        errorMessage = 'Endpoint non più disponibile. Contatta l\'amministratore.';
+                    } else if (response.status === 404) {
+                        errorMessage = 'Campagna non trovata o scaduta';
+                    }
+                    
+                    showError(errorMessage);
                     return;
                 }
                 
@@ -468,8 +504,29 @@
             
             form.insertBefore(campaignInfo, form.firstChild);
             
-            // Set the campaign_id in the hidden field (using campaign_code)
-            document.getElementById('campaign_id').value = campaign.campaign_code;
+            // Set the campaign_id or form_token in the hidden field
+            if (campaign._form_token) {
+                // New parametric form link
+                document.getElementById('campaign_id').value = '';
+                // Add form_token hidden field if it doesn't exist
+                let formTokenField = document.getElementById('form_token');
+                if (!formTokenField) {
+                    formTokenField = document.createElement('input');
+                    formTokenField.type = 'hidden';
+                    formTokenField.id = 'form_token';
+                    formTokenField.name = 'form_token';
+                    form.appendChild(formTokenField);
+                }
+                formTokenField.value = campaign._form_token;
+            } else {
+                // Legacy campaign link
+                document.getElementById('campaign_id').value = campaign.campaign_code;
+                // Remove form_token field if it exists
+                const formTokenField = document.getElementById('form_token');
+                if (formTokenField) {
+                    formTokenField.remove();
+                }
+            }
             
             // Configure form fields based on campaign configuration
             configureFormFields(campaign.form_config);

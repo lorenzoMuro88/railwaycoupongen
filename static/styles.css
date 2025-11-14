@@ -372,6 +372,22 @@ code {
   transform: scale(0.92) translateY(24px);
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Larger modal for desktop - especially for form links */
+@media (min-width: 768px) {
+  .modal {
+    max-width: 90vw;
+    width: 90%;
+    max-height: 90vh;
+  }
+  
+  .modal.large-modal {
+    max-width: 1200px;
+    width: 95%;
+  }
 }
 
 .modal-overlay.show .modal {
@@ -424,6 +440,10 @@ code {
   line-height: 1.7;
   padding: 2.5rem;
   font-weight: 400;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .modal-footer {

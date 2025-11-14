@@ -323,6 +323,11 @@ process.on('SIGTERM', () => clearInterval(cleanupInterval));
 process.on('SIGINT', () => clearInterval(cleanupInterval));
 
 function checkSubmitRateLimit(req, res, next) {
+    // Skip rate limiting in test environment
+    if (process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === 'true') {
+        return next();
+    }
+    
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const email = req.body?.email;
     const tenantId = req.tenant?.id ?? req.session?.user?.tenantId;
@@ -596,6 +601,19 @@ async function getDb() {
             tenant_id INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code);
+        CREATE TABLE IF NOT EXISTS form_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            used_at DATETIME,
+            coupon_id INTEGER,
+            tenant_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_form_links_token ON form_links(token);
+        CREATE INDEX IF NOT EXISTS idx_form_links_campaign_id ON form_links(campaign_id);
+        CREATE INDEX IF NOT EXISTS idx_form_links_tenant_id ON form_links(tenant_id);
+
         CREATE TABLE IF NOT EXISTS user_custom_data (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -2592,7 +2610,7 @@ app.post('/submit', (req, res) => {
 // Tenant-scoped form submission (RECOMMENDED)
 app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
     try {
-        const { email, firstName, lastName, campaign_id, ...customFields } = req.body;
+        const { email, firstName, lastName, campaign_id, form_token, ...customFields } = req.body;
         if (!email) {
             return res.status(400).send('Email richiesta');
         }
@@ -2604,10 +2622,125 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
         let discountValue = process.env.DEFAULT_DISCOUNT_PERCENT || '10';
         let campaignId = null;
         let specificCampaign = null;
+        let formLinkId = null;
         
-        // Check if specific campaign is requested
-        if (campaign_id) {
-            // Resolve campaign by code (use tenant from campaign to scope user/coupon)
+        // Check if form token is provided (new parametric form link)
+        if (form_token) {
+            const logContext = logger.withRequest(req);
+            const tokenShort = form_token.substring(0, 10) + '...';
+            console.log(`[FORM_LINK] Starting form link submission for token: ${tokenShort}`);
+            
+            // SIMPLIFIED APPROACH: Atomic UPDATE first, then validate
+            // This ensures the link is marked as used atomically before any other checks
+            const usedAtTimestamp = new Date().toISOString();
+            
+            // Step 1: Try to mark link as used atomically (this is the critical operation)
+            // This UPDATE will only succeed if the link exists, belongs to this tenant, and is not already used
+            const markUsedResult = await dbConn.run(
+                `UPDATE form_links 
+                 SET used_at = ? 
+                 WHERE token = ? 
+                   AND tenant_id = ? 
+                   AND used_at IS NULL`,
+                usedAtTimestamp, form_token, req.tenant.id
+            );
+            
+            console.log(`[FORM_LINK] Atomic UPDATE result: changes=${markUsedResult.changes}, lastID=${markUsedResult.lastID}`);
+            
+            // Step 2: If UPDATE failed (0 changes), determine why
+            if (markUsedResult.changes === 0) {
+                // Check if link exists at all
+                const linkCheck = await dbConn.get(
+                    'SELECT id, used_at, tenant_id, campaign_id FROM form_links WHERE token = ?',
+                    form_token
+                );
+                
+                if (!linkCheck) {
+                    console.log(`[FORM_LINK] Link not found: ${tokenShort}`);
+                    return res.status(400).send('Link non valido');
+                }
+                
+                if (linkCheck.tenant_id !== req.tenant.id) {
+                    console.log(`[FORM_LINK] Link belongs to different tenant: ${tokenShort}`);
+                    return res.status(400).send('Link non valido per questo tenant');
+                }
+                
+                if (linkCheck.used_at) {
+                    console.log(`[FORM_LINK] Link already used: ${tokenShort}, used_at=${linkCheck.used_at}`);
+                    logContext.warn({ form_token: tokenShort, linkId: linkCheck.id, used_at: linkCheck.used_at }, 'Form link already used');
+                    return res.status(400).send('Link già utilizzato');
+                }
+                
+                // Should not reach here, but handle it
+                console.log(`[FORM_LINK] UPDATE failed for unknown reason: ${tokenShort}`);
+                return res.status(400).send('Link non valido');
+            }
+            
+            console.log(`[FORM_LINK] Link marked as used successfully: ${tokenShort}, changes=${markUsedResult.changes}`);
+            
+            // Step 3: Get form link and campaign info (link is now marked as used)
+            const formLink = await dbConn.get(
+                `SELECT fl.id, fl.token, fl.used_at, fl.campaign_id, fl.tenant_id, 
+                 c.campaign_code, c.name, c.description, c.is_active, c.discount_type, 
+                 c.discount_value, c.form_config, c.expiry_date, c.tenant_id as campaign_tenant_id
+                 FROM form_links fl 
+                 JOIN campaigns c ON c.id = fl.campaign_id 
+                 WHERE fl.token = ? AND fl.tenant_id = ?`,
+                form_token, req.tenant.id
+            );
+            
+            if (!formLink) {
+                console.error(`[FORM_LINK] CRITICAL: Link not found after UPDATE! ${tokenShort}`);
+                logContext.error({ form_token: tokenShort, markUsedResult }, 'Form link not found after marking as used');
+                return res.status(500).send('Errore nel recupero del link');
+            }
+            
+            console.log(`[FORM_LINK] Form link retrieved: id=${formLink.id}, used_at=${formLink.used_at}, campaign_id=${formLink.campaign_id}`);
+            
+            // Step 4: Verify the link is actually marked as used
+            if (!formLink.used_at) {
+                console.error(`[FORM_LINK] CRITICAL: Link not marked as used after UPDATE! id=${formLink.id}`);
+                logContext.error({ formLinkId: formLink.id, form_token: tokenShort }, 'Form link not marked as used after UPDATE');
+                // Try to mark it again (without the IS NULL check since we know it should be null)
+                await dbConn.run(
+                    'UPDATE form_links SET used_at = ? WHERE id = ?',
+                    usedAtTimestamp, formLink.id
+                );
+            }
+            
+            // Step 5: Check if campaign is active and not expired
+            if (!formLink.is_active) {
+                console.log(`[FORM_LINK] Campaign not active: campaign_id=${formLink.campaign_id}`);
+                return res.status(400).send('Questo coupon non esiste o è scaduto');
+            }
+            
+            if (formLink.expiry_date && new Date(formLink.expiry_date) < new Date()) {
+                console.log(`[FORM_LINK] Campaign expired: campaign_id=${formLink.campaign_id}`);
+                // Auto-deactivate expired campaign
+                await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', formLink.campaign_id);
+                return res.status(400).send('Questo coupon non esiste o è scaduto');
+            }
+            
+            // Step 6: Set campaign data for coupon creation
+            specificCampaign = {
+                id: formLink.campaign_id,
+                campaign_code: formLink.campaign_code,
+                tenant_id: formLink.campaign_tenant_id || formLink.tenant_id,
+                form_config: formLink.form_config
+            };
+            discountType = formLink.discount_type;
+            discountValue = formLink.discount_value;
+            campaignId = formLink.campaign_id;
+            formLinkId = formLink.id;
+            
+            console.log(`[FORM_LINK] Form link processing completed: id=${formLink.id}, used_at=${formLink.used_at}`);
+            logContext.info({ 
+                formLinkId: formLink.id,
+                campaignId: formLink.campaign_id,
+                used_at: formLink.used_at
+            }, '[FORM_LINK] Form link processing completed successfully');
+        } else if (campaign_id) {
+            // Legacy: Resolve campaign by code (use tenant from campaign to scope user/coupon)
             specificCampaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ?', campaign_id);
             if (specificCampaign) {
                 // Check if campaign is active and not expired
@@ -2630,6 +2763,11 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             }
         } else {
             return res.status(400).send('Questo coupon non esiste o è scaduto');
+        }
+
+        // Verify specificCampaign is set
+        if (!specificCampaign || !specificCampaign.tenant_id) {
+            return res.status(400).send('Campagna non valida');
         }
 
         // Users MUST be tenant-scoped by campaign tenant
@@ -2659,10 +2797,18 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             }
         }
 
-        await dbConn.run(
+        const couponResult = await dbConn.run(
             'INSERT INTO coupons (code, user_id, campaign_id, discount_type, discount_value, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
             couponCode, userId, campaignId, discountType, discountValue, 'active', specificCampaign.tenant_id
         );
+        
+        // Update form_link with coupon_id if form_token was used
+        if (formLinkId) {
+            await dbConn.run(
+                'UPDATE form_links SET coupon_id = ? WHERE id = ?',
+                couponResult.lastID, formLinkId
+            );
+        }
 
         // Redemption URL per staff cassa; il QR deve puntare a questa pagina
         const redemptionUrl = `${req.protocol}://${req.get('host')}/redeem/${couponCode}`;
@@ -3439,6 +3585,104 @@ app.get('/t/:tenantSlug/api/admin/campaigns/:id/form-config', tenantLoader, requ
     }
 });
 
+// Tenant-scoped: generate form links for campaign
+app.post('/t/:tenantSlug/api/admin/campaigns/:id/form-links', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const { count } = req.body || {};
+        const campaignId = parseInt(req.params.id);
+        
+        if (!count || !Number.isInteger(count) || count < 1 || count > 1000) {
+            return res.status(400).json({ error: 'Count deve essere un numero tra 1 e 1000' });
+        }
+        
+        const dbConn = await getDb();
+        
+        // Verify campaign exists and belongs to tenant
+        const campaign = await dbConn.get('SELECT id, tenant_id FROM campaigns WHERE id = ? AND tenant_id = ?', campaignId, req.tenant.id);
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Generate N unique tokens
+        const tokens = [];
+        const links = [];
+        
+        for (let i = 0; i < count; i++) {
+            let token;
+            let attempts = 0;
+            // Ensure token uniqueness
+            do {
+                token = generateId(16);
+                const existing = await dbConn.get('SELECT id FROM form_links WHERE token = ?', token);
+                if (!existing) break;
+                attempts++;
+                if (attempts > 10) {
+                    throw new Error('Impossibile generare token univoco dopo 10 tentativi');
+                }
+            } while (true);
+            
+            tokens.push(token);
+            
+            const result = await dbConn.run(
+                'INSERT INTO form_links (campaign_id, token, tenant_id) VALUES (?, ?, ?)',
+                campaignId, token, req.tenant.id
+            );
+            
+            links.push({
+                id: result.lastID,
+                token: token,
+                used_at: null,
+                coupon_id: null,
+                created_at: new Date().toISOString()
+            });
+        }
+        
+        res.json({ links, count: links.length });
+    } catch (e) {
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, campaignId: req.params.id }, 'Error generating form links');
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: list form links for campaign
+app.get('/t/:tenantSlug/api/admin/campaigns/:id/form-links', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const campaignId = parseInt(req.params.id);
+        const dbConn = await getDb();
+        
+        // Verify campaign exists and belongs to tenant
+        const campaign = await dbConn.get('SELECT id, tenant_id FROM campaigns WHERE id = ? AND tenant_id = ?', campaignId, req.tenant.id);
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Get all form links for this campaign
+        const formLinks = await dbConn.all(
+            'SELECT id, token, used_at, coupon_id, created_at FROM form_links WHERE campaign_id = ? AND tenant_id = ? ORDER BY created_at DESC',
+            campaignId, req.tenant.id
+        );
+        
+        // Count statistics
+        const total = formLinks.length;
+        const used = formLinks.filter(link => link.used_at !== null).length;
+        const available = total - used;
+        
+        res.json({
+            links: formLinks,
+            statistics: {
+                total,
+                used,
+                available
+            }
+        });
+    } catch (e) {
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, campaignId: req.params.id }, 'Error listing form links');
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
 // Tenant-scoped: update campaign form config
 app.put('/t/:tenantSlug/api/admin/campaigns/:id/form-config', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
     try {
@@ -3511,10 +3755,63 @@ app.put('/t/:tenantSlug/api/admin/campaigns/:id/custom-fields', tenantLoader, re
 app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => {
     try {
         const dbConn = await getDb();
-        const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, req.tenant.id);
+        const formToken = req.query.form;
+        
+        let campaign;
+        
+        // If form token is provided, resolve campaign via form_links
+        if (formToken) {
+            // First check if link exists at all
+            const linkCheck = await dbConn.get('SELECT id, used_at, tenant_id, campaign_id FROM form_links WHERE token = ?', formToken);
+            
+            if (!linkCheck) {
+                return res.status(404).json({ error: 'Link non trovato' });
+            }
+            
+            // Check if link belongs to this tenant
+            if (linkCheck.tenant_id !== req.tenant.id) {
+                return res.status(404).json({ error: 'Link non trovato' });
+            }
+            
+            // Check if link is already used
+            if (linkCheck.used_at) {
+                return res.status(400).json({ error: 'Link già utilizzato' });
+            }
+            
+            // Now get the campaign via form_links join
+            const formLink = await dbConn.get(
+                'SELECT fl.*, c.* FROM form_links fl JOIN campaigns c ON c.id = fl.campaign_id WHERE fl.token = ? AND fl.tenant_id = ? AND fl.used_at IS NULL',
+                formToken, req.tenant.id
+            );
+            
+            if (!formLink) {
+                return res.status(404).json({ error: 'Campagna associata al link non trovata' });
+            }
+            
+            // Build campaign object from joined result
+            campaign = {
+                id: formLink.campaign_id,
+                campaign_code: formLink.campaign_code,
+                name: formLink.name,
+                description: formLink.description,
+                is_active: formLink.is_active,
+                discount_type: formLink.discount_type,
+                discount_value: formLink.discount_value,
+                form_config: formLink.form_config,
+                expiry_date: formLink.expiry_date,
+                created_at: formLink.created_at,
+                tenant_id: formLink.tenant_id,
+                _form_token: formToken // Include token for form submission
+            };
+        } else {
+            // Legacy: resolve by campaign_code
+            campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, req.tenant.id);
+        }
+        
         if (!campaign) {
             return res.status(404).json({ error: 'Campagna non trovata' });
         }
+        
         // Check if campaign is active and not expired
         if (!campaign.is_active) {
             return res.status(404).json({ error: 'Campagna non trovata' });
@@ -3528,83 +3825,35 @@ app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => 
         }
         
         // Parse form config
-        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
-        campaign.form_config = formConfig;
+        try {
+            const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
+            campaign.form_config = formConfig;
+        } catch (parseError) {
+            console.error('Error parsing form_config:', parseError, 'form_config:', campaign.form_config);
+            // Use default form config if parsing fails
+            campaign.form_config = {
+                email: { visible: true, required: true },
+                firstName: { visible: true, required: true },
+                lastName: { visible: true, required: true }
+            };
+        }
         
         res.json(campaign);
     } catch (e) {
-        console.error(e);
+        console.error('Error in GET /t/:tenantSlug/api/campaigns/:code:', e);
+        const logContext = logger.withRequest(req);
+        logContext.error({ err: e, formToken: req.query.form, code: req.params.code }, 'Error fetching campaign');
         res.status(500).json({ error: 'Errore server' });
     }
 });
 
-// Legacy endpoint /api/campaigns/:code - Still supported for backward compatibility
-// Automatically determines tenant from session or referer
+// Legacy endpoint /api/campaigns/:code - Deprecated
+// Returns 410 Gone to indicate the endpoint is deprecated
 app.get('/api/campaigns/:code', async (req, res) => {
-    try {
-        const dbConn = await getDb();
-        const tenantId = await getTenantIdForApi(req);
-        
-        if (!tenantId) {
-            // Try to get default tenant or first tenant
-            const defaultTenant = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
-            const tenant = defaultTenant || await dbConn.get('SELECT id FROM tenants ORDER BY id ASC LIMIT 1');
-            
-            if (!tenant) {
-                return res.status(404).json({ error: 'Tenant non trovato' });
-            }
-            
-            const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, tenant.id);
-            if (!campaign) {
-                return res.status(404).json({ error: 'Campagna non trovata' });
-            }
-            
-            // Check if campaign is active and not expired
-            if (!campaign.is_active) {
-                return res.status(404).json({ error: 'Campagna non trovata' });
-            }
-            
-            // Check if campaign has expired
-            if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
-                // Auto-deactivate expired campaign
-                await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
-                return res.status(404).json({ error: 'Campagna scaduta' });
-            }
-            
-            // Parse form config
-            const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
-            campaign.form_config = formConfig;
-            
-            return res.json(campaign);
-        }
-        
-        // Use tenantId from session/referer
-        const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, tenantId);
-        if (!campaign) {
-            return res.status(404).json({ error: 'Campagna non trovata' });
-        }
-        
-        // Check if campaign is active and not expired
-        if (!campaign.is_active) {
-            return res.status(404).json({ error: 'Campagna non trovata' });
-        }
-        
-        // Check if campaign has expired
-        if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
-            // Auto-deactivate expired campaign
-            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
-            return res.status(404).json({ error: 'Campagna scaduta' });
-        }
-        
-        // Parse form config
-        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
-        campaign.form_config = formConfig;
-        
-        res.json(campaign);
-    } catch (e) {
-        console.error('Error fetching campaign (legacy endpoint):', e);
-        res.status(500).json({ error: 'Errore server' });
-    }
+    return res.status(410).json({
+        error: 'Endpoint deprecato. Usa /t/:tenantSlug/api/campaigns/:code',
+        deprecated: true
+    });
 });
 
 app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
@@ -4614,9 +4863,28 @@ app.get('/api/admin/analytics/summary', requireAdmin, async (req, res) => {
         
         const { start, end, campaignId, status } = req.query;
 
+        // Validate status
+        if (status && status !== 'active' && status !== 'redeemed') {
+            return res.status(400).json({ error: 'status deve essere "active" o "redeemed"' });
+        }
+
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (start && !dateRegex.test(start)) {
+            return res.status(400).json({ error: 'Formato data non valido per start (atteso: YYYY-MM-DD)' });
+        }
+        if (end && !dateRegex.test(end)) {
+            return res.status(400).json({ error: 'Formato data non valido per end (atteso: YYYY-MM-DD)' });
+        }
+
+        // Validate campaignId is numeric if provided
+        if (campaignId && isNaN(parseInt(campaignId))) {
+            return res.status(400).json({ error: 'campaignId deve essere un numero' });
+        }
+
         const where = ['tenant_id = ?'];
         const params = [tenantId];
-        if (campaignId) { where.push('campaign_id = ?'); params.push(campaignId); }
+        if (campaignId) { where.push('campaign_id = ?'); params.push(parseInt(campaignId)); }
         if (start) { where.push('date(issued_at) >= date(?)'); params.push(start); }
         if (end) { where.push('date(issued_at) <= date(?)'); params.push(end); }
         if (status) { where.push('status = ?'); params.push(status); }
@@ -4627,6 +4895,90 @@ app.get('/api/admin/analytics/summary', requireAdmin, async (req, res) => {
             params
         );
         const campaigns = await dbConn.all('SELECT id FROM campaigns WHERE tenant_id = ?', tenantId);
+
+        // Build avg value/margin per campaign from associated products (tenant-scoped)
+        const rows = await dbConn.all(`
+            SELECT cp.campaign_id AS campaignId, AVG(p.value) AS avgValue, AVG(p.margin_price) AS avgMargin
+            FROM campaign_products cp
+            JOIN products p ON p.id = cp.product_id AND p.tenant_id = ?
+            JOIN campaigns c ON c.id = cp.campaign_id AND c.tenant_id = ?
+            WHERE c.tenant_id = ?
+            GROUP BY cp.campaign_id
+        `, tenantId, tenantId, tenantId);
+        const campaignAverages = new Map(rows.map(r => [r.campaignId, { avgValue: r.avgValue || 0, avgMargin: r.avgMargin || 0 }]));
+
+        let totalIssued = coupons.length;
+        let totalRedeemed = coupons.filter(c => c.status === 'redeemed').length;
+        let estDiscountIssued = 0;
+        let estDiscountRedeemed = 0;
+        let estMarginGross = 0; // sum of avg margins for redeemed
+
+        for (const c of coupons) {
+            const avg = campaignAverages.get(c.campaignId) || { avgValue: 0, avgMargin: 0 };
+            const base = Math.max(0, avg.avgValue || 0);
+            const disc = c.discountType === 'percent' ? (base * (Number(c.discountValue) || 0) / 100) :
+                         c.discountType === 'fixed' ? (Number(c.discountValue) || 0) : 0;
+            estDiscountIssued += disc;
+            if (c.status === 'redeemed') {
+                estDiscountRedeemed += disc;
+                estMarginGross += Math.max(0, avg.avgMargin || 0);
+            }
+        }
+
+        res.json({
+            totalCampaigns: campaigns.length,
+            totalCouponsIssued: totalIssued,
+            totalCouponsRedeemed: totalRedeemed,
+            redemptionRate: totalIssued ? (totalRedeemed / totalIssued) : 0,
+            estimatedDiscountIssued: estDiscountIssued,
+            estimatedDiscountRedeemed: estDiscountRedeemed,
+            estimatedGrossMarginOnRedeemed: estMarginGross,
+            estimatedNetMarginAfterDiscount: Math.max(0, estMarginGross - estDiscountRedeemed)
+        });
+    } catch (e) {
+        console.error('analytics/summary error', e);
+        res.status(500).json({ error: 'Errore analytics' });
+    }
+});
+
+// Tenant-aware version of analytics/summary endpoint
+app.get('/t/:tenantSlug/api/admin/analytics/summary', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const { start, end, campaignId, status } = req.query;
+
+        // Validate status
+        if (status && status !== 'active' && status !== 'redeemed') {
+            return res.status(400).json({ error: 'status deve essere "active" o "redeemed"' });
+        }
+
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (start && !dateRegex.test(start)) {
+            return res.status(400).json({ error: 'Formato data non valido per start (atteso: YYYY-MM-DD)' });
+        }
+        if (end && !dateRegex.test(end)) {
+            return res.status(400).json({ error: 'Formato data non valido per end (atteso: YYYY-MM-DD)' });
+        }
+
+        // Validate campaignId is numeric if provided
+        if (campaignId && isNaN(parseInt(campaignId))) {
+            return res.status(400).json({ error: 'campaignId deve essere un numero' });
+        }
+
+        const where = ['tenant_id = ?'];
+        const params = [req.tenant.id];
+        if (campaignId) { where.push('campaign_id = ?'); params.push(parseInt(campaignId)); }
+        if (start) { where.push('date(issued_at) >= date(?)'); params.push(start); }
+        if (end) { where.push('date(issued_at) <= date(?)'); params.push(end); }
+        if (status) { where.push('status = ?'); params.push(status); }
+        const whereSql = 'WHERE ' + where.join(' AND ');
+
+        const coupons = await dbConn.all(
+            `SELECT discount_type AS discountType, discount_value AS discountValue, status, campaign_id AS campaignId, issued_at AS issuedAt, redeemed_at AS redeemedAt FROM coupons ${whereSql}`,
+            params
+        );
+        const campaigns = await dbConn.all('SELECT id FROM campaigns WHERE tenant_id = ?', req.tenant.id);
 
         // Build avg value/margin per campaign from associated products
         const rows = await dbConn.all(`
@@ -4679,11 +5031,31 @@ app.get('/api/admin/analytics/campaigns', requireAdmin, async (req, res) => {
         if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
         
         const { start, end, campaignId, status } = req.query;
+
+        // Validate status
+        if (status && status !== 'active' && status !== 'redeemed') {
+            return res.status(400).json({ error: 'status deve essere "active" o "redeemed"' });
+        }
+
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (start && !dateRegex.test(start)) {
+            return res.status(400).json({ error: 'Formato data non valido per start (atteso: YYYY-MM-DD)' });
+        }
+        if (end && !dateRegex.test(end)) {
+            return res.status(400).json({ error: 'Formato data non valido per end (atteso: YYYY-MM-DD)' });
+        }
+
+        // Validate campaignId is numeric if provided
+        if (campaignId && isNaN(parseInt(campaignId))) {
+            return res.status(400).json({ error: 'campaignId deve essere un numero' });
+        }
+
         const campaigns = await dbConn.all('SELECT id, name FROM campaigns WHERE tenant_id = ? ORDER BY created_at DESC', tenantId);
 
         const where = ['c.tenant_id = ?'];
         const params = [tenantId];
-        if (campaignId) { where.push('c.campaign_id = ?'); params.push(campaignId); }
+        if (campaignId) { where.push('c.campaign_id = ?'); params.push(parseInt(campaignId)); }
         if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
         if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
         if (status) { where.push('c.status = ?'); params.push(status); }
@@ -4734,6 +5106,86 @@ app.get('/api/admin/analytics/campaigns', requireAdmin, async (req, res) => {
     }
 });
 
+// Tenant-aware version of analytics/campaigns endpoint
+app.get('/t/:tenantSlug/api/admin/analytics/campaigns', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const { start, end, campaignId, status } = req.query;
+
+        // Validate status
+        if (status && status !== 'active' && status !== 'redeemed') {
+            return res.status(400).json({ error: 'status deve essere "active" o "redeemed"' });
+        }
+
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (start && !dateRegex.test(start)) {
+            return res.status(400).json({ error: 'Formato data non valido per start (atteso: YYYY-MM-DD)' });
+        }
+        if (end && !dateRegex.test(end)) {
+            return res.status(400).json({ error: 'Formato data non valido per end (atteso: YYYY-MM-DD)' });
+        }
+
+        // Validate campaignId is numeric if provided
+        if (campaignId && isNaN(parseInt(campaignId))) {
+            return res.status(400).json({ error: 'campaignId deve essere un numero' });
+        }
+
+        const campaigns = await dbConn.all('SELECT id, name FROM campaigns WHERE tenant_id = ? ORDER BY created_at DESC', req.tenant.id);
+
+        const where = ['c.tenant_id = ?'];
+        const params = [req.tenant.id];
+        if (campaignId) { where.push('c.campaign_id = ?'); params.push(parseInt(campaignId)); }
+        if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
+        if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
+        if (status) { where.push('c.status = ?'); params.push(status); }
+        const whereSql = 'WHERE ' + where.join(' AND ');
+
+        const coupons = await dbConn.all(
+            `SELECT c.campaign_id AS campaignId, c.discount_type AS discountType, c.discount_value AS discountValue, c.status FROM coupons c ${whereSql}`,
+            params
+        );
+        const avgs = await dbConn.all(`
+            SELECT cp.campaign_id AS campaignId, AVG(p.value) AS avgValue, AVG(p.margin_price) AS avgMargin
+            FROM campaign_products cp
+            JOIN products p ON p.id = cp.product_id AND p.tenant_id = ?
+            JOIN campaigns c ON c.id = cp.campaign_id AND c.tenant_id = ?
+            WHERE c.tenant_id = ?
+            GROUP BY cp.campaign_id
+        `, req.tenant.id, req.tenant.id, req.tenant.id);
+        const avgMap = new Map(avgs.map(r => [r.campaignId, { avgValue: r.avgValue || 0, avgMargin: r.avgMargin || 0 }]));
+
+        const byCamp = new Map();
+        for (const camp of campaigns) {
+            byCamp.set(camp.id, { id: camp.id, name: camp.name, issued: 0, redeemed: 0, estDiscountIssued: 0, estDiscountRedeemed: 0, estGrossMarginRedeemed: 0 });
+        }
+        for (const c of coupons) {
+            const bucket = byCamp.get(c.campaignId);
+            if (!bucket) continue;
+            const avg = avgMap.get(c.campaignId) || { avgValue: 0, avgMargin: 0 };
+            const base = Math.max(0, avg.avgValue || 0);
+            const disc = c.discountType === 'percent' ? (base * (Number(c.discountValue) || 0) / 100) :
+                         c.discountType === 'fixed' ? (Number(c.discountValue) || 0) : 0;
+            bucket.issued += 1;
+            bucket.estDiscountIssued += disc;
+            if (c.status === 'redeemed') {
+                bucket.redeemed += 1;
+                bucket.estDiscountRedeemed += disc;
+                bucket.estGrossMarginRedeemed += Math.max(0, avg.avgMargin || 0);
+            }
+        }
+        const result = Array.from(byCamp.values()).map(b => ({
+            ...b,
+            redemptionRate: b.issued ? (b.redeemed / b.issued) : 0,
+            estNetMarginAfterDiscount: Math.max(0, b.estGrossMarginRedeemed - b.estDiscountRedeemed)
+        }));
+        res.json(result);
+    } catch (e) {
+        console.error('analytics/campaigns error', e);
+        res.status(500).json({ error: 'Errore analytics' });
+    }
+});
+
 // Admin analytics: temporal data for charts
 app.get('/api/admin/analytics/temporal', requireAdmin, async (req, res) => {
     try {
@@ -4743,9 +5195,33 @@ app.get('/api/admin/analytics/temporal', requireAdmin, async (req, res) => {
         
         const { start, end, campaignId, status, groupBy = 'day' } = req.query;
 
+        // Validate groupBy
+        if (groupBy && groupBy !== 'day' && groupBy !== 'week') {
+            return res.status(400).json({ error: 'groupBy deve essere "day" o "week"' });
+        }
+
+        // Validate status
+        if (status && status !== 'active' && status !== 'redeemed') {
+            return res.status(400).json({ error: 'status deve essere "active" o "redeemed"' });
+        }
+
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (start && !dateRegex.test(start)) {
+            return res.status(400).json({ error: 'Formato data non valido per start (atteso: YYYY-MM-DD)' });
+        }
+        if (end && !dateRegex.test(end)) {
+            return res.status(400).json({ error: 'Formato data non valido per end (atteso: YYYY-MM-DD)' });
+        }
+
+        // Validate campaignId is numeric if provided
+        if (campaignId && isNaN(parseInt(campaignId))) {
+            return res.status(400).json({ error: 'campaignId deve essere un numero' });
+        }
+
         const where = ['c.tenant_id = ?'];
         const params = [tenantId];
-        if (campaignId) { where.push('c.campaign_id = ?'); params.push(campaignId); }
+        if (campaignId) { where.push('c.campaign_id = ?'); params.push(parseInt(campaignId)); }
         if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
         if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
         if (status) { where.push('c.status = ?'); params.push(status); }
@@ -4773,6 +5249,74 @@ app.get('/api/admin/analytics/temporal', requireAdmin, async (req, res) => {
             GROUP BY ${dateFormat}
             ORDER BY ${groupBy === 'week' ? "strftime('%Y', c.issued_at), strftime('%W', c.issued_at)" : "date(c.issued_at)"}
         `, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, ...params);
+
+        res.json(temporalData);
+    } catch (e) {
+        console.error('analytics/temporal error', e);
+        res.status(500).json({ error: 'Errore analytics temporali' });
+    }
+});
+
+// Tenant-aware version of analytics/temporal endpoint
+app.get('/t/:tenantSlug/api/admin/analytics/temporal', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const { start, end, campaignId, status, groupBy = 'day' } = req.query;
+
+        // Validate groupBy
+        if (groupBy && groupBy !== 'day' && groupBy !== 'week') {
+            return res.status(400).json({ error: 'groupBy deve essere "day" o "week"' });
+        }
+
+        // Validate status
+        if (status && status !== 'active' && status !== 'redeemed') {
+            return res.status(400).json({ error: 'status deve essere "active" o "redeemed"' });
+        }
+
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (start && !dateRegex.test(start)) {
+            return res.status(400).json({ error: 'Formato data non valido per start (atteso: YYYY-MM-DD)' });
+        }
+        if (end && !dateRegex.test(end)) {
+            return res.status(400).json({ error: 'Formato data non valido per end (atteso: YYYY-MM-DD)' });
+        }
+
+        // Validate campaignId is numeric if provided
+        if (campaignId && isNaN(parseInt(campaignId))) {
+            return res.status(400).json({ error: 'campaignId deve essere un numero' });
+        }
+
+        const where = ['c.tenant_id = ?'];
+        const params = [req.tenant.id];
+        if (campaignId) { where.push('c.campaign_id = ?'); params.push(parseInt(campaignId)); }
+        if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
+        if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
+        if (status) { where.push('c.status = ?'); params.push(status); }
+        const whereSql = 'WHERE ' + where.join(' AND ');
+
+        // Get temporal aggregation
+        const dateFormat = groupBy === 'week' ? "strftime('%Y-W%W', c.issued_at)" : "date(c.issued_at)";
+        const temporalData = await dbConn.all(`
+            SELECT 
+                ${dateFormat} as period,
+                COUNT(*) as issued,
+                SUM(CASE WHEN c.status = 'redeemed' THEN 1 ELSE 0 END) as redeemed,
+                SUM(CASE WHEN c.status = 'redeemed' THEN 
+                    CASE 
+                        WHEN c.discount_type = 'percent' THEN (SELECT AVG(p.value) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp ON camp.id = cp.campaign_id AND camp.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp.tenant_id = ?) * (c.discount_value / 100.0)
+                        WHEN c.discount_type = 'fixed' THEN c.discount_value
+                        ELSE 0
+                    END
+                ELSE 0 END) as discount_applied,
+                SUM(CASE WHEN c.status = 'redeemed' THEN 
+                    (SELECT AVG(p.margin_price) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp ON camp.id = cp.campaign_id AND camp.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp.tenant_id = ?)
+                ELSE 0 END) as gross_margin
+            FROM coupons c
+            ${whereSql}
+            GROUP BY ${dateFormat}
+            ORDER BY ${groupBy === 'week' ? "strftime('%Y', c.issued_at), strftime('%W', c.issued_at)" : "date(c.issued_at)"}
+        `, req.tenant.id, req.tenant.id, req.tenant.id, req.tenant.id, req.tenant.id, req.tenant.id, ...params);
 
         res.json(temporalData);
     } catch (e) {
@@ -4818,6 +5362,73 @@ app.get('/api/admin/analytics/export', requireAdmin, async (req, res) => {
             ${whereSql}
             ORDER BY c.issued_at DESC
         `, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, ...params);
+
+        if (format === 'csv') {
+            const headers = ['Code', 'Status', 'Issued At', 'Redeemed At', 'Campaign', 'First Name', 'Last Name', 'Email', 'Discount Type', 'Discount Value', 'Avg Product Value', 'Avg Margin'];
+            const csvContent = [
+                headers.join(','),
+                ...data.map(row => [
+                    row.code,
+                    row.status,
+                    row.issued_at,
+                    row.redeemed_at || '',
+                    `"${(row.campaign_name || '').replace(/"/g, '""')}"`,
+                    `"${(row.first_name || '').replace(/"/g, '""')}"`,
+                    `"${(row.last_name || '').replace(/"/g, '""')}"`,
+                    `"${(row.email || '').replace(/"/g, '""')}"`,
+                    row.discount_type,
+                    row.discount_value,
+                    row.avg_product_value || 0,
+                    row.avg_margin || 0
+                ].join(','))
+            ].join('\n');
+
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename="analytics-export.csv"');
+            res.send(csvContent);
+        } else {
+            res.json(data);
+        }
+    } catch (e) {
+        console.error('analytics/export error', e);
+        res.status(500).json({ error: 'Errore export' });
+    }
+});
+
+// Tenant-aware version of analytics/export endpoint
+app.get('/t/:tenantSlug/api/admin/analytics/export', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const { start, end, campaignId, status, format = 'csv' } = req.query;
+
+        const where = ['c.tenant_id = ?'];
+        const params = [req.tenant.id];
+        if (campaignId) { where.push('c.campaign_id = ?'); params.push(campaignId); }
+        if (start) { where.push('date(c.issued_at) >= date(?)'); params.push(start); }
+        if (end) { where.push('date(c.issued_at) <= date(?)'); params.push(end); }
+        if (status) { where.push('c.status = ?'); params.push(status); }
+        const whereSql = 'WHERE ' + where.join(' AND ');
+
+        const data = await dbConn.all(`
+            SELECT 
+                c.code,
+                c.status,
+                c.issued_at as issued_at,
+                c.redeemed_at as redeemed_at,
+                camp.name as campaign_name,
+                u.first_name,
+                u.last_name,
+                u.email,
+                c.discount_type,
+                c.discount_value,
+                (SELECT AVG(p.value) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp2 ON camp2.id = cp.campaign_id AND camp2.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp2.tenant_id = ?) as avg_product_value,
+                (SELECT AVG(p.margin_price) FROM campaign_products cp JOIN products p ON p.id = cp.product_id AND p.tenant_id = ? JOIN campaigns camp2 ON camp2.id = cp.campaign_id AND camp2.tenant_id = ? WHERE cp.campaign_id = c.campaign_id AND camp2.tenant_id = ?) as avg_margin
+            FROM coupons c
+            LEFT JOIN campaigns camp ON camp.id = c.campaign_id AND camp.tenant_id = c.tenant_id
+            LEFT JOIN users u ON u.id = c.user_id AND u.tenant_id = c.tenant_id
+            ${whereSql}
+            ORDER BY c.issued_at DESC
+        `, req.tenant.id, req.tenant.id, req.tenant.id, req.tenant.id, req.tenant.id, req.tenant.id, ...params);
 
         if (format === 'csv') {
             const headers = ['Code', 'Status', 'Issued At', 'Redeemed At', 'Campaign', 'First Name', 'Last Name', 'Email', 'Discount Type', 'Discount Value', 'Avg Product Value', 'Avg Margin'];
@@ -6269,28 +6880,61 @@ app.use((req, res) => {
 });
 
 // Start server with proper timeout configurations
-const server = app.listen(PORT, async () => {
-    await getDb();
-    logger.info({ port: PORT }, 'CouponGen server started');
-});
+// Use '127.0.0.1' on Windows to avoid connection refused issues, '0.0.0.0' for all interfaces
+const HOST = process.env.HOST || (process.platform === 'win32' ? '127.0.0.1' : '0.0.0.0');
 
-// Configure server timeouts to prevent connection issues
-// Note: requestTimeout and timeout are the same setting (requestTimeout is deprecated)
-const KEEP_ALIVE_TIMEOUT = Number(process.env.SERVER_KEEPALIVE_TIMEOUT) || 65000; // 65 seconds (same as nginx default)
-const HEADERS_TIMEOUT = Number(process.env.SERVER_HEADERS_TIMEOUT) || 66000; // 66 seconds (slightly higher than keepAliveTimeout)
-const REQUEST_TIMEOUT = Number(process.env.SERVER_REQUEST_TIMEOUT) || 30000; // 30 seconds for request processing
+// Server instance (will be set in async initialization)
+let server;
 
-server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT;
-server.headersTimeout = HEADERS_TIMEOUT;
-server.timeout = REQUEST_TIMEOUT; // Overall request timeout
-
-    logger.info({
-        keepAliveTimeout: server.keepAliveTimeout,
-        headersTimeout: server.headersTimeout,
-        requestTimeout: server.timeout
-    }, 'Server timeouts configured');
-console.log(`- Headers: ${server.headersTimeout}ms`);
-console.log(`- Request/Overall: ${server.timeout}ms`);
+// Initialize database before starting server to ensure it's ready
+(async () => {
+    try {
+        // Initialize database first
+        await getDb();
+        logger.info('Database initialized');
+        
+        // Start server after database is ready
+        server = app.listen(PORT, HOST, () => {
+            logger.info({ port: PORT, host: HOST }, 'CouponGen server started');
+            console.log(`Server listening on http://${HOST}:${PORT}`);
+        });
+        
+        // Handle server errors
+        server.on('error', (error) => {
+            if (error.code === 'EADDRINUSE') {
+                logger.error({ port: PORT }, 'Port already in use');
+                console.error(`Port ${PORT} is already in use. Please stop the other process or use a different port.`);
+            } else {
+                logger.error({ err: error }, 'Server error');
+                console.error('Server error:', error);
+            }
+            process.exit(1);
+        });
+        
+        // Configure server timeouts to prevent connection issues
+        // Note: requestTimeout and timeout are the same setting (requestTimeout is deprecated)
+        const KEEP_ALIVE_TIMEOUT = Number(process.env.SERVER_KEEPALIVE_TIMEOUT) || 65000; // 65 seconds (same as nginx default)
+        const HEADERS_TIMEOUT = Number(process.env.SERVER_HEADERS_TIMEOUT) || 66000; // 66 seconds (slightly higher than keepAliveTimeout)
+        const REQUEST_TIMEOUT = Number(process.env.SERVER_REQUEST_TIMEOUT) || 30000; // 30 seconds for request processing
+        
+        server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT;
+        server.headersTimeout = HEADERS_TIMEOUT;
+        server.timeout = REQUEST_TIMEOUT; // Overall request timeout
+        
+        logger.info({
+            keepAliveTimeout: server.keepAliveTimeout,
+            headersTimeout: server.headersTimeout,
+            requestTimeout: server.timeout
+        }, 'Server timeouts configured');
+        console.log(`- Headers: ${server.headersTimeout}ms`);
+        console.log(`- Request/Overall: ${server.timeout}ms`);
+        
+    } catch (error) {
+        logger.error({ err: error }, 'Error during server startup');
+        console.error('Error during server startup:', error);
+        process.exit(1);
+    }
+})();
 
 // Graceful shutdown handler
 let isShuttingDown = false;
@@ -6305,9 +6949,11 @@ async function gracefulShutdown(signal) {
     console.log(`[shutdown] Received ${signal}, initiating graceful shutdown...`);
     
     // Stop accepting new requests
-    server.close(() => {
-        console.log('[shutdown] HTTP server closed');
-    });
+    if (server) {
+        server.close(() => {
+            console.log('[shutdown] HTTP server closed');
+        });
+    }
     
     // Close database connection
     if (db) {
