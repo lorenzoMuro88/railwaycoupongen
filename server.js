@@ -3404,6 +3404,40 @@ app.get('/t/:tenantSlug/api/admin/email-from-name', tenantLoader, requireSameTen
     }
 });
 
+// Tenant-scoped: get campaign form config
+app.get('/t/:tenantSlug/api/admin/campaigns/:id/form-config', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const campaign = await dbConn.get('SELECT form_config FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, req.tenant.id);
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
+        res.json(formConfig);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
+// Tenant-scoped: update campaign form config
+app.put('/t/:tenantSlug/api/admin/campaigns/:id/form-config', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
+    try {
+        const dbConn = await getDb();
+        const { formConfig } = req.body;
+        if (!formConfig || typeof formConfig !== 'object') {
+            return res.status(400).json({ error: 'Configurazione form non valida' });
+        }
+        
+        const result = await dbConn.run('UPDATE campaigns SET form_config = ? WHERE id = ? AND tenant_id = ?', JSON.stringify(formConfig), req.params.id, req.tenant.id);
+        if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
+        res.json({ ok: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Errore server' });
+    }
+});
+
 // Duplicate routes removed - see routes above (before app.use middleware)
 
 // Tenant-scoped: get campaign by code (for form parameter)
@@ -3437,13 +3471,73 @@ app.get('/t/:tenantSlug/api/campaigns/:code', tenantLoader, async (req, res) => 
     }
 });
 
-// Legacy endpoint /api/campaigns/:code - DEPRECATED
-// Returns 410 Gone to indicate this endpoint is deprecated
+// Legacy endpoint /api/campaigns/:code - Still supported for backward compatibility
+// Automatically determines tenant from session or referer
 app.get('/api/campaigns/:code', async (req, res) => {
-    return res.status(410).json({ 
-        error: 'Endpoint deprecato. Usa /t/:tenantSlug/api/campaigns/:code',
-        deprecated: true
-    });
+    try {
+        const dbConn = await getDb();
+        const tenantId = await getTenantIdForApi(req);
+        
+        if (!tenantId) {
+            // Try to get default tenant or first tenant
+            const defaultTenant = await dbConn.get('SELECT id FROM tenants WHERE slug = ?', DEFAULT_TENANT_SLUG);
+            const tenant = defaultTenant || await dbConn.get('SELECT id FROM tenants ORDER BY id ASC LIMIT 1');
+            
+            if (!tenant) {
+                return res.status(404).json({ error: 'Tenant non trovato' });
+            }
+            
+            const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, tenant.id);
+            if (!campaign) {
+                return res.status(404).json({ error: 'Campagna non trovata' });
+            }
+            
+            // Check if campaign is active and not expired
+            if (!campaign.is_active) {
+                return res.status(404).json({ error: 'Campagna non trovata' });
+            }
+            
+            // Check if campaign has expired
+            if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
+                // Auto-deactivate expired campaign
+                await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+                return res.status(404).json({ error: 'Campagna scaduta' });
+            }
+            
+            // Parse form config
+            const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
+            campaign.form_config = formConfig;
+            
+            return res.json(campaign);
+        }
+        
+        // Use tenantId from session/referer
+        const campaign = await dbConn.get('SELECT * FROM campaigns WHERE campaign_code = ? AND tenant_id = ?', req.params.code, tenantId);
+        if (!campaign) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Check if campaign is active and not expired
+        if (!campaign.is_active) {
+            return res.status(404).json({ error: 'Campagna non trovata' });
+        }
+        
+        // Check if campaign has expired
+        if (campaign.expiry_date && new Date(campaign.expiry_date) < new Date()) {
+            // Auto-deactivate expired campaign
+            await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', campaign.id);
+            return res.status(404).json({ error: 'Campagna scaduta' });
+        }
+        
+        // Parse form config
+        const formConfig = JSON.parse(campaign.form_config || '{"email": {"visible": true, "required": true}, "firstName": {"visible": true, "required": true}, "lastName": {"visible": true, "required": true}}');
+        campaign.form_config = formConfig;
+        
+        res.json(campaign);
+    } catch (e) {
+        console.error('Error fetching campaign (legacy endpoint):', e);
+        res.status(500).json({ error: 'Errore server' });
+    }
 });
 
 app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
