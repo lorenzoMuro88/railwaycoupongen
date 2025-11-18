@@ -3898,10 +3898,14 @@ async function gracefulShutdown(signal) {
         }
     }
     
-    // Clear intervals
-    if (cleanupInterval) {
-        clearInterval(cleanupInterval);
-        logger.info('[shutdown] Cleanup intervals cleared');
+    // Clear intervals (cleanupInterval is managed by rateLimit middleware)
+    // The rateLimit middleware handles its own cleanup on SIGTERM/SIGINT
+    try {
+        const { cleanupRateLimiters } = require('./middleware/rateLimit');
+        // Rate limiter cleanup is handled by the middleware itself
+        logger.info('[shutdown] Cleanup intervals handled by middleware');
+    } catch (error) {
+        // Ignore if rateLimit module not available
     }
     
     // Force exit after timeout if graceful shutdown takes too long
