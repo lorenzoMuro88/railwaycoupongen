@@ -3162,6 +3162,11 @@ app.post('/api/superadmin/login', async (req, res) => {
         }
         
         // Verify password (with backward compatibility for Base64)
+        if (!user.password_hash) {
+            logger.error({ username }, 'User found but password_hash is missing');
+            return res.status(500).json({ error: 'Errore interno del server' });
+        }
+        
         const isValid = await verifyPassword(password, user.password_hash);
         if (!isValid) {
             return res.status(401).json({ error: 'Credenziali non valide' });
@@ -3180,13 +3185,19 @@ app.post('/api/superadmin/login', async (req, res) => {
         
         // User is already verified as superadmin by the query above
         
+        // Ensure session exists (should always be present due to middleware, but check for safety)
+        if (!req.session) {
+            logger.error({ username }, 'Session not available during superadmin login');
+            return res.status(500).json({ error: 'Errore di sessione. Riprova.' });
+        }
+        
         // Regenerate session to prevent fixation
         try {
             await new Promise((resolve, reject) => {
                 req.session.regenerate(err => err ? reject(err) : resolve());
             });
         } catch (sessionError) {
-            logger.warn({ userId: user.id, username: user.username }, 'Session regeneration failed during superadmin login');
+            logger.warn({ err: sessionError, userId: user.id, username: user.username }, 'Session regeneration failed during superadmin login');
             // Continue with login even if session regeneration fails
         }
         
@@ -3212,7 +3223,12 @@ app.post('/api/superadmin/login', async (req, res) => {
         
         res.json({ success: true, message: 'Login effettuato con successo' });
     } catch (error) {
-        logger.withRequest(req).error({ err: error }, 'Superadmin login error');
+        logger.withRequest(req).error({ 
+            err: error, 
+            errorMessage: error.message,
+            errorStack: error.stack,
+            username: req.body?.username 
+        }, 'Superadmin login error');
         res.status(500).json({ error: 'Errore interno del server' });
     }
 });
