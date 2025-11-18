@@ -36,6 +36,7 @@
     "test:signup-auth": "node scripts/test-signup-auth.js",
     "test:misc": "node scripts/test-misc-endpoints.js",
     "test:remaining": "node scripts/test-remaining-endpoints.js",
+    "test:platform-endpoints": "node scripts/test-platform-endpoints.js",
     "test:security-headers": "node scripts/test-security-headers.js",
     "test:https-enforcement": "node scripts/test-https-enforcement.js",
     "test:dependency-security": "node scripts/test-dependency-security.js",

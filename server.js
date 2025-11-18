@@ -337,11 +337,11 @@ app.use(helmet({
     contentSecurityPolicy: isProduction ? {
         directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles for compatibility
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], // Allow inline styles and Google Fonts
             scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com"], // reCAPTCHA
             imgSrc: ["'self'", "data:", "https:"], // Allow data URLs for QR codes and images
             connectSrc: ["'self'"],
-            fontSrc: ["'self'"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"], // Allow Google Fonts
             objectSrc: ["'none'"],
             mediaSrc: ["'self'"],
             frameSrc: ["'none'"],
@@ -3180,9 +3180,17 @@ app.post('/api/superadmin/login', async (req, res) => {
         
         // User is already verified as superadmin by the query above
         
-        // Create session
-        await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
+        // Regenerate session to prevent fixation
+        try {
+            await new Promise((resolve, reject) => {
+                req.session.regenerate(err => err ? reject(err) : resolve());
+            });
+        } catch (sessionError) {
+            logger.warn({ userId: user.id, username: user.username }, 'Session regeneration failed during superadmin login');
+            // Continue with login even if session regeneration fails
+        }
         
+        // Create session
         req.session.user = {
             id: user.id,
             username: user.username,
@@ -3194,10 +3202,12 @@ app.post('/api/superadmin/login', async (req, res) => {
         // Update last login
         await db.run('UPDATE auth_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', user.id);
         
-        // Log successful superadmin login
-        await logAction(req, 'login', 'Login SuperAdmin effettuato', 'success', {
+        // Log successful superadmin login (non-blocking)
+        logAction(req, 'login', 'Login SuperAdmin effettuato', 'success', {
             username: user.username,
             userType: user.user_type
+        }).catch(err => {
+            logger.warn({ err }, 'Failed to log superadmin login action');
         });
         
         res.json({ success: true, message: 'Login effettuato con successo' });
