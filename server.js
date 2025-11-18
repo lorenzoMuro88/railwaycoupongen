@@ -339,11 +339,11 @@ app.use(helmet({
     contentSecurityPolicy: isProduction ? {
         directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], // Allow inline styles and Google Fonts
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com"], // reCAPTCHA
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"], // Allow inline styles, Google Fonts, and jsDelivr CDN
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com", "https://cdn.jsdelivr.net"], // reCAPTCHA and jsDelivr CDN (Chart.js, SunEditor)
             scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers (onclick, etc.)
             imgSrc: ["'self'", "data:", "https:"], // Allow data URLs for QR codes and images
-            connectSrc: ["'self'"],
+            connectSrc: ["'self'", "https://cdn.jsdelivr.net"], // Allow source map requests from jsDelivr CDN
             fontSrc: ["'self'", "https://fonts.gstatic.com"], // Allow Google Fonts
             objectSrc: ["'none'"],
             mediaSrc: ["'self'"],

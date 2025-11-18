@@ -38,6 +38,8 @@
     "test:remaining": "node scripts/test-remaining-endpoints.js",
     "test:platform-endpoints": "node scripts/test-platform-endpoints.js",
     "test:security-headers": "node scripts/test-security-headers.js",
+    "test:analytics-csp": "node scripts/test-csp-analytics-simple.js",
+    "verify:analytics-csp": "node scripts/verify-analytics-csp.js",
     "test:https-enforcement": "node scripts/test-https-enforcement.js",
     "test:dependency-security": "node scripts/test-dependency-security.js",
     "test:cors": "node scripts/test-cors.js",
