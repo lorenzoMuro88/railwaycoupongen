@@ -125,8 +125,12 @@ deploy/fix-email-template-issues.ps1
 # Any file containing API keys or secrets
 *api-key*
 *secret*
-*password*
+*password*.txt
+*password*.key
+*password*.env
 *credential*
+# But allow passwordPolicy.js (it's code, not secrets)
+!utils/passwordPolicy.js
 
 # Backups and archives
 data/backups/
