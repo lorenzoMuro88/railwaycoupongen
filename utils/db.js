@@ -741,8 +741,8 @@ async function createDefaultUsers(dbConn, defaultTenantId) {
         const storeHash = await hashPassword(defaultStorePassword);
         
         await dbConn.run(`
-            INSERT INTO auth_users (username, password_hash, user_type, tenant_id) 
-            VALUES ('admin', ?, 'superadmin', ?), ('store', ?, 'store', ?)
+            INSERT INTO auth_users (username, password_hash, user_type, tenant_id, is_active) 
+            VALUES ('admin', ?, 'superadmin', ?, 1), ('store', ?, 'store', ?, 1)
         `, superAdminHash, defaultTenantId, storeHash, defaultTenantId);
         
         logger.info({ 

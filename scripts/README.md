@@ -131,6 +131,58 @@ npm run db:migrate-email
 - Migra configurazione email da formato vecchio a nuovo
 - Aggiorna tenant con nuova struttura email
 
+#### `reset-superadmin.js`
+Verifica e resetta le credenziali del superadmin.
+
+**Utilizzo:**
+```bash
+# Verifica stato superadmin
+node scripts/reset-superadmin.js
+
+# Resetta password e attiva superadmin
+node scripts/reset-superadmin.js --reset
+
+# Verifica/resetta con username personalizzato
+node scripts/reset-superadmin.js --username=myadmin --reset
+```
+
+**Funzionalità:**
+- Verifica se l'utente superadmin esiste nel database
+- Mostra stato dell'utente (attivo/disattivo, ultimo login, ecc.)
+- Resetta la password usando `SUPERADMIN_PASSWORD` dalla variabile d'ambiente
+- Attiva automaticamente l'utente se è disattivato
+- Utile per troubleshooting problemi di login su Railway
+
+**⚠️ Requisiti:**
+- `SUPERADMIN_PASSWORD` deve essere configurata nelle variabili d'ambiente per il reset
+
+#### `delete-all-users.js`
+Elimina tutti gli utenti dal database per permettere la ricreazione da zero.
+
+**Utilizzo:**
+```bash
+# Eliminazione con conferma interattiva
+npm run delete:all-users
+
+# Eliminazione senza conferma (utile per script automatizzati)
+npm run delete:all-users-confirm
+```
+
+**Funzionalità:**
+- Elimina tutti gli utenti dalla tabella `auth_users`
+- Mostra l'elenco degli utenti che verranno eliminati prima della conferma
+- Al prossimo avvio del server, gli utenti di default verranno ricreati automaticamente
+- Utile per ripulire il database dopo una build completa da zero
+
+**⚠️ ATTENZIONE:**
+- Elimina TUTTI gli utenti (superadmin, admin, store, ecc.)
+- Gli utenti verranno ricreati automaticamente al prossimo avvio solo se:
+  - La tabella `auth_users` è vuota
+  - `SUPERADMIN_PASSWORD` e `STORE_PASSWORD` sono configurate nelle variabili d'ambiente
+
+**Requisiti:**
+- `SUPERADMIN_PASSWORD` e `STORE_PASSWORD` devono essere configurate prima di riavviare il server
+
 ### 📚 Documentazione Scripts
 
 #### `generate-api-docs.js`
