@@ -34,14 +34,19 @@ const corsOptions = {
             return callback(null, true);
         }
         
-        // Always allow same-origin requests (when origin matches the request host)
-        // This is handled by checking if origin matches any of the allowed origins
-        // or if it's a same-origin request (no origin header means same-origin, but we already handled that above)
+        // Helper function to check if origin matches request host (same-origin)
+        // Note: req is not directly available in cors origin callback, so we need to check differently
+        // Same-origin requests should always be allowed regardless of ALLOWED_ORIGINS
         
-        // If no allowed origins configured, only allow same-origin
+        // If no allowed origins configured
         if (ALLOWED_ORIGINS.length === 0) {
             // In development, allow all origins for easier testing
             if (process.env.NODE_ENV !== 'production') {
+                return callback(null, true);
+            }
+            // In production, allow localhost origins for local development/testing
+            // This allows http://localhost:3000, http://127.0.0.1:3000, etc.
+            if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
                 return callback(null, true);
             }
             // In production, reject cross-origin requests if no whitelist configured
@@ -53,6 +58,10 @@ const corsOptions = {
         if (ALLOWED_ORIGINS.includes(origin)) {
             callback(null, true);
         } else {
+            // Also allow localhost origins even if not explicitly in whitelist (for local dev)
+            if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+                return callback(null, true);
+            }
             logger.warn({ origin, allowedOrigins: ALLOWED_ORIGINS }, 'CORS: Origin not in whitelist');
             callback(new Error('CORS: Origin not allowed'));
         }

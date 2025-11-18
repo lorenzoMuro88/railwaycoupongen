@@ -307,7 +307,9 @@ let sessionOptions = {
     saveUninitialized: false,
     name: 'sessionId', // Don't expose framework name (not 'connect.sid')
     cookie: {
-        secure: isProduction ? true : 'auto', // Force secure in production
+        // Use 'auto' when FORCE_HTTPS is disabled (allows HTTP in local/testing)
+        // Use true when FORCE_HTTPS is enabled (production with HTTPS)
+        secure: (isProduction && FORCE_HTTPS) ? true : 'auto',
         httpOnly: true, // Prevent XSS access to cookie
         sameSite: isProduction ? 'lax' : 'lax', // CSRF protection
         maxAge: SESSION_TIMEOUT_MS,
@@ -339,28 +341,31 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], // Allow inline styles and Google Fonts
             scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com"], // reCAPTCHA
+            scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers (onclick, etc.)
             imgSrc: ["'self'", "data:", "https:"], // Allow data URLs for QR codes and images
             connectSrc: ["'self'"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"], // Allow Google Fonts
             objectSrc: ["'none'"],
             mediaSrc: ["'self'"],
             frameSrc: ["'none'"],
+            // Only add upgrade-insecure-requests when FORCE_HTTPS is enabled
+            ...(FORCE_HTTPS ? { upgradeInsecureRequests: [] } : {}),
         },
     } : false, // Disable CSP in development for easier debugging
-    hsts: isProduction ? {
+    hsts: (isProduction && FORCE_HTTPS) ? {
         maxAge: 31536000, // 1 year
         includeSubDomains: true,
         preload: true
-    } : false, // Only enable HSTS in production
+    } : false, // Only enable HSTS in production when FORCE_HTTPS is enabled
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     frameguard: { action: 'deny' }, // Prevent clickjacking
     noSniff: true, // Prevent MIME type sniffing
     xssFilter: true, // Enable XSS filter
     permittedCrossDomainPolicies: false,
-    expectCt: isProduction ? {
+    expectCt: (isProduction && FORCE_HTTPS) ? {
         maxAge: 86400,
         enforce: true
-    } : false
+    } : false // Only enable Expect-CT when HTTPS is enforced
 }));
 
 // ============================================================================
@@ -1908,9 +1913,130 @@ app.use('/api/store', requireStore);
 app.use('/admin', requireAuth);
 app.use('/api/admin', requireAdmin);
 
+// Debug middleware for superadmin-login (before route handler)
+app.use('/superadmin-login', (req, res, next) => {
+    // Force log at warn level to ensure it's visible
+    logger.withRequest(req).warn({ 
+        method: req.method,
+        url: req.url,
+        originalUrl: req.originalUrl,
+        path: req.path,
+        query: req.query,
+        hasOrigin: !!req.headers.origin,
+        origin: req.headers.origin,
+        userAgent: req.headers['user-agent']
+    }, '🔍 DEBUG: Middleware: Request received for /superadmin-login');
+    next();
+});
+
 // Super admin login page
-app.get('/superadmin-login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'superadmin-login.html'));
+app.get('/superadmin-login', (req, res, next) => {
+    try {
+        const filePath = path.join(__dirname, 'views', 'superadmin-login.html');
+        
+        // Detailed logging before attempting to serve file (force warn level for visibility)
+        logger.withRequest(req).warn({ 
+            filePath,
+            __dirname,
+            fileExists: fs.existsSync(filePath),
+            method: req.method,
+            url: req.url,
+            originalUrl: req.originalUrl,
+            path: req.path,
+            sessionExists: !!req.session,
+            sessionId: req.session?.id,
+            headers: {
+                'user-agent': req.headers['user-agent'],
+                'accept': req.headers['accept'],
+                'referer': req.headers['referer'],
+                'origin': req.headers['origin']
+            }
+        }, '🔍 DEBUG: Attempting to serve superadmin-login.html');
+        
+        // Check if file exists before attempting to send
+        if (!fs.existsSync(filePath)) {
+            const error = new Error('superadmin-login.html file not found');
+            logger.withRequest(req).error({ 
+                filePath,
+                __dirname,
+                cwd: process.cwd(),
+                error: error.message
+            }, 'superadmin-login.html file not found');
+            return res.status(500).send('File non trovato');
+        }
+        
+        // Get file stats for debugging
+        try {
+            const stats = fs.statSync(filePath);
+            logger.withRequest(req).debug({ 
+                filePath,
+                size: stats.size,
+                isFile: stats.isFile(),
+                mode: stats.mode
+            }, 'File stats for superadmin-login.html');
+        } catch (statError) {
+            logger.withRequest(req).error({ 
+                err: statError,
+                filePath
+            }, 'Error getting file stats');
+            // Don't fail the request, just log the error
+        }
+        
+        // Attempt to send file with detailed error handling
+        res.sendFile(filePath, (err) => {
+            if (err) {
+                // Force error log
+                logger.withRequest(req).error({ 
+                    err, 
+                    filePath,
+                    errorMessage: err.message,
+                    errorStack: err.stack,
+                    errorCode: err.code,
+                    errorSyscall: err.syscall,
+                    errorPath: err.path,
+                    headersSent: res.headersSent,
+                    statusCode: res.statusCode,
+                    writable: res.writable,
+                    destroyed: res.destroyed
+                }, '❌ ERROR: Error serving superadmin-login.html');
+                if (!res.headersSent) {
+                    res.status(500).send('Errore interno del server');
+                } else {
+                    // Headers already sent, try to end the response
+                    if (!res.destroyed && res.writable) {
+                        res.end();
+                    }
+                }
+            } else {
+                // Force warn level to ensure visibility
+                logger.withRequest(req).warn({ 
+                    filePath,
+                    statusCode: res.statusCode,
+                    headersSent: res.headersSent,
+                    finished: res.finished
+                }, '✅ SUCCESS: Successfully served superadmin-login.html');
+            }
+        });
+        
+        // Also log immediately after calling sendFile
+        logger.withRequest(req).warn({ 
+            filePath,
+            headersSent: res.headersSent,
+            finished: res.finished
+        }, '🔍 DEBUG: sendFile called, waiting for callback');
+    } catch (error) {
+        // Catch any synchronous errors
+        logger.withRequest(req).error({ 
+            err: error,
+            errorMessage: error.message,
+            errorStack: error.stack
+        }, 'Synchronous error in /superadmin-login route handler');
+        if (!res.headersSent) {
+            res.status(500).send('Errore interno del server');
+        } else {
+            next(error);
+        }
+    }
 });
 
 // Super admin page (defined after /admin middleware to avoid conflicts)
@@ -3194,21 +3320,40 @@ app.post('/api/superadmin/login', async (req, res) => {
         // Regenerate session to prevent fixation
         try {
             await new Promise((resolve, reject) => {
-                req.session.regenerate(err => err ? reject(err) : resolve());
+                req.session.regenerate((err) => {
+                    if (err) {
+                        logger.warn({ err, userId: user.id, username: user.username }, 'Session regeneration failed during superadmin login');
+                        // Don't reject - continue with existing session
+                        resolve();
+                    } else {
+                        resolve();
+                    }
+                });
             });
         } catch (sessionError) {
-            logger.warn({ err: sessionError, userId: user.id, username: user.username }, 'Session regeneration failed during superadmin login');
+            logger.warn({ err: sessionError, userId: user.id, username: user.username }, 'Session regeneration error during superadmin login');
             // Continue with login even if session regeneration fails
         }
         
+        // Ensure session still exists after regeneration
+        if (!req.session) {
+            logger.error({ username }, 'Session lost after regeneration during superadmin login');
+            return res.status(500).json({ error: 'Errore di sessione. Riprova.' });
+        }
+        
         // Create session
-        req.session.user = {
-            id: user.id,
-            username: user.username,
-            userType: user.user_type,
-            tenantId: user.tenant_id,
-            isSuperAdmin: true
-        };
+        try {
+            req.session.user = {
+                id: user.id,
+                username: user.username,
+                userType: user.user_type,
+                tenantId: user.tenant_id,
+                isSuperAdmin: true
+            };
+        } catch (sessionError) {
+            logger.error({ err: sessionError, userId: user.id, username: user.username }, 'Failed to set session user during superadmin login');
+            return res.status(500).json({ error: 'Errore di sessione. Riprova.' });
+        }
         
         // Update last login
         await db.run('UPDATE auth_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', user.id);
