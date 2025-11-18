@@ -1478,6 +1478,14 @@
     </div>
 
     <script>
+        // XSS Protection: HTML escaping function
+        function escapeHtml(text) {
+            if (text == null) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         // Modal System
         function showModal(options) {
             const { title, message, type = 'info', showCancel = false, onConfirm, onCancel, large = false } = options;
@@ -1583,8 +1591,10 @@
             document.querySelector(`#discountTypeDropdown .dropdown-option[data-value="percent"]`).classList.add('selected');
             // Set initial hidden input value
             document.getElementById('discountType').value = 'percent';
-            // Load products for selection
-            loadProductsForSelection();
+            // Load products for selection (with delay to ensure __tenantBase is set)
+            setTimeout(() => {
+                loadProductsForSelection();
+            }, 100);
         });
         
         function toggleDiscountTypeDropdown() {
@@ -1646,21 +1656,57 @@
         }
         
         // Products selection functions
+        let productsLoading = false;
+        let productsLoaded = false;
+        
         async function loadProductsForSelection() {
+            // Prevent multiple simultaneous calls
+            if (productsLoading) {
+                return;
+            }
+            
+            // If already loaded, don't reload
+            if (productsLoaded && allProducts && allProducts.length > 0) {
+                return;
+            }
+            
+            productsLoading = true;
             console.log('Loading products for selection...');
+            
             try {
-                const tenantBase = window.__tenantBase || '';
+                // Wait for __tenantBase to be set (it's set in navigation.js)
+                let tenantBase = window.__tenantBase;
+                if (!tenantBase) {
+                    // Try to compute it from current path
+                    const parts = window.location.pathname.split('/').filter(Boolean);
+                    if (parts[0] === 't' && parts[1]) {
+                        tenantBase = '/t/' + parts[1];
+                    } else {
+                        tenantBase = '';
+                    }
+                }
+                
                 const response = await fetch(`${tenantBase}/api/admin/products`);
                 if (!response.ok) {
-                    console.error('Failed to load products:', response.status);
+                    // 404 or other errors are OK - just means no products available yet
+                    // Don't log as error to avoid console spam
+                    if (response.status !== 404) {
+                        console.warn('Could not load products:', response.status, '- Products feature may not be available');
+                    }
+                    allProducts = [];
+                    productsLoaded = true;
+                    productsLoading = false;
                     return;
                 }
                 allProducts = await response.json();
+                productsLoaded = true;
                 console.log('Products loaded:', allProducts.length, 'products');
                 // Products will be populated when modal opens
             } catch (error) {
                 console.error('Error loading products:', error);
                 // Error will be shown when modal opens
+            } finally {
+                productsLoading = false;
             }
         }
         
@@ -1885,7 +1931,7 @@
                 const result = await response.json();
                 showModal({
                     title: 'Successo',
-                    message: `Coupon ${code} bruciato con successo!`,
+                    message: `Coupon ${escapeHtml(code)} bruciato con successo!`,
                     type: 'success'
                 });
                 
@@ -3228,24 +3274,34 @@
             }
             
             tbody.innerHTML = data.items.map(it=>{
-                const discountText = it.discountType === 'percent' ? `${it.discountValue}%` : 
-                                    it.discountType === 'fixed' ? `&euro;${it.discountValue}` : it.discountValue;
+                const discountText = it.discountType === 'percent' ? `${escapeHtml(it.discountValue)}%` : 
+                                    it.discountType === 'fixed' ? `&euro;${escapeHtml(it.discountValue)}` : escapeHtml(it.discountValue);
                 const statusClass = it.status === 'active' ? 'status-active' : 'status-redeemed';
                 const statusText = it.status === 'active' ? 'ATTIVO' : 'BRUCIATO';
                 const burnButton = it.status === 'active' ? 
-                    `<button class="burn-btn" onclick="burnCoupon('${it.code}')" title="Brucia coupon">Brucia</button>` : 
+                    `<button class="burn-btn" data-coupon-code="${escapeHtml(it.code)}" title="Brucia coupon">Brucia</button>` : 
                     '<span style="color: var(--text-light); font-size: 0.9em;">Già bruciato</span>';
                 
                 return `<tr>
-                    <td><code>${it.code}</code></td>
+                    <td><code>${escapeHtml(it.code)}</code></td>
                     <td><span class="${statusClass}">${statusText}</span></td>
                     <td><strong>${discountText}</strong></td>
-                    <td>${it.campaignName ? `<span class="campaign-badge">${it.campaignName}</span>` : '-'}</td>
-                    <td>${it.userEmail}</td>
+                    <td>${it.campaignName ? `<span class="campaign-badge">${escapeHtml(it.campaignName)}</span>` : '-'}</td>
+                    <td>${escapeHtml(it.userEmail)}</td>
                     <td>${it.issuedAt ? new Date(it.issuedAt).toLocaleDateString('it-IT') : ''}</td>
                     <td>${burnButton}</td>
                 </tr>`;
             }).join('');
+            
+            // Attach event listeners to burn buttons using event delegation
+            tbody.querySelectorAll('.burn-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const code = this.getAttribute('data-coupon-code');
+                    if (code) {
+                        burnCoupon(code);
+                    }
+                });
+            });
             
             // Update pagination
             updatePagination(data.total, limit, page);
@@ -3444,23 +3500,23 @@
                             </thead>
                             <tbody>
                                 ${coupons.map(coupon => {
-                                    const discountText = coupon.discountType === 'percent' ? `${coupon.discountValue}%` : coupon.discountValue;
-                                    const clientName = `${coupon.firstName || ''} ${coupon.lastName || ''}`.trim() || 'N/A';
+                                    const discountText = coupon.discountType === 'percent' ? `${escapeHtml(coupon.discountValue)}%` : escapeHtml(coupon.discountValue);
+                                    const clientName = `${escapeHtml(coupon.firstName || '')} ${escapeHtml(coupon.lastName || '')}`.trim() || 'N/A';
                                     const statusBadge = coupon.status === 'active' ? 
                                         '<span class="status-active">ATTIVO</span>' : 
                                         '<span class="status-redeemed">BRUCIATO</span>';
                                     const burnButton = coupon.status === 'active' ? 
-                                        `<button class="burn-btn" onclick="burnCoupon('${coupon.code}')" title="Brucia coupon">Brucia</button>` : 
+                                        `<button class="burn-btn" data-coupon-code="${escapeHtml(coupon.code)}" title="Brucia coupon">Brucia</button>` : 
                                         '<span style="color: var(--text-light); font-size: 0.9em;">Già bruciato</span>';
                                     
                                     return `
                                     <tr style="border-bottom: 1px solid var(--border-light);">
                                         <td style="padding: 0.8rem; font-size: 0.9rem;">${coupon.id}</td>
-                                        <td style="padding: 0.8rem;"><code>${coupon.code}</code></td>
+                                        <td style="padding: 0.8rem;"><code>${escapeHtml(coupon.code)}</code></td>
                                         <td style="padding: 0.8rem;">${clientName}</td>
-                                        <td style="padding: 0.8rem;">${coupon.email}</td>
+                                        <td style="padding: 0.8rem;">${escapeHtml(coupon.email)}</td>
                                         <td style="padding: 0.8rem;"><strong>${discountText}</strong></td>
-                                        <td style="padding: 0.8rem;">${coupon.campaignName ? `<span class="campaign-badge">${coupon.campaignName}</span>` : '-'}</td>
+                                        <td style="padding: 0.8rem;">${coupon.campaignName ? `<span class="campaign-badge">${escapeHtml(coupon.campaignName)}</span>` : '-'}</td>
                                         <td style="padding: 0.8rem;">${statusBadge}</td>
                                         <td style="padding: 0.8rem; font-size: 0.9rem;">${coupon.issuedAt ? new Date(coupon.issuedAt).toLocaleDateString('it-IT') : '-'}</td>
                                         <td style="padding: 0.8rem;">${burnButton}</td>
@@ -3473,6 +3529,16 @@
             `;
             
             resultsDiv.innerHTML = resultsHtml;
+            
+            // Attach event listeners to burn buttons in search results using event delegation
+            resultsDiv.querySelectorAll('.burn-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const code = this.getAttribute('data-coupon-code');
+                    if (code) {
+                        burnCoupon(code);
+                    }
+                });
+            });
         }
         
         function clearAdminSearch() {

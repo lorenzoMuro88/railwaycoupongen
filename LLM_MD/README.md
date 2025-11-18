@@ -47,6 +47,84 @@ Riferimento completo alle variabili d'ambiente:
 
 **Utilizzo:** Consultare per capire configurazione sistema e variabili d'ambiente
 
+### API_ENDPOINTS.md
+Riferimento completo di tutti gli endpoint API:
+- Endpoint pubblici (form submission, campagne)
+- Endpoint autenticazione (login, logout, signup)
+- Endpoint admin (campagne, utenti, coupon, analytics, prodotti, settings)
+- Endpoint store (riscatto coupon)
+- Esempi request/response per ogni endpoint
+- Codici di errore standard
+
+**Utilizzo:** Consultare per capire struttura API, parametri richiesti, e formati response
+
+**Nota:** Questo file può essere generato automaticamente da JSDoc usando `npm run docs:generate`
+
+### COMMON_PATTERNS.md
+Pattern comuni e best practices riutilizzabili:
+- Pattern tenant isolation
+- Pattern error handling
+- Pattern route registration
+- Pattern logging
+- Pattern response format
+- Pattern database operations
+- Pattern middleware chain
+- Pattern email sending
+- Pattern sanitization
+- Pattern validation
+
+**Utilizzo:** Consultare per capire pattern comuni e best practices del progetto
+
+### EXAMPLES.md
+Esempi pratici completi di utilizzo:
+- Esempi route handler completi
+- Esempi middleware
+- Esempi database operations
+- Esempi email sending
+- Esempi form submission
+- Esempi rate limiting
+- Esempi QR code generation
+- Esempi sanitization
+- Esempi validation
+
+**Utilizzo:** Consultare per vedere esempi pratici di implementazione
+
+### FLOW_DIAGRAMS.md
+Diagrammi di flusso per operazioni complesse:
+- Login flow
+- Coupon generation flow
+- Tenant isolation flow
+- Campaign creation flow
+- Email sending flow
+- Coupon redemption flow
+
+**Utilizzo:** Consultare per capire flusso di esecuzione di operazioni complesse
+
+### JSDOC_TEMPLATES.md
+Template standardizzati per documentazione JSDoc:
+- Template per route handler
+- Template per utility function
+- Template per middleware
+- Template per database function
+- Template per type definition
+- Template per class/module header
+- Tag JSDoc standard
+- Convenzioni naming
+- Best practices
+
+**Utilizzo:** Consultare per standardizzare documentazione JSDoc nel progetto
+
+### REPORT_LEGGIBILITA.md
+Report completo sulla leggibilità del progetto per LLM:
+- Analisi stato attuale
+- Punti di forza e aree di miglioramento
+- Priorità miglioramenti
+- Checklist implementazione
+- Metriche proposte
+- Processo di mantenimento
+
+**Utilizzo:** Consultare per valutare e migliorare leggibilità progetto per LLM
+
 ## Come Utilizzare
 
 ### Per LLM/AI Coding Assistants
@@ -56,7 +134,12 @@ Quando un LLM analizza il codice:
 1. **Per capire struttura dati**: Consulta `TYPES.md` per definizioni tipo
 2. **Per query database**: Consulta `DATABASE_SCHEMA.md` per schema e pattern
 3. **Per configurazione**: Consulta `CONFIGURATION.md` per variabili d'ambiente
-4. **Per architettura**: Consulta `docs/ARCHITECTURE.md` (nella cartella docs/)
+4. **Per endpoint API**: Consulta `API_ENDPOINTS.md` per riferimento completo endpoint
+5. **Per pattern comuni**: Consulta `COMMON_PATTERNS.md` per best practices
+6. **Per esempi pratici**: Consulta `EXAMPLES.md` per esempi codice completo
+7. **Per flussi complessi**: Consulta `FLOW_DIAGRAMS.md` per diagrammi di flusso
+8. **Per documentare codice**: Consulta `JSDOC_TEMPLATES.md` per template standard
+9. **Per architettura**: Consulta `docs/ARCHITECTURE.md` (nella cartella docs/)
 
 ### Per Sviluppatori
 
@@ -77,6 +160,10 @@ Quando si aggiungono/modificano:
 - **Tipi**: Aggiornare `TYPES.md`
 - **Schema database**: Aggiornare `DATABASE_SCHEMA.md`
 - **Configurazione**: Aggiornare `CONFIGURATION.md`
+- **Endpoint API**: Aggiornare `API_ENDPOINTS.md` (o rigenerare con `npm run docs:generate`)
+- **Pattern comuni**: Aggiornare `COMMON_PATTERNS.md` se si aggiungono nuovi pattern
+- **Esempi**: Aggiornare `EXAMPLES.md` se si aggiungono nuovi esempi significativi
+- **Flussi**: Aggiornare `FLOW_DIAGRAMS.md` se si modificano flussi complessi
 
 Mantenere la documentazione sincronizzata con il codice è importante per garantire accuratezza.
 
@@ -85,4 +172,5 @@ Mantenere la documentazione sincronizzata con il codice è importante per garant
 - Vedi `docs/ARCHITECTURE.md` per architettura generale
 - Vedi `docs/API_REFERENCE.md` per documentazione API
 - Vedi `README.md` (root) per panoramica progetto
+
 

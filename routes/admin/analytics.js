@@ -1,7 +1,7 @@
 'use strict';
 
 const { getDb } = require('../../utils/db');
-const { registerAdminRoute, getTenantId } = require('../../utils/routeHelper');
+const { registerAdminRoute, getTenantId, sendSanitizedJson } = require('../../utils/routeHelper');
 const logger = require('../../utils/logger');
 
 /**
@@ -79,7 +79,8 @@ function setupAnalyticsRoutes(app) {
                 }
             }
 
-            res.json({
+            // Sanitize output to prevent XSS
+            sendSanitizedJson(res, {
                 totalCampaigns: campaigns.length,
                 totalCouponsIssued: totalIssued,
                 totalCouponsRedeemed: totalRedeemed,
@@ -172,7 +173,8 @@ function setupAnalyticsRoutes(app) {
                 redemptionRate: b.issued ? (b.redeemed / b.issued) : 0,
                 estNetMarginAfterDiscount: Math.max(0, b.estGrossMarginRedeemed - b.estDiscountRedeemed)
             }));
-            res.json(result);
+            // Sanitize output to prevent XSS
+            sendSanitizedJson(res, result);
         } catch (e) {
             logger.error({ err: e }, 'analytics/campaigns error');
             res.status(500).json({ error: 'Errore analytics' });
@@ -265,7 +267,8 @@ function setupAnalyticsRoutes(app) {
             }
             const temporalData = Array.from(temporalMap.values());
 
-            res.json(temporalData);
+            // Sanitize output to prevent XSS
+            sendSanitizedJson(res, temporalData);
         } catch (e) {
             logger.error({ err: e }, 'analytics/temporal error');
             res.status(500).json({ error: 'Errore analytics temporali' });
@@ -355,7 +358,8 @@ function setupAnalyticsRoutes(app) {
                 res.setHeader('Content-Disposition', 'attachment; filename="analytics-export.csv"');
                 res.send(csvContent);
             } else {
-                res.json(data);
+                // Sanitize output to prevent XSS
+                sendSanitizedJson(res, data);
             }
         } catch (e) {
             logger.error({ err: e }, 'analytics/export error');

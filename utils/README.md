@@ -10,7 +10,9 @@ utils/
 ├── email.js         # Email transport e configurazione
 ├── qrcode.js        # Generazione QR code
 ├── logger.js        # Logger strutturato (pino)
-└── routeHelper.js   # Helper per route registration
+├── routeHelper.js   # Helper per route registration
+├── sanitize.js      # XSS protection e sanitizzazione input/output
+└── passwordPolicy.js # Password policy enforcement
 ```
 
 ## Utils Disponibili
@@ -142,6 +144,85 @@ const tenantId = await getTenantId(req);
 if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
 ```
 
+#### sendSanitizedJson(res, data, excludeKeys)
+Invia risposta JSON sanitizzata (previene XSS).
+
+```javascript
+const { sendSanitizedJson } = require('./utils/routeHelper');
+const campaigns = await db.all('SELECT * FROM campaigns WHERE tenant_id = ?', tenantId);
+sendSanitizedJson(res, campaigns);
+```
+
+**Caratteristiche:**
+- Escapa automaticamente tutti i valori stringa
+- Previene XSS attacks nei JSON responses
+- Opzionale: escludi chiavi specifiche dalla sanitizzazione
+
+### sanitize.js
+
+#### escapeHtmlSafe(input)
+Escapa caratteri HTML per prevenire XSS.
+
+```javascript
+const { escapeHtmlSafe } = require('./utils/sanitize');
+const safe = escapeHtmlSafe('<script>alert("xss")</script>');
+// Returns: '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+```
+
+#### sanitizeObject(obj, excludeKeys)
+Sanitizza oggetto ricorsivamente escapando tutti i valori stringa.
+
+```javascript
+const { sanitizeObject } = require('./utils/sanitize');
+const sanitized = sanitizeObject({ name: '<script>alert("xss")</script>', email: 'user@example.com' });
+```
+
+#### sanitizeUrl(url)
+Sanitizza URL bloccando protocolli pericolosi (javascript:, data:, etc.).
+
+```javascript
+const { sanitizeUrl } = require('./utils/sanitize');
+const safe = sanitizeUrl('javascript:alert("xss")');
+// Returns: '' (bloccato)
+```
+
+**Vedi:** `utils/sanitize.js` per tutte le funzioni disponibili
+
+### passwordPolicy.js
+
+#### validatePassword(password)
+Valida password contro policy di sicurezza.
+
+```javascript
+const { validatePassword, getPolicyRequirements } = require('./utils/passwordPolicy');
+const result = validatePassword('MyP@ssw0rd123');
+if (!result.valid) {
+    return res.status(400).json({ 
+        error: 'Password non conforme',
+        details: result.errors,
+        requirements: getPolicyRequirements()
+    });
+}
+```
+
+**Requisiti password:**
+- Minimo 12 caratteri
+- Almeno una lettera maiuscola
+- Almeno una lettera minuscola
+- Almeno un numero
+- Almeno un carattere speciale
+- Non può essere una password comune
+
+#### needsPasswordChange(passwordChangedAt, maxAgeDays)
+Verifica se password necessita cambio (per rotazione password).
+
+```javascript
+const { needsPasswordChange } = require('./utils/passwordPolicy');
+if (needsPasswordChange(user.password_changed_at, 90)) {
+    // Forza cambio password
+}
+```
+
 ## Quando Usare Quale Utility
 
 ### Database Operations
@@ -209,14 +290,47 @@ logger.withRequest(req).error({ err }, 'Request failed');
 **Usa `routeHelper.js`:**
 - Registrazione route admin
 - Tenant ID resolution
+- JSON response sanitization
 
 **Esempio:**
 ```javascript
-const { registerAdminRoute, getTenantId } = require('./utils/routeHelper');
+const { registerAdminRoute, getTenantId, sendSanitizedJson } = require('./utils/routeHelper');
 registerAdminRoute(app, '/resource', 'get', async (req, res) => {
     const tenantId = await getTenantId(req);
-    // ...
+    const data = await db.all('SELECT * FROM resource WHERE tenant_id = ?', tenantId);
+    sendSanitizedJson(res, data); // Sanitizza output
 });
+```
+
+### XSS Protection
+
+**Usa `sanitize.js`:**
+- Escape HTML entities
+- Sanitize user input
+- Sanitize JSON output
+- URL validation
+
+**Esempio:**
+```javascript
+const { escapeHtmlSafe, sanitizeObject } = require('./utils/sanitize');
+const safeHtml = escapeHtmlSafe(userInput);
+const safeData = sanitizeObject(userData);
+```
+
+### Password Policy
+
+**Usa `passwordPolicy.js`:**
+- Validazione password strength
+- Policy enforcement
+- Password rotation checks
+
+**Esempio:**
+```javascript
+const { validatePassword } = require('./utils/passwordPolicy');
+const validation = validatePassword(password);
+if (!validation.valid) {
+    return res.status(400).json({ error: validation.errors });
+}
 ```
 
 ## Best Practices
@@ -250,14 +364,63 @@ try {
 4. **Tenant isolation** - sempre includere `tenant_id` nelle query:
 
 ```javascript
-// ✅ Corretto
+// ✅ Corretto: Usa getTenantId() helper
+const tenantId = await getTenantId(req);
+if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
 const campaigns = await db.all('SELECT * FROM campaigns WHERE tenant_id = ?', tenantId);
 
-// ❌ ERRATO
+// ✅ Corretto: JOIN con tenant_id su entrambe le tabelle
+const coupons = await db.all(`
+    SELECT c.*, u.email 
+    FROM coupons c
+    JOIN users u ON c.user_id = u.id AND u.tenant_id = c.tenant_id
+    WHERE c.tenant_id = ? AND c.status = 'active'
+`, tenantId);
+
+// ❌ ERRATO: Manca tenant_id filter
 const campaigns = await db.all('SELECT * FROM campaigns');
+
+// ❌ ERRATO: JOIN senza tenant_id su entrambe le tabelle
+const coupons = await db.all(`
+    SELECT c.* FROM coupons c
+    JOIN users u ON c.user_id = u.id
+    WHERE c.id = ?
+`, couponId);
 ```
 
+**Helper per validazione query:**
+```javascript
+const { ensureTenantFilter } = require('./utils/db');
+
+// Valida che la query includa tenant_id (development-time check)
+const validation = ensureTenantFilter(
+    'SELECT * FROM campaigns WHERE tenant_id = ? AND id = ?',
+    'campaigns',
+    tenantId
+);
+
+if (!validation.valid) {
+    logger.warn({ warning: validation.warning }, 'Query missing tenant filter');
+}
+```
+
+**Tabelle tenant-scoped (richiedono sempre tenant_id):**
+- `users`, `campaigns`, `coupons`, `form_links`, `user_custom_data`
+- `products`, `campaign_products`, `email_template`, `form_customization`, `tenant_brand_settings`
+
+**Tabelle globali (NON richiedono tenant_id):**
+- `tenants`, `system_logs`, `schema_migrations`
+- `auth_users` (superadmin può vedere tutti, admin solo del proprio tenant)
+
 5. **Usare prepared statements** - già garantito da `db.run()`, `db.all()`, `db.get()`
+
+6. **Middleware per tenant isolation:**
+```javascript
+const { verifyTenantIsolation } = require('../middleware/tenant');
+
+// Applica middleware per verificare tenant context (opzionale, per logging)
+app.use('/api/admin', verifyTenantIsolation);
+```
 
 ## Riferimenti
 
@@ -265,4 +428,5 @@ const campaigns = await db.all('SELECT * FROM campaigns');
 - Vedi `LLM_MD/DATABASE_SCHEMA.md` per schema database
 - Vedi `LLM_MD/CONFIGURATION.md` per configurazione
 - Vedi `docs/ARCHITECTURE.md` per architettura generale
+
 

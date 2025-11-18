@@ -42,6 +42,7 @@ let db = null;
  * - Temp store: MEMORY
  * 
  * @see {@link LLM_MD/DATABASE_SCHEMA.md} For database schema documentation
+ * @since 1.0.0
  */
 async function getDb() {
     if (db) return db;
@@ -969,10 +970,151 @@ async function ensureTenantScopedUniqueConstraints(dbConn) {
     }
 }
 
+/**
+ * Helper function to ensure SQL query includes tenant_id filter.
+ * 
+ * Validates that a SQL query string includes proper tenant isolation by checking
+ * for tenant_id filter in WHERE clause. This is a development-time safety check
+ * to prevent accidental cross-tenant data access.
+ * 
+ * Tables that require tenant_id filter:
+ * - users, campaigns, coupons, form_links, user_custom_data
+ * - products, campaign_products, email_template, form_customization
+ * - tenant_brand_settings
+ * 
+ * Tables that DON'T require tenant_id (global):
+ * - tenants, auth_users (for superadmin), system_logs (can be global)
+ * 
+ * @param {string} sql - SQL query string to validate
+ * @param {string} tableName - Name of the main table being queried
+ * @param {number|null} tenantId - Tenant ID that should be filtered (null for global tables)
+ * @returns {Object} Validation result
+ * @returns {boolean} returns.valid - Whether query includes proper tenant filter
+ * @returns {string} [returns.warning] - Warning message if validation fails
+ * 
+ * @example
+ * // ✅ Valid query
+ * ensureTenantFilter('SELECT * FROM campaigns WHERE tenant_id = ?', 'campaigns', 1);
+ * // Returns: { valid: true }
+ * 
+ * @example
+ * // ❌ Invalid query (missing tenant_id)
+ * ensureTenantFilter('SELECT * FROM campaigns WHERE id = ?', 'campaigns', 1);
+ * // Returns: { valid: false, warning: 'Query missing tenant_id filter' }
+ * 
+ * @description
+ * This function performs a basic static analysis of SQL queries:
+ * - Checks if table requires tenant_id (based on table name)
+ * - Verifies WHERE clause includes tenant_id filter
+ * - Handles JOIN queries by checking all tenant-scoped tables
+ * 
+ * Note: This is a best-effort validation. Complex queries with subqueries
+ * or dynamic SQL may not be fully validated. Always test tenant isolation
+ * with integration tests.
+ * 
+ * @see {@link LLM_MD/DATABASE_SCHEMA.md} For tenant isolation patterns
+ */
+function ensureTenantFilter(sql, tableName, tenantId) {
+    if (!sql || typeof sql !== 'string') {
+        return { valid: false, warning: 'Invalid SQL query' };
+    }
+    
+    // Tables that require tenant_id filter
+    const tenantScopedTables = [
+        'users', 'campaigns', 'coupons', 'form_links', 'user_custom_data',
+        'products', 'campaign_products', 'email_template', 'form_customization',
+        'tenant_brand_settings'
+    ];
+    
+    // Tables that don't require tenant_id (global)
+    const globalTables = ['tenants', 'system_logs', 'schema_migrations'];
+    
+    // Check if table requires tenant isolation
+    const normalizedTable = tableName.toLowerCase().trim();
+    const requiresTenantFilter = tenantScopedTables.includes(normalizedTable);
+    const isGlobalTable = globalTables.includes(normalizedTable);
+    
+    // If table doesn't require tenant filter, always valid
+    if (isGlobalTable || !requiresTenantFilter) {
+        return { valid: true };
+    }
+    
+    // If tenantId is null/undefined but table requires it, invalid
+    if (tenantId === null || tenantId === undefined) {
+        return { valid: false, warning: `Table '${tableName}' requires tenant_id filter but tenantId is null` };
+    }
+    
+    // Normalize SQL for checking (remove comments, normalize whitespace)
+    const normalizedSql = sql
+        .replace(/--.*$/gm, '') // Remove SQL comments
+        .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .toLowerCase()
+        .trim();
+    
+    // Check if WHERE clause exists
+    const hasWhere = normalizedSql.includes(' where ');
+    
+    // Check for tenant_id filter in WHERE clause
+    // Pattern: WHERE ... tenant_id = ? OR WHERE ... AND tenant_id = ? OR WHERE tenant_id = ?
+    const tenantIdPatterns = [
+        /\btenant_id\s*=\s*\?/,
+        /\btenant_id\s*=\s*:\w+/,
+        /\btenant_id\s*=\s*\$\d+/,
+        /\btenant_id\s*IN\s*\([^)]+\)/
+    ];
+    
+    const hasTenantFilter = tenantIdPatterns.some(pattern => pattern.test(normalizedSql));
+    
+    // Also check for JOIN conditions that include tenant_id
+    const joinPatterns = [
+        /\bjoin\s+\w+\s+\w+\s+on\s+[^=]*tenant_id\s*=\s*[^=]*tenant_id/i,
+        /\bjoin\s+\w+\s+\w+\s+on\s+[^=]*tenant_id\s*=\s*\?/i
+    ];
+    
+    const hasJoinTenantFilter = joinPatterns.some(pattern => pattern.test(normalizedSql));
+    
+    // Check if query references multiple tenant-scoped tables
+    const referencedTenantTables = tenantScopedTables.filter(table => {
+        const tableRegex = new RegExp(`\\b${table}\\b`, 'i');
+        return tableRegex.test(normalizedSql);
+    });
+    
+    // If multiple tenant-scoped tables, ensure all have tenant_id filters
+    if (referencedTenantTables.length > 1) {
+        // For JOIN queries, tenant_id should be in JOIN condition or WHERE clause
+        if (!hasTenantFilter && !hasJoinTenantFilter) {
+            return {
+                valid: false,
+                warning: `Query joins multiple tenant-scoped tables (${referencedTenantTables.join(', ')}) but missing tenant_id filter`
+            };
+        }
+    }
+    
+    // If WHERE clause exists but no tenant_id filter, invalid
+    if (hasWhere && !hasTenantFilter && !hasJoinTenantFilter) {
+        return {
+            valid: false,
+            warning: `Query on tenant-scoped table '${tableName}' has WHERE clause but missing tenant_id filter`
+        };
+    }
+    
+    // If no WHERE clause at all, might be invalid (unless it's a simple SELECT with tenant_id in JOIN)
+    if (!hasWhere && !hasJoinTenantFilter) {
+        return {
+            valid: false,
+            warning: `Query on tenant-scoped table '${tableName}' has no WHERE clause and no tenant_id filter in JOIN`
+        };
+    }
+    
+    return { valid: true };
+}
+
 module.exports = {
     getDb,
     ensureTenantEmailColumns,
     ensureFormCustomizationTenantId,
-    ensureTenantScopedUniqueConstraints
+    ensureTenantScopedUniqueConstraints,
+    ensureTenantFilter
 };
 

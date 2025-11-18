@@ -1,6 +1,6 @@
 'use strict';
 
-const { getDb, ensureTenantEmailColumns, ensureFormCustomizationTenantId, ensureTenantScopedUniqueConstraints } = require('../utils/db');
+const { getDb, ensureTenantEmailColumns, ensureFormCustomizationTenantId, ensureTenantScopedUniqueConstraints, ensureTenantFilter } = require('../utils/db');
 const logger = require('../utils/logger');
 
 const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || 'default';
@@ -179,10 +179,75 @@ async function getTenantIdForApi(req) {
     return (sess && typeof sess.tenantId === 'number') ? sess.tenantId : null;
 }
 
+/**
+ * Middleware: Verify tenant isolation for admin routes.
+ * 
+ * This middleware performs runtime verification that database queries
+ * include proper tenant_id filters. It's a safety check to prevent
+ * accidental cross-tenant data access.
+ * 
+ * Note: This is a development-time safety check. In production, you may
+ * want to disable this middleware for performance reasons, relying on
+ * code review and integration tests instead.
+ * 
+ * @param {ExpressRequest} req - Express request object
+ * @param {Express.Response} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * 
+ * @returns {void} Calls next() if verification passes
+ * 
+ * @description
+ * This middleware:
+ * 1. Intercepts database queries (if possible) or validates SQL patterns
+ * 2. Checks that tenant-scoped queries include tenant_id filter
+ * 3. Logs warnings for queries that might violate tenant isolation
+ * 4. Does NOT block requests (only logs warnings) - actual enforcement
+ *    is done by requireSameTenantAsSession middleware
+ * 
+ * Currently, this middleware is a placeholder that logs tenant context.
+ * Full SQL query interception would require wrapping database methods,
+ * which is complex and may impact performance.
+ * 
+ * For now, tenant isolation is enforced by:
+ * - requireSameTenantAsSession middleware (verifies tenant matches session)
+ * - Code review and static analysis
+ * - Integration tests (test-tenant-isolation.js)
+ * 
+ * @see {@link ensureTenantFilter} For SQL query validation helper
+ * @see {@link requireSameTenantAsSession} For actual tenant isolation enforcement
+ */
+function verifyTenantIsolation(req, res, next) {
+    // This middleware currently just ensures tenant context is set
+    // Full SQL query interception would be complex and performance-intensive
+    
+    const tenantId = req.tenant?.id || req.session?.user?.tenantId;
+    const tenantSlug = req.tenant?.slug || req.session?.user?.tenantSlug;
+    
+    // Store tenant context in request for use by route handlers
+    req._tenantContext = {
+        tenantId,
+        tenantSlug,
+        verified: !!tenantId
+    };
+    
+    // Log warning if tenant context is missing for admin routes
+    if (!tenantId && req.path.startsWith('/api/admin')) {
+        logger.warn({
+            path: req.path,
+            method: req.method,
+            hasSession: !!req.session,
+            hasTenant: !!req.tenant
+        }, 'Admin route accessed without tenant context');
+    }
+    
+    next();
+}
+
 module.exports = {
     tenantLoader,
     requireSameTenantAsSession,
-    getTenantIdForApi
+    getTenantIdForApi,
+    verifyTenantIsolation
 };
 
 

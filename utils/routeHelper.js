@@ -1,5 +1,8 @@
 'use strict';
 
+const { sanitizeObject } = require('./sanitize');
+const logger = require('./logger');
+
 const { requireAdmin, requireRole } = require('../middleware/auth');
 const { tenantLoader, requireSameTenantAsSession, getTenantIdForApi } = require('../middleware/tenant');
 
@@ -45,6 +48,7 @@ const { tenantLoader, requireSameTenantAsSession, getTenantIdForApi } = require(
  * 
  * @see {@link getTenantId} For getting tenant ID in route handlers
  * @see {@link LLM_MD/TYPES.md} For ExpressRequest type definition
+ * @since 1.0.0
  */
 function registerAdminRoute(app, path, method, handler) {
     // Ensure path starts with /
@@ -53,13 +57,25 @@ function registerAdminRoute(app, path, method, handler) {
     // Legacy route: /api/admin{path}
     // Uses requireAdmin middleware and getTenantIdForApi(req) for tenant resolution
     const legacyPath = `/api/admin${normalizedPath}`;
-    app[method](legacyPath, requireAdmin, handler);
+    try {
+        app[method](legacyPath, requireAdmin, handler);
+        logger.debug({ method, legacyPath }, 'Registered legacy admin route');
+    } catch (e) {
+        logger.error({ err: e, method, legacyPath }, 'Error registering legacy admin route');
+        throw e;
+    }
     
     // Tenant-scoped route: /t/:tenantSlug/api/admin{path}
     // Uses tenantLoader, requireSameTenantAsSession, requireRole('admin')
     // Tenant is already loaded in req.tenant by tenantLoader
     const tenantScopedPath = `/t/:tenantSlug/api/admin${normalizedPath}`;
-    app[method](tenantScopedPath, tenantLoader, requireSameTenantAsSession, requireRole('admin'), handler);
+    try {
+        app[method](tenantScopedPath, tenantLoader, requireSameTenantAsSession, requireRole('admin'), handler);
+        logger.info({ method, tenantScopedPath, normalizedPath }, 'Registered tenant-scoped admin route');
+    } catch (e) {
+        logger.error({ err: e, method, tenantScopedPath }, 'Error registering tenant-scoped admin route');
+        throw e;
+    }
 }
 
 /**
@@ -87,6 +103,7 @@ function registerAdminRoute(app, path, method, handler) {
  * 4. Return null if none found
  * 
  * @see {@link LLM_MD/TYPES.md} For ExpressRequest and Tenant type definitions
+ * @since 1.0.0
  */
 async function getTenantId(req) {
     // For tenant-scoped routes, tenant is already loaded by tenantLoader
@@ -97,9 +114,32 @@ async function getTenantId(req) {
     return await getTenantIdForApi(req);
 }
 
+/**
+ * Helper to send sanitized JSON response
+ * 
+ * Sanitizes data before sending as JSON to prevent XSS attacks.
+ * Escapes HTML entities in all string values.
+ * 
+ * @param {Express.Response} res - Express response object
+ * @param {*} data - Data to send (object, array, or primitive)
+ * @param {Array<string>} excludeKeys - Keys to exclude from sanitization (optional)
+ * @returns {void}
+ * 
+ * @example
+ * // In route handler
+ * const campaigns = await db.all('SELECT * FROM campaigns WHERE tenant_id = ?', tenantId);
+ * sendSanitizedJson(res, campaigns);
+ */
+function sendSanitizedJson(res, data, excludeKeys = []) {
+    // Sanitize data before sending
+    const sanitized = sanitizeObject(data, excludeKeys);
+    res.json(sanitized);
+}
+
 module.exports = {
     registerAdminRoute,
-    getTenantId
+    getTenantId,
+    sendSanitizedJson
 };
 
 

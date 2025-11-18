@@ -1,5 +1,34 @@
 'use strict';
 
+/**
+ * FLYCouponGen - Express Server Entry Point
+ * 
+ * This file sets up the Express application with all middleware, routes, and error handlers.
+ * 
+ * IMPORTANT: Middleware order matters! The order below is critical for security and functionality:
+ * 1. Trust proxy (for HTTPS detection behind reverse proxy)
+ * 2. HTTPS enforcement (redirect HTTP to HTTPS in production)
+ * 3. Body parsing (JSON, URL-encoded)
+ * 4. Cookie parser
+ * 5. JSON parsing error handler
+ * 6. Static file serving
+ * 7. Request ID and logging middleware
+ * 8. Session middleware (must be before routes that use sessions)
+ * 9. Security headers (helmet.js - CSP, HSTS, etc.)
+ * 10. CORS middleware
+ * 11. Auth routes setup
+ * 12. Admin routes setup
+ * 13. CSRF token endpoint
+ * 14. CSRF protection middleware (for protected routes)
+ * 15. Public routes (form submission, etc.)
+ * 16. Admin panel routes
+ * 17. Error handlers (must be last)
+ * 
+ * @see {@link LLM_MD/CONFIGURATION.md} for environment variables documentation
+ * @see {@link LLM_MD/TYPES.md} for type definitions
+ * @see {@link docs/ARCHITECTURE.md} for architecture overview
+ */
+
 require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
@@ -17,6 +46,17 @@ const formData = require('form-data');
 const Mailgun = require('mailgun.js');
 // Logger
 const logger = require('./utils/logger');
+// Security headers
+const helmet = require('helmet');
+
+/**
+ * Generate random alphanumeric ID
+ * 
+ * Used for generating request IDs, coupon codes, and other unique identifiers.
+ * 
+ * @param {number} [length=12] - Length of generated ID
+ * @returns {string} Random alphanumeric string (uppercase letters and numbers)
+ */
 function generateId(length = 12) {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     const bytes = crypto.randomBytes(length);
@@ -30,18 +70,57 @@ function generateId(length = 12) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ============================================================================
+// SECTION 1: Trust Proxy Configuration
+// ============================================================================
 // Trust proxy for HTTPS detection (when behind Nginx/load balancer)
+// This allows req.secure to work correctly when behind a reverse proxy
 app.set('trust proxy', 1);
+
+// ============================================================================
+// SECTION 2: HTTPS Enforcement
+// ============================================================================
+// Redirect HTTP to HTTPS in production for transport layer security
+// This middleware must be early in the chain to catch all HTTP requests
+const isProduction = process.env.NODE_ENV === 'production';
+const FORCE_HTTPS = String(process.env.FORCE_HTTPS || 'true') === 'true';
+
+if (isProduction && FORCE_HTTPS) {
+    app.use((req, res, next) => {
+        // Check if request is secure (HTTPS) or forwarded as secure
+        const isSecure = req.secure || 
+                        req.headers['x-forwarded-proto'] === 'https' ||
+                        req.headers['x-forwarded-ssl'] === 'on';
+        
+        if (!isSecure) {
+            // Redirect to HTTPS
+            const httpsUrl = `https://${req.headers.host}${req.originalUrl}`;
+            return res.redirect(301, httpsUrl);
+        }
+        next();
+    });
+    logger.info('HTTPS enforcement enabled: HTTP requests will be redirected to HTTPS');
+}
+
+// ============================================================================
+// SECTION 3: Configuration Constants
+// ============================================================================
 const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || 'default';
 const DEFAULT_TENANT_NAME = process.env.DEFAULT_TENANT_NAME || 'Default Tenant';
 const ENFORCE_TENANT_PREFIX = String(process.env.ENFORCE_TENANT_PREFIX || 'false') === 'true';
-// CSRF middleware moved to middleware/csrf.js
 
+// ============================================================================
+// SECTION 4: Body Parsing Middleware
+// ============================================================================
+// Parse request bodies (must be before routes that read req.body)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '15mb' }));
 app.use(cookieParser());
 
-// Middleware per gestire errori di parsing JSON
+// ============================================================================
+// SECTION 5: Error Handling Middleware (Early)
+// ============================================================================
+// Handle JSON parsing errors (must be after body parsing middleware)
 app.use((error, req, res, next) => {
     if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
         logger.warn({ err: error, message: error.message }, 'JSON parsing error in request body');
@@ -50,7 +129,10 @@ app.use((error, req, res, next) => {
     next();
 });
 
-// Serve uploads from configurable directory (served via protected endpoint, not public static)
+// ============================================================================
+// SECTION 6: Static File Serving
+// ============================================================================
+// Configure uploads directory (uploads are served via protected endpoint, not public static)
 const UPLOADS_BASE_DIR = process.env.UPLOADS_DIR
     ? path.resolve(process.env.UPLOADS_DIR)
     : path.join(__dirname, 'static', 'uploads');
@@ -60,6 +142,7 @@ if (!fs.existsSync(UPLOADS_BASE_DIR)) {
 // Uploads are served via /api/uploads/:tenantSlug/:filename endpoint below
 
 // Serve static files with cache control
+// Static files (CSS, JS, images) are served from /static directory
 const staticOptions = {
     setHeaders: (res, filePath) => {
         // Disable cache for CSS and JS in development to see changes immediately
@@ -74,7 +157,11 @@ app.use('/static', express.static(path.join(__dirname, 'static'), staticOptions)
 // Auth routes moved to routes/auth.js
 const { setupAuthRoutes, logAction, hashPassword, verifyPassword, toSlug } = require('./routes/auth');
 
-// Request ID and basic structured logging
+// ============================================================================
+// SECTION 7: Request Logging Middleware
+// ============================================================================
+// Generate request ID and log all requests with structured logging
+// This middleware must be early to capture all requests
 app.use((req, res, next) => {
     req.requestId = generateId(10);
     const startedAt = Date.now();
@@ -148,43 +235,146 @@ app.get('/api/public-config', (req, res) => {
 
 // tenantLoader, requireSameTenantAsSession, requireRole moved to middleware/
 
-// Session configuration (in-memory store; Redis optional for scaling/multi-instance)
-// Generate secure random session secret if not provided
+// ============================================================================
+// SECTION 8: Session Configuration
+// ============================================================================
+// Configure Express session middleware (must be before routes that use sessions)
+// Session store: in-memory (Redis optional for scaling/multi-instance)
+// 
+// Security features:
+// - Secure random session secret (required in production)
+// - HttpOnly cookies (prevents XSS access to session cookie)
+// - Secure cookies in production (HTTPS only)
+// - SameSite: lax (CSRF protection)
+// - Rolling: false (session timeout doesn't reset on each request)
+// - Proxy: true (trust proxy headers for secure detection)
+
+/**
+ * Generate secure random session secret
+ * 
+ * @returns {string} 128-character hex string
+ */
 const generateSecureSecret = () => {
     return crypto.randomBytes(64).toString('hex');
 };
 
 let sessionSecret = process.env.SESSION_SECRET;
-if (!sessionSecret || sessionSecret === 'your-secret-key-change-in-production' || sessionSecret === 'coupon-gen-secret-key-change-in-production') {
-    sessionSecret = generateSecureSecret();
-    logger.warn({
-        generated: true,
-        secretPreview: sessionSecret.substring(0, 16) + '...'
-    }, 'SECURITY WARNING: SESSION_SECRET not set or using default value. A random secret has been generated for this session only. MUST set SESSION_SECRET in .env for production!');
+
+// In production, SESSION_SECRET is REQUIRED - block startup if missing
+if (isProduction) {
+    if (!sessionSecret || sessionSecret === 'your-secret-key-change-in-production' || sessionSecret === 'coupon-gen-secret-key-change-in-production') {
+        logger.error({
+            missing: true
+        }, 'FATAL ERROR: SESSION_SECRET is REQUIRED in production but not set or using default value. Set SESSION_SECRET in .env file before starting the server.');
+        process.exit(1);
+    }
+} else {
+    // In development, generate random secret if not provided (with warning)
+    if (!sessionSecret || sessionSecret === 'your-secret-key-change-in-production' || sessionSecret === 'coupon-gen-secret-key-change-in-production') {
+        sessionSecret = generateSecureSecret();
+        logger.warn({
+            generated: true,
+            secretPreview: sessionSecret.substring(0, 16) + '...'
+        }, 'SECURITY WARNING: SESSION_SECRET not set or using default value. A random secret has been generated for this session only. MUST set SESSION_SECRET in .env for production!');
+    }
 }
+
+// Session timeout configuration (default: 24 hours, configurable via SESSION_TIMEOUT_MS)
+const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 24 * 60 * 60 * 1000);
 
 let sessionOptions = {
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    name: 'sessionId', // Don't expose framework name (not 'connect.sid')
     cookie: {
-        secure: 'auto', // Automatically detect HTTPS
-        httpOnly: true,
-        sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
-        maxAge: 24 * 60 * 60 * 1000,
+        secure: isProduction ? true : 'auto', // Force secure in production
+        httpOnly: true, // Prevent XSS access to cookie
+        sameSite: isProduction ? 'lax' : 'lax', // CSRF protection
+        maxAge: SESSION_TIMEOUT_MS,
         path: '/'
-    }
+    },
+    // Additional security options
+    rolling: false, // Don't reset expiration on every request (more secure)
+    proxy: true // Trust proxy headers for secure detection
 };
 app.use(session(sessionOptions));
+
+// ============================================================================
+// SECTION 9: Security Headers Middleware
+// ============================================================================
+// Configure helmet.js for HTTP security headers
+// Must be after session middleware but before routes
+// 
+// Headers configured:
+// - Content-Security-Policy (CSP): Enabled in production, disabled in development
+// - HSTS: HTTP Strict Transport Security (production only)
+// - X-Frame-Options: DENY (prevents clickjacking)
+// - X-Content-Type-Options: nosniff (prevents MIME sniffing)
+// - Referrer-Policy: strict-origin-when-cross-origin
+// - X-XSS-Protection: Enabled
+// - Expect-CT: Certificate Transparency (production only)
+app.use(helmet({
+    contentSecurityPolicy: isProduction ? {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles for compatibility
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com"], // reCAPTCHA
+            imgSrc: ["'self'", "data:", "https:"], // Allow data URLs for QR codes and images
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],
+        },
+    } : false, // Disable CSP in development for easier debugging
+    hsts: isProduction ? {
+        maxAge: 31536000, // 1 year
+        includeSubDomains: true,
+        preload: true
+    } : false, // Only enable HSTS in production
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    frameguard: { action: 'deny' }, // Prevent clickjacking
+    noSniff: true, // Prevent MIME type sniffing
+    xssFilter: true, // Enable XSS filter
+    permittedCrossDomainPolicies: false,
+    expectCt: isProduction ? {
+        maxAge: 86400,
+        enforce: true
+    } : false
+}));
+
+// ============================================================================
+// SECTION 10: CORS Configuration
+// ============================================================================
+// Configure Cross-Origin Resource Sharing
+// Must be after security headers, before routes
+// 
+// Behavior:
+// - Production: Only allows explicitly configured origins (ALLOWED_ORIGINS env var)
+// - Development: Allows all origins if ALLOWED_ORIGINS is empty, otherwise uses whitelist
+// - Supports credentials (cookies, auth headers) for whitelisted origins
+const { corsMiddleware } = require('./middleware/cors');
+app.use(corsMiddleware);
+
+// ============================================================================
+// SECTION 11: Route Setup
+// ============================================================================
+// Setup all application routes
+// Order matters: auth routes before admin routes (some admin routes depend on auth)
 
 // Setup auth routes (must be after session middleware)
 setupAuthRoutes(app);
 
-// Setup admin routes
+// Setup admin routes (campaigns, users, coupons, analytics, etc.)
 const { setupAdminRoutes } = require('./routes/admin');
 setupAdminRoutes(app);
 
-// CSRF token endpoint (must be after session middleware but before CSRF protection)
+// ============================================================================
+// SECTION 12: CSRF Token Endpoint
+// ============================================================================
+// Endpoint to generate CSRF tokens for frontend
+// Must be after session middleware but before CSRF protection middleware
 // This endpoint needs CSRF middleware to generate token, but is itself exempt from protection
 app.get(['/api/csrf-token','/t/:tenantSlug/api/csrf-token'], (req, res, next) => {
     // Apply csrfProtection just for this route to generate token
@@ -1089,8 +1279,8 @@ app.get('/api/test-coupon-email', async (req, res) => {
             return res.status(403).json({ ok: false, error: 'Disabled in production' });
         }
         const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
-        const firstName = req.query.firstName || 'Lorenzo';
-        const lastName = req.query.lastName || 'Muro';
+        const firstName = req.query.firstName || 'Test';
+        const lastName = req.query.lastName || 'User';
         const couponCode = 'TEST' + Math.random().toString(36).slice(2, 8).toUpperCase();
         const discountText = 'uno sconto del 20%';
         const redemptionUrl = `${req.protocol}://${req.get('host')}/redeem/${couponCode}`;
@@ -1392,12 +1582,13 @@ app.post('/submit', (req, res) => {
 });
 
 // Tenant-scoped form submission (RECOMMENDED)
-app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyRecaptchaIfEnabled, async (req, res) => {
+const { validateBody } = require('./middleware/validation');
+const { formSubmissionSchema } = require('./utils/validators');
+
+app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyRecaptchaIfEnabled, validateBody(formSubmissionSchema), async (req, res) => {
     try {
+        // Data is already validated and sanitized by validateBody middleware
         const { email, firstName, lastName, campaign_id, form_token, ...customFields } = req.body;
-        if (!email) {
-            return res.status(400).send('Email richiesta');
-        }
         const couponCode = generateId(12);
 
         const dbConn = await getDb();
@@ -1729,8 +1920,11 @@ app.get('/superadmin/logs', (req, res) => {
 // Tenant-aware auth-users routes (moved to after campaigns route - see line 3232)
 
 // Tenant-scoped protected areas (soft-enforce in M2)
-app.use('/t/:tenantSlug/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
-app.use('/t/:tenantSlug/api/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
+// NOTE: These app.use() calls are redundant because routes registered via registerAdminRoute
+// already include the necessary middleware. Commenting out to avoid intercepting requests
+// before they reach the specific routes.
+// app.use('/t/:tenantSlug/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
+// app.use('/t/:tenantSlug/api/admin', tenantLoader, requireSameTenantAsSession, requireRole('admin'));
 app.use('/t/:tenantSlug/store', tenantLoader, requireSameTenantAsSession, requireRole('store'));
 app.use('/t/:tenantSlug/api/store', tenantLoader, requireSameTenantAsSession, requireRole('store'));
 
@@ -2347,15 +2541,188 @@ app.get('/t/:tenantSlug/redeem/:code', tenantLoader, (req, res) => {
 });
 
 // Health endpoints
+/**
+ * GET /health - Simple health check (no database check)
+ * 
+ * Returns basic health status without database connectivity check.
+ * Useful for load balancer health checks that need fast response.
+ * 
+ * @route GET /health
+ * @public
+ * 
+ * @returns {Object} Health status
+ * @returns {boolean} returns.ok - Always true
+ */
 app.get('/health', (req, res) => res.json({ ok: true }));
+
+/**
+ * GET /healthz - Health check with database connectivity
+ * 
+ * Performs basic health check including database connectivity.
+ * Returns 200 if healthy, 500 if database is unreachable.
+ * 
+ * @route GET /healthz
+ * @public
+ * 
+ * @returns {Object} Health status
+ * @returns {boolean} returns.ok - true if healthy, false if unhealthy
+ * @returns {string} [returns.error] - Error message if unhealthy
+ * 
+ * @throws {500} Internal Server Error - If database is unreachable
+ */
 app.get('/healthz', async (req, res) => {
     try {
         const dbConn = await getDb();
         const row = await dbConn.get('SELECT 1 as ok');
-        if (row && row.ok === 1) return res.json({ ok: true });
-        return res.status(500).json({ ok: false });
+        if (row && row.ok === 1) {
+            return res.json({ ok: true, status: 'healthy', timestamp: new Date().toISOString() });
+        }
+        return res.status(500).json({ ok: false, status: 'unhealthy', error: 'Database query failed' });
     } catch (e) {
-        return res.status(500).json({ ok: false, error: String(e?.message || e) });
+        logger.warn({ err: e }, 'Health check failed');
+        return res.status(500).json({ 
+            ok: false, 
+            status: 'unhealthy', 
+            error: 'Database unreachable',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+/**
+ * GET /healthz/detailed - Detailed health check with system metrics
+ * 
+ * Performs comprehensive health check including:
+ * - Database connectivity
+ * - Database file size and status
+ * - Memory usage
+ * - Disk space (if available)
+ * - Uptime
+ * 
+ * @route GET /healthz/detailed
+ * @public
+ * 
+ * @returns {Object} Detailed health status
+ * @returns {boolean} returns.ok - Overall health status
+ * @returns {string} returns.status - 'healthy' or 'unhealthy'
+ * @returns {Object} returns.checks - Individual check results
+ * @returns {boolean} returns.checks.database - Database connectivity
+ * @returns {Object} returns.checks.database.details - Database details (size, etc.)
+ * @returns {Object} returns.checks.memory - Memory usage
+ * @returns {Object} returns.checks.disk - Disk space (if available)
+ * @returns {number} returns.uptime - Server uptime in seconds
+ * @returns {string} returns.timestamp - Current timestamp (ISO)
+ * 
+ * @throws {500} Internal Server Error - If critical checks fail
+ */
+app.get('/healthz/detailed', async (req, res) => {
+    const checks = {
+        database: { ok: false, details: {} },
+        memory: { ok: true, details: {} },
+        disk: { ok: true, details: {} }
+    };
+    let overallOk = true;
+    
+    try {
+        // Database check
+        try {
+            const dbConn = await getDb();
+            const dbRow = await dbConn.get('SELECT 1 as ok');
+            if (dbRow && dbRow.ok === 1) {
+                checks.database.ok = true;
+                
+                // Get database file info
+                const fs = require('fs');
+                const path = require('path');
+                const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+                const dbPath = path.join(DATA_DIR, 'coupons.db');
+                
+                if (fs.existsSync(dbPath)) {
+                    const stats = fs.statSync(dbPath);
+                    checks.database.details = {
+                        size: stats.size,
+                        sizeMB: (stats.size / 1024 / 1024).toFixed(2),
+                        modified: stats.mtime.toISOString()
+                    };
+                }
+            } else {
+                checks.database.ok = false;
+                overallOk = false;
+            }
+        } catch (dbError) {
+            checks.database.ok = false;
+            checks.database.error = String(dbError?.message || dbError);
+            overallOk = false;
+        }
+        
+        // Memory check
+        try {
+            const memUsage = process.memoryUsage();
+            const memMB = {
+                rss: (memUsage.rss / 1024 / 1024).toFixed(2),
+                heapTotal: (memUsage.heapTotal / 1024 / 1024).toFixed(2),
+                heapUsed: (memUsage.heapUsed / 1024 / 1024).toFixed(2),
+                external: (memUsage.external / 1024 / 1024).toFixed(2)
+            };
+            
+            checks.memory.details = memMB;
+            
+            // Warn if heap used > 500MB
+            if (memUsage.heapUsed > 500 * 1024 * 1024) {
+                checks.memory.warning = 'High memory usage';
+            }
+        } catch (memError) {
+            checks.memory.ok = false;
+            checks.memory.error = String(memError?.message || memError);
+        }
+        
+        // Disk space check (if available)
+        try {
+            const fs = require('fs').promises;
+            const path = require('path');
+            const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+            
+            // Try to get disk stats (may not work on all systems)
+            const stats = await fs.statfs ? await fs.statfs(DATA_DIR) : null;
+            if (stats) {
+                checks.disk.details = {
+                    available: stats.available,
+                    total: stats.total,
+                    freePercent: ((stats.available / stats.total) * 100).toFixed(2)
+                };
+                
+                // Warn if < 10% free
+                if ((stats.available / stats.total) < 0.1) {
+                    checks.disk.warning = 'Low disk space';
+                }
+            } else {
+                checks.disk.details = { note: 'Disk stats not available on this system' };
+            }
+        } catch (diskError) {
+            // Disk check is optional, don't fail overall health
+            checks.disk.details = { note: 'Disk check unavailable', error: String(diskError?.message || diskError) };
+        }
+        
+        const response = {
+            ok: overallOk,
+            status: overallOk ? 'healthy' : 'unhealthy',
+            checks,
+            uptime: Math.floor(process.uptime()),
+            timestamp: new Date().toISOString(),
+            version: process.env.npm_package_version || '1.0.0',
+            nodeVersion: process.version
+        };
+        
+        const statusCode = overallOk ? 200 : 500;
+        res.status(statusCode).json(response);
+    } catch (error) {
+        logger.error({ err: error }, 'Detailed health check failed');
+        res.status(500).json({
+            ok: false,
+            status: 'unhealthy',
+            error: 'Health check failed',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -3349,21 +3716,30 @@ app.delete('/api/superadmin/tenants/:id', requireSuperAdmin, async (req, res) =>
     }
 });
 
-// Global error handler (must be before 404 handler)
+// ============================================================================
+// SECTION 14: Global Error Handler
+// ============================================================================
+// Global error handler (must be last middleware, before 404 handler)
+// 
+// Security features:
+// - Prevents information disclosure: Full error details logged server-side only
+// - Standardized error messages: Generic messages in production, detailed in development
+// - Status code normalization: Ensures valid HTTP status codes
+// - Request context logging: Includes request ID, URL, method, IP, user agent
+// 
+// Error handling strategy:
+// - 404: "Risorsa non trovata"
+// - 403: "Accesso negato"
+// - 401: "Non autorizzato"
+// - 400: "Richiesta non valida" (with details in development)
+// - 500: Generic message in production, detailed in development
 app.use((error, req, res, next) => {
     // Skip if response already sent
     if (res.headersSent) {
         return next(error);
     }
     
-    // Log error with context using logger
-    const logContext = logger.withRequest(req);
-    logContext.error({
-        err: error,
-        message: error.message,
-        stack: error.stack,
-        statusCode: error.status || error.statusCode || 500
-    }, 'Unhandled error in request handler');
+    const isDevelopment = process.env.NODE_ENV === 'development';
     
     // Determine status code
     let statusCode = error.status || error.statusCode || 500;
@@ -3371,20 +3747,66 @@ app.use((error, req, res, next) => {
         statusCode = 500;
     }
     
-    // Prepare error response
-    const isDevelopment = process.env.NODE_ENV === 'development';
+    // Log error with full context server-side (never expose to client)
+    const logContext = logger.withRequest(req);
+    logContext.error({
+        err: error,
+        message: error.message,
+        stack: error.stack, // Full stack trace logged server-side only
+        statusCode,
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        userAgent: req.get('user-agent')
+    }, 'Unhandled error in request handler');
+    
+    // Prepare safe error response (no sensitive information)
     const errorResponse = {
         error: 'Errore interno del server',
-        message: statusCode === 500 && !isDevelopment 
-            ? 'Si è verificato un errore. Riprova più tardi.' 
-            : error.message || 'Errore interno del server',
         statusCode
     };
     
-    // Include stack trace only in development
-    if (isDevelopment && error.stack) {
-        errorResponse.stack = error.stack;
+    // Standardized error messages based on status code
+    if (statusCode === 404) {
+        errorResponse.error = 'Risorsa non trovata';
+        errorResponse.message = 'La risorsa richiesta non è stata trovata';
+    } else if (statusCode === 403) {
+        errorResponse.error = 'Accesso negato';
+        errorResponse.message = 'Non hai i permessi per accedere a questa risorsa';
+    } else if (statusCode === 401) {
+        errorResponse.error = 'Non autorizzato';
+        errorResponse.message = 'Autenticazione richiesta';
+    } else if (statusCode === 400) {
+        errorResponse.error = 'Richiesta non valida';
+        errorResponse.message = isDevelopment ? error.message : 'La richiesta non è valida';
+    } else if (statusCode === 500) {
+        // Generic message for 500 errors in production
+        errorResponse.message = isDevelopment 
+            ? error.message || 'Si è verificato un errore interno'
+            : 'Si è verificato un errore. Riprova più tardi.';
+    } else {
+        // For other status codes, use generic message in production
+        errorResponse.message = isDevelopment 
+            ? error.message || 'Si è verificato un errore'
+            : 'Si è verificato un errore. Riprova più tardi.';
     }
+    
+    // Include stack trace and detailed error only in development
+    if (isDevelopment) {
+        if (error.stack) {
+            errorResponse.stack = error.stack;
+        }
+        if (error.message && statusCode !== 500) {
+            errorResponse.message = error.message;
+        }
+    }
+    
+    // Never expose:
+    // - File paths
+    // - Software versions
+    // - Internal error details
+    // - Database errors
+    // - Stack traces (except in development)
     
     // Send error response
     res.status(statusCode).json(errorResponse);

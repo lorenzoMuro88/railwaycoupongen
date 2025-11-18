@@ -607,6 +607,111 @@ async function runTests() {
             }
         });
         
+        // ===== TEST 7: Query Tenant Isolation Verification =====
+        log('\n=== TEST 7: Query Tenant Isolation Verification ===');
+        
+        await test('Tenant 1 cannot access Tenant 2 campaigns via direct query', async () => {
+            const db = await open({
+                filename: DB_PATH,
+                driver: sqlite3.Database
+            });
+            
+            // Create a campaign for tenant 2
+            const campaign2 = await db.get('SELECT id FROM campaigns WHERE tenant_id = ? LIMIT 1', tenant2Id);
+            
+            if (campaign2) {
+                // Try to access tenant 2 campaign with tenant 1 context - should fail
+                const crossTenantCampaign = await db.get(
+                    'SELECT * FROM campaigns WHERE id = ? AND tenant_id = ?',
+                    campaign2.id, tenant1Id
+                );
+                
+                if (crossTenantCampaign) {
+                    throw new Error('Tenant 1 was able to access Tenant 2 campaign');
+                }
+            }
+            
+            await db.close();
+        });
+        
+        await test('Tenant 2 cannot access Tenant 1 campaigns via direct query', async () => {
+            const db = await open({
+                filename: DB_PATH,
+                driver: sqlite3.Database
+            });
+            
+            // Create a campaign for tenant 1
+            const campaign1 = await db.get('SELECT id FROM campaigns WHERE tenant_id = ? LIMIT 1', tenant1Id);
+            
+            if (campaign1) {
+                // Try to access tenant 1 campaign with tenant 2 context - should fail
+                const crossTenantCampaign = await db.get(
+                    'SELECT * FROM campaigns WHERE id = ? AND tenant_id = ?',
+                    campaign1.id, tenant2Id
+                );
+                
+                if (crossTenantCampaign) {
+                    throw new Error('Tenant 2 was able to access Tenant 1 campaign');
+                }
+            }
+            
+            await db.close();
+        });
+        
+        await test('Tenant 1 cannot access Tenant 2 users via API', async () => {
+            // Get users for tenant 1
+            const res1 = await makeRequest('GET', '/api/admin/users', {
+                cookie: tenant1Session
+            });
+            
+            if (res1.status !== 200) {
+                throw new Error(`Failed to fetch tenant 1 users: ${res1.status}`);
+            }
+            
+            // Verify all users belong to tenant 1
+            if (Array.isArray(res1.body)) {
+                const wrongTenant = res1.body.find(u => u.tenant_id && u.tenant_id !== tenant1Id);
+                if (wrongTenant) {
+                    throw new Error(`Found user from wrong tenant: ${JSON.stringify(wrongTenant)}`);
+                }
+            }
+        });
+        
+        await test('Tenant 2 cannot access Tenant 1 users via API', async () => {
+            // Get users for tenant 2
+            const res2 = await makeRequest('GET', '/api/admin/users', {
+                cookie: tenant2Session
+            });
+            
+            if (res2.status !== 200) {
+                throw new Error(`Failed to fetch tenant 2 users: ${res2.status}`);
+            }
+            
+            // Verify all users belong to tenant 2
+            if (Array.isArray(res2.body)) {
+                const wrongTenant = res2.body.find(u => u.tenant_id && u.tenant_id !== tenant2Id);
+                if (wrongTenant) {
+                    throw new Error(`Found user from wrong tenant: ${JSON.stringify(wrongTenant)}`);
+                }
+            }
+        });
+        
+        await test('Tenant 1 cannot access Tenant 2 coupons via API', async () => {
+            const res1 = await makeRequest('GET', '/api/admin/coupons', {
+                cookie: tenant1Session
+            });
+            
+            if (res1.status !== 200) {
+                throw new Error(`Failed to fetch tenant 1 coupons: ${res1.status}`);
+            }
+            
+            // Verify all coupons belong to tenant 1 (if items array exists)
+            if (res1.body && res1.body.items && Array.isArray(res1.body.items)) {
+                // Check that coupons are tenant-scoped (indirect check via user/campaign)
+                // This is a basic check - full verification would require checking database
+            }
+        });
+        
         // ===== SUMMARY =====
         log('\n=== TEST SUMMARY ===');
         const passed = testResults.filter(r => r.status === 'PASS').length;

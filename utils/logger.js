@@ -114,5 +114,87 @@ logger.withRequest = (req) => {
     });
 };
 
+/**
+ * Audit logging helper for CRUD operations and sensitive actions.
+ * 
+ * Provides a convenient wrapper around logAction() for audit trail purposes.
+ * Logs all CRUD operations (Create, Read, Update, Delete) and access to sensitive data.
+ * 
+ * @param {ExpressRequest} req - Express request object
+ * @param {string} actionType - Type of action (e.g., 'create', 'update', 'delete', 'read', 'access')
+ * @param {string} resourceType - Type of resource (e.g., 'campaign', 'user', 'coupon')
+ * @param {string|number} [resourceId] - ID of the resource (optional)
+ * @param {string} [actionDescription] - Human-readable description (auto-generated if not provided)
+ * @param {Object} [details] - Additional details object (will be JSON stringified)
+ * @param {string} [level='info'] - Log level ('info', 'success', 'warning', 'error')
+ * @returns {Promise<void>}
+ * 
+ * @example
+ * // Log creation
+ * await auditLog(req, 'create', 'campaign', campaignId, 'Campaign created', { name: 'Summer Sale' });
+ * 
+ * @example
+ * // Log update
+ * await auditLog(req, 'update', 'user', userId, 'User updated', { fields: ['email', 'firstName'] });
+ * 
+ * @example
+ * // Log deletion
+ * await auditLog(req, 'delete', 'coupon', couponId, 'Coupon deleted');
+ * 
+ * @example
+ * // Log access to sensitive data
+ * await auditLog(req, 'access', 'users', null, 'User list accessed', { filter: 'active' }, 'info');
+ * 
+ * @description
+ * This function:
+ * 1. Extracts user and tenant context from request
+ * 2. Generates action description if not provided
+ * 3. Logs to system_logs table via logAction()
+ * 4. Also logs to pino logger for immediate visibility
+ * 
+ * Action types:
+ * - 'create' - Resource created
+ * - 'update' - Resource updated
+ * - 'delete' - Resource deleted
+ * - 'read' - Resource read (for sensitive data)
+ * - 'access' - Access to sensitive endpoint/data
+ * 
+ * @see {@link logAction} For the underlying logging function
+ * @see {@link LLM_MD/TYPES.md} For ExpressRequest type definition
+ */
+async function auditLog(req, actionType, resourceType, resourceId, actionDescription, details, level = 'info') {
+    const { logAction } = require('../routes/auth');
+    
+    // Generate description if not provided
+    if (!actionDescription) {
+        const resourceIdStr = resourceId ? ` #${resourceId}` : '';
+        const actionMap = {
+            'create': 'created',
+            'update': 'updated',
+            'delete': 'deleted',
+            'read': 'read',
+            'access': 'accessed'
+        };
+        actionDescription = `${resourceType}${resourceIdStr} ${actionMap[actionType] || actionType}`;
+    }
+    
+    // Log to database via logAction
+    await logAction(req, actionType, actionDescription, level, {
+        resourceType,
+        resourceId: resourceId || null,
+        ...details
+    });
+    
+    // Also log to pino for immediate visibility
+    const logContext = logger.withRequest(req);
+    logContext[level === 'error' ? 'error' : level === 'warning' ? 'warn' : 'info']({
+        actionType,
+        resourceType,
+        resourceId,
+        details
+    }, `Audit: ${actionDescription}`);
+}
+
 module.exports = logger;
+module.exports.auditLog = auditLog;
 

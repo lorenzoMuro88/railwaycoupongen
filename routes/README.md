@@ -232,3 +232,4 @@ Gestione utenti autenticati:
 - Vedi `LLM_MD/TYPES.md` per definizioni tipo
 - Vedi `docs/API_REFERENCE.md` per documentazione API completa
 
+

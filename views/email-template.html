@@ -6,6 +6,7 @@
     <title>Personalizza Template Email - CouponGen</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <link rel="stylesheet" href="/static/navigation.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/css/suneditor.min.css">
     <style>
         .navbar { background: var(--gradient-primary); padding: 1rem 0; margin-bottom: 2rem; box-shadow: var(--shadow-medium); }
         .navbar-container { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 0 2rem; }
@@ -94,7 +95,6 @@
 </head>
 <body>
     <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/css/suneditor.min.css">
     <script src="https://cdn.jsdelivr.net/npm/suneditor@latest/dist/suneditor.min.js"></script>
     <script src="/static/navigation.js"></script>
     <div id="navigation-container"></div>
@@ -314,12 +314,21 @@
                 const tenantBase = window.__tenantBase || '';
                 const apiUrl = `${tenantBase}/api/admin/email-template`;
                 
-                const r = await fetch(apiUrl);
+                const r = await fetch(apiUrl, { credentials: 'same-origin' });
+                if (!r.ok) {
+                    // If endpoint doesn't exist or returns error, use defaults
+                    // This is expected if no template has been saved yet
+                    buildAndPreview();
+                    return;
+                }
                 const t = await r.json();
                 document.getElementById('emailSubject').value = t.subject || 'Il tuo coupon';
                 // Non proviamo a fare il parsing del template salvato, manteniamo i default dell'editor
                 buildAndPreview();
-            } catch(e) { console.error(e); }
+            } catch(e) { 
+                // Silently handle errors - use defaults if template can't be loaded
+                buildAndPreview();
+            }
         }
 
         function buildTemplateHtml(){
@@ -416,7 +425,8 @@
                 const r = await fetch(apiUrl, { 
                     method: 'POST', 
                     headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ subject, html }) 
+                    body: JSON.stringify({ subject, html }),
+                    credentials: 'same-origin'
                 });
                 if(!r.ok) throw new Error('Save failed');
                 setButtonState(btn, 'success');
@@ -519,6 +529,30 @@
                     closeTestEmailModal();
                 }
             });
+            
+            // Load navigation
+            fetch('/static/navigation.html')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    const container = document.getElementById('navigation-container');
+                    if (container) {
+                        container.innerHTML = html;
+                        // Set active link for current page
+                        const activeLink = document.querySelector('.nav-link[href="/admin/email-template"]');
+                        if (activeLink) {
+                            activeLink.classList.add('active');
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading navigation:', error);
+                    // Non bloccare l'esecuzione se la navigation non si carica
+                });
         });
 
         function updateSwatches(){
@@ -544,7 +578,7 @@
                 const tenantBase = window.__tenantBase || '';
                 const apiUrl = `${tenantBase}/api/admin/email-from-name`;
                 
-                const response = await fetch(apiUrl);
+                const response = await fetch(apiUrl, { credentials: 'same-origin' });
                 if (response.ok) {
                     const data = await response.json();
                     const senderName = data.emailFromName || '';
@@ -581,7 +615,8 @@
                 const response = await fetch(apiUrl, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ emailFromName: senderName })
+                    body: JSON.stringify({ emailFromName: senderName }),
+                    credentials: 'same-origin'
                 });
 
                 if (response.ok) {
@@ -676,7 +711,8 @@
                 const apiUrl = `${tenantBase}/api/admin/test-email`;
 
                 const response = await fetch(`${apiUrl}?to=${encodeURIComponent(testEmail)}`, {
-                    method: 'GET'
+                    method: 'GET',
+                    credentials: 'same-origin'
                 });
 
                 if (response.ok) {
@@ -724,21 +760,7 @@
                 notification.remove();
             }, 5000);
         }
-        
-        // Load navigation
-        document.addEventListener('DOMContentLoaded', function() {
-            fetch('/static/navigation.html')
-                .then(response => response.text())
-                .then(html => {
-                    document.getElementById('navigation-container').innerHTML = html;
-                    // Set active link for current page
-                    const activeLink = document.querySelector('.nav-link[href="/admin/email-template"]');
-                    if (activeLink) {
-                        activeLink.classList.add('active');
-                    }
-                })
-                .catch(error => console.error('Error loading navigation:', error));
-        });
+        }
     </script>
     <script src="/static/notifications.js"></script>
 </body>

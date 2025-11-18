@@ -1071,6 +1071,14 @@
     </div>
 
     <script>
+        // XSS Protection: HTML escaping function
+        function escapeHtml(text) {
+            if (text == null) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         // Load data on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadCampaigns();
@@ -1738,22 +1746,34 @@
                 
                 couponDiv.innerHTML = `
                     <div class="coupon-header">
-                        <span class="coupon-code">${coupon.code}</span>
+                        <span class="coupon-code">${escapeHtml(coupon.code)}</span>
                         <span class="coupon-status ${coupon.status}">${coupon.status === 'active' ? 'Attivo' : 'Utilizzato'}</span>
                     </div>
                     <div class="coupon-details">
-                        <div><strong>Campagna:</strong> ${coupon.campaign_name || 'N/A'}</div>
-                        <div><strong>Sconto:</strong> ${discountText}</div>
+                        <div><strong>Campagna:</strong> ${escapeHtml(coupon.campaign_name || 'N/A')}</div>
+                        <div><strong>Sconto:</strong> ${escapeHtml(discountText)}</div>
                         <div><strong>Emesso:</strong> ${issuedDate}</div>
                         <div><strong>Utilizzato:</strong> ${redeemedDate}</div>
                     </div>
                     <div class="coupon-actions">
-                        <button class="coupon-btn delete" onclick="deleteCoupon(${coupon.id}, '${coupon.code}')" 
+                        <button class="coupon-btn delete" data-coupon-id="${coupon.id}" data-coupon-code="${escapeHtml(coupon.code)}" 
                                 ${coupon.status === 'redeemed' ? 'disabled title="Coupon già utilizzato"' : ''}>
                             Elimina
                         </button>
                     </div>
                 `;
+                
+                // Attach event listener to delete button
+                const deleteBtn = couponDiv.querySelector('.coupon-btn.delete');
+                if (deleteBtn && !deleteBtn.disabled) {
+                    deleteBtn.addEventListener('click', function() {
+                        const id = parseInt(this.getAttribute('data-coupon-id'));
+                        const code = this.getAttribute('data-coupon-code');
+                        if (id && code) {
+                            deleteCoupon(id, code);
+                        }
+                    });
+                }
                 
                 container.appendChild(couponDiv);
             });
@@ -1762,7 +1782,7 @@
         function deleteCoupon(couponId, couponCode) {
             showModal({
                 title: 'Conferma Eliminazione',
-                message: `Sei sicuro di voler eliminare il coupon "${couponCode}"? Questa azione non può essere annullata.`,
+                message: `Sei sicuro di voler eliminare il coupon "${escapeHtml(couponCode)}"? Questa azione non può essere annullata.`,
                 type: 'warning',
                 showCancel: true,
                 onConfirm: () => performDeleteCoupon(couponId)

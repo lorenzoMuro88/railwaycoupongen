@@ -16,6 +16,7 @@ Questo documento contiene tutte le definizioni JSDoc dei tipi utilizzati nel pro
 - [FormConfig](#formconfig)
 - [EmailTemplate](#emailtemplate)
 - [BrandSettings](#brandsettings)
+- [AuditLog](#auditlog)
 
 ---
 
@@ -448,6 +449,72 @@ const brandSettings = {
 
 ---
 
+## AuditLog
+
+Rappresenta una voce di audit log nel sistema.
+
+```javascript
+/**
+ * @typedef {Object} AuditLog
+ * @property {number} id - ID univoco del log (PRIMARY KEY)
+ * @property {string} timestamp - Timestamp dell'azione (ISO datetime string)
+ * @property {number} [user_id] - ID dell'utente che ha eseguito l'azione (da auth_users.id, null per azioni sistema)
+ * @property {string} [username] - Username dell'utente (denormalizzato per performance)
+ * @property {string} [user_type] - Tipo utente: "admin", "store", "superadmin", o "system"
+ * @property {number} [tenant_id] - ID del tenant associato (null per azioni globali)
+ * @property {string} [tenant_name] - Nome del tenant (denormalizzato)
+ * @property {string} [tenant_slug] - Slug del tenant (denormalizzato)
+ * @property {string} action_type - Tipo di azione: "create", "update", "delete", "read", "access", "login", "logout"
+ * @property {string} action_description - Descrizione leggibile dell'azione
+ * @property {string} level - Livello log: "info", "success", "warning", "error"
+ * @property {Object|null} [details] - Dettagli aggiuntivi (JSON object, contiene resourceType, resourceId, requestId, etc.)
+ * @property {string} [ip_address] - Indirizzo IP del client
+ * @property {string} [user_agent] - User agent del browser/client
+ */
+```
+
+**Esempio:**
+```javascript
+const auditLog = {
+    id: 1,
+    timestamp: "2024-01-15T10:00:00.000Z",
+    user_id: 1,
+    username: "admin",
+    user_type: "admin",
+    tenant_id: 1,
+    tenant_name: "Mario's Store",
+    tenant_slug: "mario-store",
+    action_type: "create",
+    action_description: "Campaign created: Summer Sale",
+    level: "success",
+    details: {
+        resourceType: "campaign",
+        resourceId: 123,
+        campaignCode: "ABC123XYZ456",
+        requestId: "req-abc123"
+    },
+    ip_address: "192.168.1.1",
+    user_agent: "Mozilla/5.0..."
+};
+```
+
+**Action Types:**
+- `create` - Risorsa creata
+- `update` - Risorsa aggiornata
+- `delete` - Risorsa eliminata
+- `read` - Lettura risorsa sensibile
+- `access` - Accesso a endpoint/dati sensibili
+- `login` - Login utente
+- `logout` - Logout utente
+
+**Level Types:**
+- `info` - Informazione generale
+- `success` - Operazione completata con successo
+- `warning` - Avviso (es. eliminazioni)
+- `error` - Errore
+
+---
+
 ## Utilizzo nei Commenti JSDoc
 
 Per utilizzare questi tipi nei commenti JSDoc, referenziali così:
@@ -484,4 +551,5 @@ function handler(req) {
 3. **Booleani**: SQLite non ha tipo BOOLEAN nativo, quindi vengono usati INTEGER (0 = false, 1 = true)
 4. **JSON Fields**: Alcuni campi (come `form_config`) sono memorizzati come JSON string nel database
 5. **Nullable Fields**: I campi opzionali sono marcati con `[property]` nella JSDoc e possono essere `null` o `undefined`
+
 

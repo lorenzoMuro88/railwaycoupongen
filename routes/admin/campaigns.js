@@ -2,10 +2,11 @@
 
 const crypto = require('crypto');
 const { getDb } = require('../../utils/db');
-const { registerAdminRoute, getTenantId } = require('../../utils/routeHelper');
+const { registerAdminRoute, getTenantId, sendSanitizedJson } = require('../../utils/routeHelper');
 const { tenantLoader, requireSameTenantAsSession } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/auth');
 const logger = require('../../utils/logger');
+const { auditLog } = require('../../utils/logger');
 
 /**
  * Helper function to generate unique alphanumeric IDs.
@@ -130,7 +131,8 @@ function setupCampaignsRoutes(app) {
             
             const campaigns = await dbConn.all('SELECT * FROM campaigns WHERE tenant_id = ? ORDER BY created_at DESC', tenantId);
             await autoDeactivateExpiredCampaigns(dbConn, campaigns, tenantId);
-            res.json(campaigns);
+            // Sanitize output to prevent XSS
+            sendSanitizedJson(res, campaigns);
         } catch (e) {
             logger.error({ err: e }, 'Error fetching campaigns');
             res.status(500).json({ error: 'Errore server' });
@@ -235,7 +237,12 @@ function setupCampaignsRoutes(app) {
                 'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, tenant_id, is_active, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)',
                 campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, tenantId, expiry_date || null
             );
-            res.json({ id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
+            
+            // Audit logging
+            await auditLog(req, 'create', 'campaign', result.lastID, `Campaign created: ${name}`, { campaignCode, discountType: discount_type, discountValue: discount_value }, 'success');
+            
+            // Sanitize output to prevent XSS
+            sendSanitizedJson(res, { id: result.lastID, campaign_code: campaignCode, name, description, discount_type, discount_value });
         } catch (e) {
             const logContext = logger.withRequest(req);
             if (e && e.code === 'SQLITE_CONSTRAINT' && e.message && e.message.includes('campaign_code')) {
@@ -269,7 +276,12 @@ function setupCampaignsRoutes(app) {
             await dbConn.run(`UPDATE campaigns SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`, params);
             const updated = await dbConn.get('SELECT * FROM campaigns WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
             if (!updated) return res.status(404).json({ error: 'Campagna non trovata' });
-            res.json(updated);
+            
+            // Audit logging
+            await auditLog(req, 'update', 'campaign', req.params.id, `Campaign updated: ${updated.name}`, { fields: Object.keys(req.body || {}) }, 'info');
+            
+            // Sanitize output to prevent XSS
+            sendSanitizedJson(res, updated);
         } catch (e) {
             logger.error({ err: e }, 'Error updating campaign');
             if (e && e.code === 'SQLITE_CONSTRAINT' && e.message && e.message.includes('campaign_code')) {
@@ -287,6 +299,10 @@ function setupCampaignsRoutes(app) {
             if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
             const result = await dbConn.run('UPDATE campaigns SET is_active = 1 WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
             if (result.changes === 0) return res.status(404).json({ error: 'Campagna non trovata' });
+            
+            // Audit logging
+            await auditLog(req, 'update', 'campaign', req.params.id, 'Campaign activated', {}, 'success');
+            
             res.json({ ok: true });
         } catch (e) {
             logger.error({ err: e }, 'Error activating campaign');
@@ -375,7 +391,8 @@ function setupCampaignsRoutes(app) {
                 WHERE name IS NOT NULL AND name != '' AND tenant_id = ?
                 ORDER BY name, created_at DESC
             `, tenantId);
-            res.json(campaigns.map(c => ({ id: c.id, name: c.name, code: c.campaign_code })));
+            // Sanitize output to prevent XSS
+            sendSanitizedJson(res, campaigns.map(c => ({ id: c.id, name: c.name, code: c.campaign_code })));
         } catch (e) {
             logger.error({ err: e }, 'Error fetching campaigns list');
             res.status(500).json({ error: 'Errore server' });

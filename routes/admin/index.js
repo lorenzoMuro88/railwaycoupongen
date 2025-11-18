@@ -7,6 +7,7 @@ const { setupAnalyticsRoutes } = require('./analytics');
 const { setupSettingsRoutes } = require('./settings');
 const { setupProductsRoutes } = require('./products');
 const { setupAuthUsersRoutes } = require('./auth-users');
+const { setupLogsRoutes } = require('./logs');
 
 /**
  * Setup all admin routes
@@ -19,6 +20,7 @@ function setupAdminRoutes(app) {
     setupSettingsRoutes(app);
     setupProductsRoutes(app);
     setupAuthUsersRoutes(app);
+    setupLogsRoutes(app);
 }
 
 module.exports = { setupAdminRoutes };

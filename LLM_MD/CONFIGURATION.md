@@ -35,13 +35,61 @@ FLYCouponGen utilizza variabili d'ambiente per la configurazione. Copia `env.exa
 
 ### Authentication & Security
 
+#### NODE_ENV
+- **Descrizione:** Ambiente di esecuzione (development, production, test)
+- **Tipo:** String
+- **Default:** Nessuno (determinato automaticamente)
+- **Esempio:** `NODE_ENV=production`
+- **Quando necessaria:** Opzionale (raccomandato in produzione)
+- **Note:** 
+  - In produzione: Abilita Content-Security-Policy, HSTS, Expect-CT, redirect HTTP→HTTPS
+  - In development: Disabilita CSP per debugging più facile
+  - Influenza comportamento helmet.js e altri middleware di sicurezza
+
+#### FORCE_HTTPS
+- **Descrizione:** Forza redirect HTTP→HTTPS in produzione
+- **Tipo:** Boolean (stringa "true"/"false")
+- **Default:** `true`
+- **Esempio:** `FORCE_HTTPS=true`
+- **Quando necessaria:** Opzionale (default abilitato in produzione)
+- **Note:** 
+  - Solo attivo quando `NODE_ENV=production`
+  - Redirecta tutte le richieste HTTP a HTTPS con status 301
+  - Disabilitare solo se si usa un reverse proxy che gestisce già il redirect
+
+#### ALLOWED_ORIGINS
+- **Descrizione:** Lista di origini permesse per CORS (comma-separated)
+- **Tipo:** String (comma-separated list)
+- **Default:** Nessuno (solo same-origin permesso)
+- **Esempio:** `ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com`
+- **Quando necessaria:** Opzionale (necessaria solo se serve supportare cross-origin requests)
+- **Note:** 
+  - In development: Se non configurato, tutte le origini sono permesse per facilitare testing
+  - In production: Se non configurato, solo same-origin requests sono permesse
+  - Formato: URL completi senza trailing slash (es. `https://example.com`)
+  - Supporta credentials (cookies, auth headers) per origini whitelisted
+
 #### SESSION_SECRET
 - **Descrizione:** Secret key per firmare le sessioni Express
 - **Tipo:** String (almeno 64 caratteri raccomandati)
-- **Default:** Nessuno (REQUIRED)
+- **Default:** Nessuno (REQUIRED in produzione)
 - **Esempio:** `SESSION_SECRET=your_secure_random_string_here`
-- **Quando necessaria:** **REQUIRED in produzione**
+- **Quando necessaria:** **REQUIRED in produzione** (startup bloccato se mancante)
 - **Generazione:** `openssl rand -base64 48`
+- **Note:** 
+  - In produzione: Startup fallisce se SESSION_SECRET non configurato
+  - In development: Genera secret random se non configurato (con warning)
+
+#### SESSION_TIMEOUT_MS
+- **Descrizione:** Timeout sessione in millisecondi
+- **Tipo:** Number
+- **Default:** `86400000` (24 ore)
+- **Esempio:** `SESSION_TIMEOUT_MS=3600000` (1 ora)
+- **Quando necessaria:** Opzionale
+- **Note:** 
+  - Timeout configurabile per adattare durata sessioni alle esigenze
+  - Valore in millisecondi
+  - Session non viene rinnovata ad ogni richiesta (rolling: false) per maggiore sicurezza
 
 #### SUPERADMIN_PASSWORD
 - **Descrizione:** Password per utente superadmin di default (creato automaticamente se auth_users è vuoto)
@@ -455,6 +503,58 @@ RECAPTCHA_SECRET=<your_secret>
 
 5. **Database:** SQLite è utilizzato di default. Per produzione con alta concorrenza, considera migrazione a PostgreSQL.
 
+6. **Security Headers:** Gli header di sicurezza sono configurati automaticamente tramite helmet.js. In produzione, CSP, HSTS e Expect-CT sono abilitati automaticamente.
+
+7. **Password Policy:** Le password devono rispettare i seguenti requisiti:
+   - Minimo 12 caratteri
+   - Almeno una lettera maiuscola
+   - Almeno una lettera minuscola
+   - Almeno un numero
+   - Almeno un carattere speciale (!@#$%^&* etc.)
+   - Non può essere una password comune (password, 12345678, etc.)
+   - La validazione viene applicata automaticamente a: signup, creazione/modifica utenti auth
+
+8. **XSS Protection:** Tutti gli output JSON vengono automaticamente sanitizzati escapando caratteri HTML. Le funzioni di sanitizzazione sono disponibili in `utils/sanitize.js` per uso manuale quando necessario.
+
+---
+
+## Security Headers Configuration
+
+FLYCouponGen utilizza `helmet.js` per configurare automaticamente gli header di sicurezza HTTP. La configurazione varia in base all'ambiente:
+
+### Development (NODE_ENV !== 'production')
+- **Content-Security-Policy**: Disabilitata per facilitare debugging
+- **HSTS**: Disabilitato
+- **Expect-CT**: Disabilitato
+- Altri header di sicurezza: Sempre attivi
+
+### Production (NODE_ENV === 'production')
+- **Content-Security-Policy**: Attiva con policy restrittive
+  - `default-src 'self'`: Solo risorse dallo stesso dominio
+  - `scriptSrc`: Permette script inline (compatibilità) e reCAPTCHA
+  - `imgSrc`: Permette data URLs (per QR codes) e HTTPS
+  - `styleSrc`: Permette inline styles (compatibilità)
+- **HSTS**: Attivo con max-age 1 anno, includeSubDomains, preload
+- **Expect-CT**: Attivo con enforcement
+- **X-Frame-Options**: DENY (previene clickjacking)
+- **X-Content-Type-Options**: nosniff (previene MIME sniffing)
+- **Referrer-Policy**: strict-origin-when-cross-origin
+- **X-XSS-Protection**: Attivo
+
+### Personalizzazione CSP
+
+Per personalizzare Content-Security-Policy, modificare la configurazione helmet in `server.js`:
+
+```javascript
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            // Personalizza qui
+        }
+    }
+}));
+```
+
 ---
 
 ## Riferimenti
@@ -462,4 +562,5 @@ RECAPTCHA_SECRET=<your_secret>
 - Vedi `env.example` per template completo
 - Vedi `docs/DEPLOY_RAILWAY.md` per configurazione deploy Railway
 - Vedi `LLM_MD/DATABASE_SCHEMA.md` per schema database
+
 

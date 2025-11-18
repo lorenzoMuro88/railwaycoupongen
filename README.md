@@ -194,6 +194,8 @@ Se `RECAPTCHA_ENABLED=true`, inserisci il tag script con la `RECAPTCHA_SITE_KEY`
 
 ## 🔒 Sicurezza
 
+- **Security Headers HTTP**: Configurati automaticamente con helmet.js (CSP, HSTS, X-Frame-Options, etc.)
+- **HTTPS Enforcement**: Redirect automatico HTTP→HTTPS in produzione
 - **Sessione per-tenant** con rigenerazione al login; ruoli `admin` e `store`
 - **Validazione input** su endpoint critici
 - **Prepared statements** per query SQLite
@@ -203,6 +205,7 @@ Se `RECAPTCHA_ENABLED=true`, inserisci il tag script con la `RECAPTCHA_SITE_KEY`
 - **Tenant Isolation** garantita a livello middleware e database
 - **/healthz** con check DB; log strutturati con `requestId` e `tenant`
 - **Logger strutturato** con pino per tracciabilità completa
+- **Dependency Scanning**: Integrazione con npm audit e Snyk per vulnerabilità dipendenze
 
 ## 🚀 Deploy in Produzione
 
@@ -351,7 +354,6 @@ npm run test:coverage
 - `npm run test:misc` - Test suite per endpoint vari (7+ test cases)
 - `npm run test:remaining` - Test suite per endpoint rimanenti (12+ test cases)
 - `npm run test:form-links` - Test suite per form links parametrici
-- `test-analytics.js` aggiornato con test per endpoint legacy export
 
 ## 📚 Documentazione Moduli
 

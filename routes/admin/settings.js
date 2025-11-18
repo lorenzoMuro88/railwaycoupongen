@@ -16,10 +16,59 @@ const UPLOADS_BASE_DIR = process.env.UPLOADS_DIR
     : path.join(__dirname, '../../static', 'uploads');
 
 /**
- * Setup settings routes
+ * Setup settings routes.
+ * 
+ * Registers all settings-related admin routes (both legacy and tenant-scoped variants).
+ * 
+ * Routes registered:
+ * - GET /api/admin/test-email - Test email configuration
+ * - PUT /api/admin/email-from-name - Update email sender name
+ * - GET /api/admin/email-from-name - Get email sender name
+ * - GET /api/admin/form-customization - Get form customization (legacy)
+ * - POST /api/admin/form-customization - Update form customization (legacy)
+ * - GET /api/admin/email-template - Get email template
+ * - POST /api/admin/email-template - Update email template
+ * - POST /api/admin/upload-image - Upload image file
+ * - GET /api/admin/brand-settings - Get brand settings (legacy)
+ * 
+ * @param {Express.App} app - Express application instance
+ * @returns {void}
  */
 function setupSettingsRoutes(app) {
-    // GET /api/admin/test-email and /t/:tenantSlug/api/admin/test-email - Test email
+    /**
+     * GET /api/admin/test-email and /t/:tenantSlug/api/admin/test-email - Test email configuration
+     * 
+     * Sends a test email using the tenant's email configuration (sender name, domain, etc.).
+     * Useful for verifying email setup and Mailgun integration.
+     * 
+     * @route GET /api/admin/test-email
+     * @route GET /t/:tenantSlug/api/admin/test-email
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.query} req.query - Query parameters
+     * @param {string} [req.query.to] - Email recipient (defaults to MAIL_TEST_TO env var or 'test@example.com')
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Test email result
+     * @returns {boolean} returns.ok - Whether email was sent successfully
+     * @returns {Object} returns.info - Email transport info (messageId, etc.)
+     * 
+     * @throws {500} Internal Server Error - If email sending fails
+     * 
+     * @example
+     * // Request
+     * GET /api/admin/test-email?to=admin@example.com
+     * 
+     * // Response
+     * {
+     *   ok: true,
+     *   info: {
+     *     messageId: "<message-id@mailgun.org>",
+     *     accepted: ["admin@example.com"]
+     *   }
+     * }
+     */
     registerAdminRoute(app, '/test-email', 'get', async (req, res) => {
         try {
             const to = req.query.to || process.env.MAIL_TEST_TO || 'test@example.com';
@@ -57,7 +106,40 @@ function setupSettingsRoutes(app) {
         }
     });
 
-    // PUT /api/admin/email-from-name and /t/:tenantSlug/api/admin/email-from-name - Update email from name
+    /**
+     * PUT /api/admin/email-from-name and /t/:tenantSlug/api/admin/email-from-name - Update email sender name
+     * 
+     * Updates the email sender name (display name) for the tenant.
+     * This name appears in the "From" field of emails sent by the tenant.
+     * 
+     * @route PUT /api/admin/email-from-name
+     * @route PUT /t/:tenantSlug/api/admin/email-from-name
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {string} req.body.emailFromName - Email sender name (required, non-empty string)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Update result
+     * @returns {boolean} returns.ok - Whether update was successful
+     * @returns {string} returns.emailFromName - Updated email sender name
+     * 
+     * @throws {400} Bad Request - If emailFromName is missing, invalid, or tenant ID is invalid
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request body
+     * {
+     *   emailFromName: "Mario's Store"
+     * }
+     * 
+     * // Response
+     * {
+     *   ok: true,
+     *   emailFromName: "Mario's Store"
+     * }
+     */
     registerAdminRoute(app, '/email-from-name', 'put', async (req, res) => {
         try {
             const { emailFromName } = req.body || {};
@@ -83,7 +165,30 @@ function setupSettingsRoutes(app) {
         }
     });
 
-    // GET /api/admin/email-from-name and /t/:tenantSlug/api/admin/email-from-name - Get email from name
+    /**
+     * GET /api/admin/email-from-name and /t/:tenantSlug/api/admin/email-from-name - Get email sender name
+     * 
+     * Retrieves the current email sender name for the tenant.
+     * Returns default "CouponGen" if not set.
+     * 
+     * @route GET /api/admin/email-from-name
+     * @route GET /t/:tenantSlug/api/admin/email-from-name
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Email sender name
+     * @returns {string} returns.emailFromName - Current email sender name (default: "CouponGen")
+     * 
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Response
+     * {
+     *   emailFromName: "Mario's Store"
+     * }
+     */
     registerAdminRoute(app, '/email-from-name', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -99,7 +204,36 @@ function setupSettingsRoutes(app) {
         }
     });
 
-    // GET /api/admin/form-customization - Get form customization (legacy)
+    /**
+     * GET /api/admin/form-customization - Get form customization (legacy)
+     * 
+     * Retrieves the form customization configuration for the tenant.
+     * Returns empty object if no configuration exists.
+     * 
+     * @route GET /api/admin/form-customization
+     * @middleware requireAdmin
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.session} req.session - Session object
+     * @param {Object} req.session.user - User session data
+     * @param {number} req.session.user.tenantId - Tenant ID from session
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Form customization configuration object (parsed JSON)
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Response
+     * {
+     *   email: { visible: true, required: true },
+     *   firstName: { visible: true, required: true },
+     *   lastName: { visible: true, required: true },
+     *   phone: { visible: false, required: false },
+     *   customFields: []
+     * }
+     */
     app.get('/api/admin/form-customization', requireAdmin, async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -120,7 +254,45 @@ function setupSettingsRoutes(app) {
         }
     });
 
-    // POST /api/admin/form-customization - Update form customization (legacy)
+    /**
+     * POST /api/admin/form-customization - Update form customization (legacy)
+     * 
+     * Updates or creates the form customization configuration for the tenant.
+     * Configuration is stored as JSON string in the database.
+     * 
+     * @route POST /api/admin/form-customization
+     * @middleware requireAdmin
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.body} req.body - Form customization configuration object (will be stringified)
+     * @param {ExpressRequest.session} req.session - Session object
+     * @param {Object} req.session.user - User session data
+     * @param {number} req.session.user.tenantId - Tenant ID from session
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Update result
+     * @returns {boolean} returns.success - Whether update was successful
+     * @returns {string} returns.message - Success message
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request body
+     * {
+     *   email: { visible: true, required: true },
+     *   firstName: { visible: true, required: true },
+     *   customFields: [
+     *     { name: "favoriteColor", label: "Favorite Color", type: "text" }
+     *   ]
+     * }
+     * 
+     * // Response
+     * {
+     *   success: true,
+     *   message: "Configurazione salvata con successo!"
+     * }
+     */
     app.post('/api/admin/form-customization', requireAdmin, async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -156,8 +328,92 @@ function setupSettingsRoutes(app) {
         }
     });
 
+    /**
+     * GET /api/admin/email-template and /t/:tenantSlug/api/admin/email-template - Get email template
+     * 
+     * Retrieves the current email template for the tenant.
+     * Returns the subject and HTML template, or default values if no template exists.
+     * 
+     * @route GET /api/admin/email-template
+     * @route GET /t/:tenantSlug/api/admin/email-template
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Email template data
+     * @returns {string} returns.subject - Email subject line
+     * @returns {string} returns.html - Email HTML template
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Response
+     * {
+     *   subject: "Il tuo coupon",
+     *   html: "<html><body><h1>Ciao {{firstName}}!</h1><p>Il tuo codice: {{code}}</p></body></html>"
+     * }
+     */
+    registerAdminRoute(app, '/email-template', 'get', async (req, res) => {
+        try {
+            logger.info({ path: req.path, method: req.method, tenantSlug: req.params.tenantSlug }, 'GET email-template route called');
+            const dbConn = await getDb();
+            const tenantId = await getTenantId(req);
+            if (!tenantId) {
+                logger.warn({ tenantId }, 'Tenant ID not found in GET email-template');
+                return res.status(400).json({ error: 'Tenant non valido' });
+            }
+            
+            // Get template for this tenant
+            const template = await dbConn.get('SELECT subject, html FROM email_template WHERE tenant_id = ?', tenantId);
+            
+            if (template) {
+                res.json({ subject: template.subject, html: template.html });
+            } else {
+                // Return default values if no template exists
+                res.json({ subject: 'Il tuo coupon', html: '' });
+            }
+        } catch (e) {
+            logger.error({ err: e }, 'Errore get email template');
+            res.status(500).json({ error: 'Errore server' });
+        }
+    });
 
-    // POST /api/admin/email-template and /t/:tenantSlug/api/admin/email-template - Update email template
+    /**
+     * POST /api/admin/email-template and /t/:tenantSlug/api/admin/email-template - Update email template
+     * 
+     * Updates or creates the email template for coupon emails sent by the tenant.
+     * Template supports placeholders like {{code}}, {{firstName}}, {{lastName}}, {{discountText}}, {{qrDataUrl}}.
+     * 
+     * @route POST /api/admin/email-template
+     * @route POST /t/:tenantSlug/api/admin/email-template
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {string} req.body.subject - Email subject line (required)
+     * @param {string} req.body.html - Email HTML template (required)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Update result
+     * @returns {boolean} returns.success - Whether update was successful
+     * 
+     * @throws {400} Bad Request - If subject or html is missing, or tenant ID is invalid
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request body
+     * {
+     *   subject: "Il tuo coupon",
+     *   html: "<html><body><h1>Ciao {{firstName}}!</h1><p>Il tuo codice: {{code}}</p></body></html>"
+     * }
+     * 
+     * // Response
+     * {
+     *   success: true
+     * }
+     */
     registerAdminRoute(app, '/email-template', 'post', async (req, res) => {
         try {
             const { subject, html } = req.body || {};
@@ -194,7 +450,39 @@ function setupSettingsRoutes(app) {
         }
     });
 
-    // POST /api/admin/upload-image and /t/:tenantSlug/api/admin/upload-image - Upload image
+    /**
+     * POST /api/admin/upload-image and /t/:tenantSlug/api/admin/upload-image - Upload image file
+     * 
+     * Uploads an image file from a data URL (base64 encoded).
+     * Images are stored in tenant-specific upload directories.
+     * Supports PNG, JPEG, JPG, and WebP formats with size limit (default 2MB).
+     * 
+     * @route POST /api/admin/upload-image
+     * @route POST /t/:tenantSlug/api/admin/upload-image
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {string} req.body.dataUrl - Base64-encoded data URL (format: "data:image/png;base64,...") (required)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Upload result
+     * @returns {string} returns.url - Public URL path to uploaded image (e.g., "/api/uploads/tenant-slug/filename.png")
+     * 
+     * @throws {400} Bad Request - If dataUrl is missing, invalid format, unsupported MIME type, or file too large
+     * @throws {500} Internal Server Error - If file write fails
+     * 
+     * @example
+     * // Request body
+     * {
+     *   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
+     * }
+     * 
+     * // Response
+     * {
+     *   url: "/api/uploads/default/header-1234567890-abc123.png"
+     * }
+     */
     registerAdminRoute(app, '/upload-image', 'post', async (req, res) => {
         try {
             const { dataUrl } = req.body || {};
@@ -239,7 +527,44 @@ function setupSettingsRoutes(app) {
         }
     });
 
-    // GET /api/admin/brand-settings - Get brand settings (legacy)
+    /**
+     * GET /api/admin/brand-settings - Get brand settings (legacy)
+     * 
+     * Retrieves brand color settings for the tenant (primary, accent, light, background, text colors).
+     * Returns empty object if no brand settings exist or tenant is invalid.
+     * 
+     * @route GET /api/admin/brand-settings
+     * @middleware requireAdmin
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.session} req.session - Session object
+     * @param {Object} req.session.user - User session data
+     * @param {number} [req.session.user.tenantId] - Tenant ID from session (optional)
+     * @param {string} [req.session.user.tenantSlug] - Tenant slug from session (optional)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Brand settings object
+     * @returns {string} [returns.primary_color] - Primary brand color (hex)
+     * @returns {string} [returns.accent_color] - Accent brand color (hex)
+     * @returns {string} [returns.light_color] - Light brand color (hex)
+     * @returns {string} [returns.background_color] - Background color (hex)
+     * @returns {string} [returns.text_dark_color] - Dark text color (hex)
+     * 
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Response (when settings exist)
+     * {
+     *   primary_color: "#2d5a3d",
+     *   accent_color: "#4a7c59",
+     *   light_color: "#f8f9fa",
+     *   background_color: "#ffffff",
+     *   text_dark_color: "#333333"
+     * }
+     * 
+     * // Response (when no settings)
+     * {}
+     */
     app.get('/api/admin/brand-settings', requireAdmin, async (req, res) => {
         try {
             const sess = req.session && req.session.user;

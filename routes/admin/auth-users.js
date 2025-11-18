@@ -1,15 +1,66 @@
 'use strict';
 
 const { getDb } = require('../../utils/db');
-const { registerAdminRoute, getTenantId } = require('../../utils/routeHelper');
+const { registerAdminRoute, getTenantId, sendSanitizedJson } = require('../../utils/routeHelper');
 const { hashPassword } = require('../../routes/auth');
+const { validatePassword, getPolicyRequirements } = require('../../utils/passwordPolicy');
 const logger = require('../../utils/logger');
 
 /**
- * Setup auth-users routes (admin/store users management)
+ * Setup auth-users routes (admin/store users management).
+ * 
+ * Registers all authentication user-related admin routes (both legacy and tenant-scoped variants).
+ * These routes manage admin and store users (not end users).
+ * 
+ * Routes registered:
+ * - GET /api/admin/auth-users - List auth users (admin/store users)
+ * - POST /api/admin/auth-users - Create auth user
+ * - PUT /api/admin/auth-users/:id - Update auth user
+ * - DELETE /api/admin/auth-users/:id - Delete auth user
+ * 
+ * @param {Express.App} app - Express application instance
+ * @returns {void}
  */
 function setupAuthUsersRoutes(app) {
-    // GET /api/admin/auth-users and /t/:tenantSlug/api/admin/auth-users - List auth users (admin/store users)
+    /**
+     * GET /api/admin/auth-users and /t/:tenantSlug/api/admin/auth-users - List auth users
+     * 
+     * Returns list of authentication users (admin/store users) for the tenant.
+     * Superadmin can view all users across all tenants if no tenant context.
+     * Regular admin can only view users for their tenant.
+     * Superadmin users are never returned for security.
+     * 
+     * @route GET /api/admin/auth-users
+     * @route GET /t/:tenantSlug/api/admin/auth-users
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Array<AuthUser>} Array of auth user objects
+     * @returns {number} returns[].id - User ID
+     * @returns {string} returns[].username - Username
+     * @returns {string} returns[].userType - User type (admin, store)
+     * @returns {boolean} returns[].isActive - Whether user is active
+     * @returns {string} [returns[].lastLogin] - Last login date (ISO datetime string, if logged in)
+     * @returns {number} [returns[].tenantId] - Tenant ID (only for superadmin view)
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid (for regular admin)
+     * @throws {403} Forbidden - If user is not admin or superadmin
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Response (tenant-scoped)
+     * [
+     *   {
+     *     id: 1,
+     *     username: "admin1",
+     *     userType: "admin",
+     *     isActive: true,
+     *     lastLogin: "2024-01-15T10:00:00.000Z"
+     *   }
+     * ]
+     */
     registerAdminRoute(app, '/auth-users', 'get', async (req, res) => {
         try {
             const sess = req.session && req.session.user;
@@ -31,7 +82,8 @@ function setupAuthUsersRoutes(app) {
                 );
                 // Sicurezza extra: non mostrare mai superadmin
                 const filtered = rows.filter(u => u.userType !== 'superadmin');
-                res.json(filtered);
+                // Sanitize output to prevent XSS
+                sendSanitizedJson(res, filtered);
             } else {
                 // Tenant-scoped access (admin or superadmin with tenant context)
                 if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
@@ -45,7 +97,8 @@ function setupAuthUsersRoutes(app) {
                 );
                 // Sicurezza extra: non mostrare mai superadmin
                 const filtered = rows.filter(u => u.userType !== 'superadmin');
-                res.json(filtered);
+                // Sanitize output to prevent XSS
+                sendSanitizedJson(res, filtered);
             }
         } catch (e) {
             logger.error({ err: e }, 'Error fetching auth users');
@@ -53,7 +106,51 @@ function setupAuthUsersRoutes(app) {
         }
     });
 
-    // POST /api/admin/auth-users and /t/:tenantSlug/api/admin/auth-users - Create auth user
+    /**
+     * POST /api/admin/auth-users and /t/:tenantSlug/api/admin/auth-users - Create auth user
+     * 
+     * Creates a new authentication user (admin or store). Password must meet policy requirements.
+     * Only superadmin can create admin users. Regular admin can only create store users.
+     * Superadmin can specify tenant_id in body, otherwise uses request context.
+     * 
+     * @route POST /api/admin/auth-users
+     * @route POST /t/:tenantSlug/api/admin/auth-users
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {string} req.body.username - Username (required, alphanumeric, 3-30 chars)
+     * @param {string} req.body.password - Password (required, must meet policy: min 12 chars, uppercase, lowercase, number, special char)
+     * @param {string} req.body.user_type - User type: "admin" or "store" (required)
+     * @param {number} [req.body.tenant_id] - Tenant ID (optional, only for superadmin, otherwise uses context)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Created user response
+     * @returns {number} returns.id - User ID
+     * @returns {string} returns.username - Username
+     * @returns {string} returns.userType - User type (admin, store)
+     * @returns {number} returns.isActive - Always 1 (active)
+     * 
+     * @throws {400} Bad Request - If data invalid, password doesn't meet policy, username already exists, or tenant ID invalid
+     * @throws {403} Forbidden - If user is not admin/superadmin, or regular admin trying to create admin user
+     * @throws {500} Internal Server Error - If database insert fails
+     * 
+     * @example
+     * // Request body
+     * {
+     *   username: "storeuser1",
+     *   password: "SecureP@ssw0rd123",
+     *   user_type: "store"
+     * }
+     * 
+     * // Response
+     * {
+     *   id: 1,
+     *   username: "storeuser1",
+     *   userType: "store",
+     *   isActive: 1
+     * }
+     */
     registerAdminRoute(app, '/auth-users', 'post', async (req, res) => {
         try {
             const sess = req.session && req.session.user;
@@ -63,6 +160,17 @@ function setupAuthUsersRoutes(app) {
             if (!username || !password || !['admin', 'store'].includes(role)) {
                 return res.status(400).json({ error: 'Dati non validi' });
             }
+            
+            // Validate password against policy
+            const passwordValidation = validatePassword(password);
+            if (!passwordValidation.valid) {
+                return res.status(400).json({ 
+                    error: 'Password non conforme alla policy',
+                    details: passwordValidation.errors,
+                    requirements: getPolicyRequirements()
+                });
+            }
+            
             // Solo il Superadmin può creare utenti con ruolo admin
             if (role === 'admin' && sess.userType !== 'superadmin') {
                 return res.status(403).json({ error: 'Solo il Superadmin può creare utenti admin' });
@@ -103,7 +211,48 @@ function setupAuthUsersRoutes(app) {
         }
     });
 
-    // PUT /api/admin/auth-users/:id and /t/:tenantSlug/api/admin/auth-users/:id - Update auth user
+    /**
+     * PUT /api/admin/auth-users/:id and /t/:tenantSlug/api/admin/auth-users/:id - Update auth user
+     * 
+     * Updates an authentication user. Only updates fields provided in request body.
+     * Password must meet policy requirements if provided.
+     * Only superadmin can modify admin users or change roles to/from admin.
+     * Users cannot deactivate themselves or change their own role.
+     * 
+     * @route PUT /api/admin/auth-users/:id
+     * @route PUT /t/:tenantSlug/api/admin/auth-users/:id
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - User ID to update
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {string} [req.body.username] - Username (optional)
+     * @param {string} [req.body.password] - Password (optional, must meet policy if provided)
+     * @param {string} [req.body.user_type] - User type: "admin" or "store" (optional, only superadmin can set admin)
+     * @param {boolean} [req.body.is_active] - Whether user is active (optional, cannot deactivate self)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.ok - Always true
+     * 
+     * @throws {400} Bad Request - If role invalid, password doesn't meet policy, username already exists, or operation not allowed
+     * @throws {403} Forbidden - If user is not admin/superadmin, or regular admin trying to modify admin user
+     * @throws {404} Not Found - If user doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request: PUT /api/admin/auth-users/1
+     * // Body:
+     * {
+     *   password: "NewSecureP@ssw0rd123",
+     *   is_active: true
+     * }
+     * // Response
+     * {
+     *   ok: true
+     * }
+     */
     registerAdminRoute(app, '/auth-users/:id', 'put', async (req, res) => {
         try {
             const sess = req.session && req.session.user;
@@ -161,13 +310,30 @@ function setupAuthUsersRoutes(app) {
                 params.push(role);
             }
             if (password) {
+                // Validate password against policy
+                const passwordValidation = validatePassword(password);
+                if (!passwordValidation.valid) {
+                    return res.status(400).json({ 
+                        error: 'Password non conforme alla policy',
+                        details: passwordValidation.errors,
+                        requirements: getPolicyRequirements()
+                    });
+                }
                 fields.push('password_hash = ?');
                 const newPasswordHash = await hashPassword(password);
                 params.push(newPasswordHash);
             }
             if (fields.length === 0) return res.json({ ok: true });
             params.push(req.params.id);
-            await dbConn.run(`UPDATE auth_users SET ${fields.join(', ')} WHERE id = ?` , ...params);
+            // For superadmin, no tenant restriction; for regular admin, add tenant_id filter
+            if (sess.userType === 'superadmin') {
+                await dbConn.run(`UPDATE auth_users SET ${fields.join(', ')} WHERE id = ?`, ...params);
+            } else {
+                const tenantId = await getTenantId(req);
+                if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+                params.push(tenantId);
+                await dbConn.run(`UPDATE auth_users SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`, ...params);
+            }
             res.json({ ok: true });
         } catch (e) {
             if (String(e && e.message || '').includes('UNIQUE')) {
@@ -178,7 +344,36 @@ function setupAuthUsersRoutes(app) {
         }
     });
 
-    // DELETE /api/admin/auth-users/:id and /t/:tenantSlug/api/admin/auth-users/:id - Delete auth user
+    /**
+     * DELETE /api/admin/auth-users/:id and /t/:tenantSlug/api/admin/auth-users/:id - Delete auth user
+     * 
+     * Permanently deletes an authentication user. Only deletes users belonging to the tenant (or any tenant for superadmin).
+     * Superadmin users cannot be deleted. Users cannot delete themselves.
+     * 
+     * @route DELETE /api/admin/auth-users/:id
+     * @route DELETE /t/:tenantSlug/api/admin/auth-users/:id
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - User ID to delete
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.ok - Always true
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid or operation not allowed (superadmin, self-deletion)
+     * @throws {403} Forbidden - If user is not admin/superadmin
+     * @throws {404} Not Found - If user doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database operation fails
+     * 
+     * @example
+     * // Request: DELETE /api/admin/auth-users/1
+     * // Response
+     * {
+     *   ok: true
+     * }
+     */
     registerAdminRoute(app, '/auth-users/:id', 'delete', async (req, res) => {
         try {
             const sess = req.session && req.session.user;
@@ -206,7 +401,14 @@ function setupAuthUsersRoutes(app) {
             
             // Rimuoviamo la regola del "primo admin": gestione riservata al Superadmin
             if (user.id === (sess.authUserId || sess.id)) return res.status(400).json({ error: 'Non puoi eliminare il tuo utente' });
-            await dbConn.run('DELETE FROM auth_users WHERE id = ?', req.params.id);
+            // For superadmin, no tenant restriction; for regular admin, add tenant_id filter
+            if (sess.userType === 'superadmin') {
+                await dbConn.run('DELETE FROM auth_users WHERE id = ?', req.params.id);
+            } else {
+                const tenantId = await getTenantId(req);
+                if (!tenantId) return res.status(400).json({ error: 'Tenant non valido' });
+                await dbConn.run('DELETE FROM auth_users WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+            }
             res.json({ ok: true });
         } catch (e) {
             logger.error({ err: e }, 'Error deleting auth user');

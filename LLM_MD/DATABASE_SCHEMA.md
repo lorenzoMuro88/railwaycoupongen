@@ -393,7 +393,29 @@ LIMIT 100;
 
 ## Pattern Tenant Isolation
 
-**Regola fondamentale:** Tutte le query su tabelle con `tenant_id` DEVONO includere un filtro `WHERE tenant_id = ?`.
+**Regola fondamentale:** Tutte le query su tabelle con `tenant_id` DEVONO includere un filtro `WHERE tenant_id = ?` per garantire l'isolamento dei dati tra tenant.
+
+### Tabelle Tenant-Scoped (richiedono sempre tenant_id)
+
+Le seguenti tabelle DEVONO sempre includere `tenant_id` nelle query:
+- `users` - Utenti finali
+- `campaigns` - Campagne promozionali
+- `coupons` - Coupon generati
+- `form_links` - Link parametrici form
+- `user_custom_data` - Campi personalizzati utenti
+- `products` - Prodotti
+- `campaign_products` - Associazione campagne-prodotti
+- `email_template` - Template email
+- `form_customization` - Configurazione form
+- `tenant_brand_settings` - Impostazioni brand
+
+### Tabelle Globali (NON richiedono tenant_id)
+
+Le seguenti tabelle sono globali e NON richiedono filtro tenant_id:
+- `tenants` - Tabella root dei tenant
+- `system_logs` - Log sistema (può essere globale o tenant-scoped)
+- `schema_migrations` - Migrazioni database
+- `auth_users` - Utenti autenticati (superadmin può vedere tutti, admin solo del proprio tenant)
 
 ### Query Corrette
 
@@ -401,10 +423,28 @@ LIMIT 100;
 -- ✅ Corretto: Include tenant_id filter
 SELECT * FROM campaigns WHERE tenant_id = ? AND id = ?;
 
--- ✅ Corretto: JOIN con tenant_id
-SELECT c.* FROM coupons c
-JOIN campaigns camp ON c.campaign_id = camp.id
-WHERE c.tenant_id = ? AND camp.tenant_id = ?;
+-- ✅ Corretto: JOIN con tenant_id su entrambe le tabelle
+SELECT c.*, u.email 
+FROM coupons c
+JOIN users u ON c.user_id = u.id AND u.tenant_id = c.tenant_id
+WHERE c.tenant_id = ? AND c.status = 'active';
+
+-- ✅ Corretto: JOIN multipli con tenant_id
+SELECT c.*, camp.name as campaign_name, u.email
+FROM coupons c
+JOIN campaigns camp ON c.campaign_id = camp.id AND camp.tenant_id = c.tenant_id
+JOIN users u ON c.user_id = u.id AND u.tenant_id = c.tenant_id
+WHERE c.tenant_id = ?;
+
+-- ✅ Corretto: UPDATE con tenant_id
+UPDATE campaigns SET is_active = 1 WHERE id = ? AND tenant_id = ?;
+
+-- ✅ Corretto: DELETE con tenant_id
+DELETE FROM coupons WHERE id = ? AND tenant_id = ?;
+
+-- ✅ Corretto: INSERT con tenant_id
+INSERT INTO campaigns (name, discount_type, discount_value, tenant_id) 
+VALUES (?, ?, ?, ?);
 ```
 
 ### Query Errate
@@ -413,11 +453,73 @@ WHERE c.tenant_id = ? AND camp.tenant_id = ?;
 -- ❌ ERRATO: Manca filtro tenant_id
 SELECT * FROM campaigns WHERE id = ?;
 
--- ❌ ERRATO: JOIN senza verifica tenant_id
+-- ❌ ERRATO: JOIN senza verifica tenant_id su entrambe le tabelle
 SELECT c.* FROM coupons c
 JOIN campaigns camp ON c.campaign_id = camp.id
 WHERE c.id = ?;
+
+-- ❌ ERRATO: UPDATE senza tenant_id (rischio cross-tenant)
+UPDATE campaigns SET is_active = 1 WHERE id = ?;
+
+-- ❌ ERRATO: DELETE senza tenant_id (rischio cross-tenant)
+DELETE FROM coupons WHERE id = ?;
 ```
+
+### Helper Functions per Tenant Isolation
+
+Il progetto include helper functions per garantire l'isolamento tenant:
+
+**`ensureTenantFilter(sql, tableName, tenantId)`** - Valida che una query SQL includa il filtro tenant_id appropriato.
+
+```javascript
+const { ensureTenantFilter } = require('./utils/db');
+
+// Validazione query
+const validation = ensureTenantFilter(
+    'SELECT * FROM campaigns WHERE tenant_id = ? AND id = ?',
+    'campaigns',
+    tenantId
+);
+
+if (!validation.valid) {
+    logger.warn({ warning: validation.warning }, 'Query missing tenant filter');
+}
+```
+
+**`getTenantId(req)`** - Ottiene il tenant ID dal request (funziona per route legacy e tenant-scoped).
+
+```javascript
+const { getTenantId } = require('./utils/routeHelper');
+
+const tenantId = await getTenantId(req);
+if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant non valido' });
+}
+```
+
+### Middleware per Tenant Isolation
+
+**`requireSameTenantAsSession`** - Verifica che il tenant nella sessione corrisponda al tenant nella richiesta.
+
+```javascript
+const { tenantLoader, requireSameTenantAsSession } = require('./middleware/tenant');
+const { requireRole } = require('./middleware/auth');
+
+app.get('/t/:tenantSlug/api/admin/campaigns',
+    tenantLoader,
+    requireSameTenantAsSession,
+    requireRole('admin'),
+    handler
+);
+```
+
+### Best Practices
+
+1. **Sempre includere tenant_id nelle query** su tabelle tenant-scoped
+2. **Usare `getTenantId(req)`** invece di accedere direttamente a `req.session.user.tenantId`
+3. **Verificare tenant_id anche nei JOIN** - entrambe le tabelle devono avere il filtro
+4. **Superadmin può accedere a tutti i tenant** - ma deve comunque specificare tenant_id nelle query quando appropriato
+5. **Testare tenant isolation** con test automatici (vedi `scripts/test-tenant-isolation.js`)
 
 ---
 
@@ -544,4 +646,5 @@ WHERE user_id IN (?, ?, ?) AND tenant_id = ?;
 - Vedi `LLM_MD/TYPES.md` per definizioni JSDoc dei tipi
 - Vedi `utils/db.js` per implementazione migrations e schema creation
 - Vedi `docs/ARCHITECTURE.md` per architettura generale
+
 
