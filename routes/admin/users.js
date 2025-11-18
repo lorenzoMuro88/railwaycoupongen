@@ -3,6 +3,7 @@
 const { getDb } = require('../../utils/db');
 const { requireAdmin } = require('../../middleware/auth');
 const { getTenantIdForApi } = require('../../middleware/tenant');
+const { sendSanitizedJson } = require('../../utils/routeHelper');
 const logger = require('../../utils/logger');
 
 /**
@@ -509,7 +510,50 @@ function setupUsersRoutes(app) {
         }
     });
 
-    // GET /api/admin/users/:id/coupons - Get user coupons
+    /**
+     * GET /api/admin/users/:id/coupons - Get user coupons
+     * 
+     * Returns all coupons for a specific user, including campaign information.
+     * Results are ordered by issue date (newest first).
+     * 
+     * @route GET /api/admin/users/:id/coupons
+     * @middleware requireAdmin
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - User ID
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Array<Object>} Array of coupon objects
+     * @returns {number} returns[].id - Coupon ID
+     * @returns {string} returns[].code - Coupon code
+     * @returns {string} returns[].status - Coupon status (active, redeemed, expired)
+     * @returns {string} returns[].discount_type - Discount type (percent, fixed, text)
+     * @returns {string} returns[].discount_value - Discount value
+     * @returns {string} returns[].issued_at - Issue date (ISO datetime string)
+     * @returns {string|null} returns[].redeemed_at - Redemption date (ISO datetime string, null if not redeemed)
+     * @returns {string} returns[].campaign_name - Campaign name (if associated)
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {404} Not Found - If user doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/users/123/coupons
+     * // Response
+     * [
+     *   {
+     *     id: 1,
+     *     code: "ABC123XYZ456",
+     *     status: "active",
+     *     discount_type: "percent",
+     *     discount_value: "20",
+     *     issued_at: "2024-01-01T00:00:00.000Z",
+     *     redeemed_at: null,
+     *     campaign_name: "Sconto 20%"
+     *   }
+     * ]
+     */
     app.get('/api/admin/users/:id/coupons', requireAdmin, async (req, res) => {
         try {
             const dbConn = await getDb();

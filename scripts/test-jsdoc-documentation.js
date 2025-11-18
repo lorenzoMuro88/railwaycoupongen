@@ -97,6 +97,7 @@ function findRouteHandlers(content) {
             type: 'registerAdminRoute',
             path: match[1],
             method: match[2].toUpperCase(),
+            index: match.index, // Save the index for later use
             line: content.substring(0, match.index).split('\n').length
         });
     }
@@ -108,6 +109,7 @@ function findRouteHandlers(content) {
             type: 'appMethod',
             path: match[2],
             method: match[1].toUpperCase(),
+            index: match.index, // Save the index for later use
             line: content.substring(0, match.index).split('\n').length
         });
     }
@@ -162,8 +164,35 @@ function testRouteFile(filePath) {
         for (const handler of handlers) {
             // Try to find JSDoc before the handler
             // Look for JSDoc comment before registerAdminRoute or app.method call
-            const handlerIndex = content.indexOf(`${handler.type === 'registerAdminRoute' ? 'registerAdminRoute' : `app.${handler.method.toLowerCase()}`}(`);
-            const beforeHandler = content.substring(Math.max(0, handlerIndex - 2000), handlerIndex);
+            // Use the full path to find the correct handler (fixes issue with multiple handlers of same method)
+            // Use the index saved when finding the handler (most reliable)
+            let handlerIndex = handler.index;
+            if (handlerIndex === undefined || handlerIndex < 0) {
+                // Fallback: try to find by pattern if index not available
+                if (handler.type === 'registerAdminRoute') {
+                    handlerIndex = content.indexOf(`registerAdminRoute(app, '${handler.path}', '${handler.method.toLowerCase()}'`);
+                    if (handlerIndex < 0) {
+                        handlerIndex = content.indexOf(`registerAdminRoute(app, "${handler.path}", "${handler.method.toLowerCase()}"`);
+                    }
+                    if (handlerIndex < 0) {
+                        handlerIndex = content.indexOf(`registerAdminRoute(app, '${handler.path}'`);
+                    }
+                    if (handlerIndex < 0) {
+                        handlerIndex = content.indexOf(`registerAdminRoute(app, "${handler.path}"`);
+                    }
+                } else {
+                    handlerIndex = content.indexOf(`app.${handler.method.toLowerCase()}('${handler.path}'`);
+                    if (handlerIndex < 0) {
+                        handlerIndex = content.indexOf(`app.${handler.method.toLowerCase()}("${handler.path}"`);
+                    }
+                }
+                if (handlerIndex < 0) {
+                    // Last fallback
+                    handlerIndex = content.indexOf(`${handler.type === 'registerAdminRoute' ? 'registerAdminRoute' : `app.${handler.method.toLowerCase()}`}(`);
+                }
+            }
+            // Search up to 5000 characters before handler to find JSDoc (some routes have extensive JSDoc)
+            const beforeHandler = content.substring(Math.max(0, handlerIndex - 5000), handlerIndex);
             const jsdocMatch = beforeHandler.match(/\/\*\*[\s\S]*?\*\//g);
             
             if (jsdocMatch && jsdocMatch.length > 0) {

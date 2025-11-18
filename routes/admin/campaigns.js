@@ -257,7 +257,52 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // PUT /api/admin/campaigns/:id and /t/:tenantSlug/api/admin/campaigns/:id - Update campaign
+    /**
+     * PUT /api/admin/campaigns/:id and /t/:tenantSlug/api/admin/campaigns/:id - Update campaign
+     * 
+     * Updates one or more fields of an existing campaign. Only provided fields are updated.
+     * 
+     * @route PUT /api/admin/campaigns/:id
+     * @route PUT /t/:tenantSlug/api/admin/campaigns/:id
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID to update
+     * @param {ExpressRequest.body} req.body - Request body (all fields optional)
+     * @param {string} [req.body.name] - Campaign name (optional)
+     * @param {string} [req.body.description] - Campaign description (optional)
+     * @param {string} [req.body.discount_type] - Discount type: "percent", "fixed", or "text" (optional)
+     * @param {string} [req.body.discount_value] - Discount value (optional)
+     * @param {string|null} [req.body.expiry_date] - Expiry date ISO string or null (optional)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Updated campaign object
+     * @returns {number} returns.id - Campaign ID
+     * @returns {string} returns.campaign_code - Campaign code
+     * @returns {string} returns.name - Campaign name
+     * @returns {string} returns.description - Campaign description
+     * @returns {string} returns.discount_type - Discount type
+     * @returns {string} returns.discount_value - Discount value
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid or no fields to update
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {409} Conflict - If campaign_code constraint violation
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request: PUT /api/admin/campaigns/123
+     * // Body: { name: "Nuovo nome", discount_value: "25" }
+     * // Response
+     * {
+     *   id: 123,
+     *   campaign_code: "ABC123XYZ456",
+     *   name: "Nuovo nome",
+     *   description: "Promozione estiva",
+     *   discount_type: "percent",
+     *   discount_value: "25"
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id', 'put', async (req, res) => {
         try {
             const { name, description, discount_type, discount_value, expiry_date } = req.body || {};
@@ -291,7 +336,34 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // PUT /api/admin/campaigns/:id/activate and /t/:tenantSlug/api/admin/campaigns/:id/activate - Activate campaign
+    /**
+     * PUT /api/admin/campaigns/:id/activate and /t/:tenantSlug/api/admin/campaigns/:id/activate - Activate campaign
+     * 
+     * Activates a campaign by setting is_active to 1.
+     * 
+     * @route PUT /api/admin/campaigns/:id/activate
+     * @route PUT /t/:tenantSlug/api/admin/campaigns/:id/activate
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID to activate
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.ok - Always true
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request: PUT /api/admin/campaigns/123/activate
+     * // Response
+     * {
+     *   ok: true
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id/activate', 'put', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -310,7 +382,34 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // PUT /api/admin/campaigns/:id/deactivate and /t/:tenantSlug/api/admin/campaigns/:id/deactivate - Deactivate campaign
+    /**
+     * PUT /api/admin/campaigns/:id/deactivate and /t/:tenantSlug/api/admin/campaigns/:id/deactivate - Deactivate campaign
+     * 
+     * Deactivates a campaign by setting is_active to 0.
+     * 
+     * @route PUT /api/admin/campaigns/:id/deactivate
+     * @route PUT /t/:tenantSlug/api/admin/campaigns/:id/deactivate
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID to deactivate
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.ok - Always true
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request: PUT /api/admin/campaigns/123/deactivate
+     * // Response
+     * {
+     *   ok: true
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id/deactivate', 'put', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -325,7 +424,34 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // DELETE /api/admin/campaigns/:id and /t/:tenantSlug/api/admin/campaigns/:id - Delete campaign
+    /**
+     * DELETE /api/admin/campaigns/:id and /t/:tenantSlug/api/admin/campaigns/:id - Delete campaign
+     * 
+     * Permanently deletes a campaign. Only deletes campaigns belonging to the tenant.
+     * 
+     * @route DELETE /api/admin/campaigns/:id
+     * @route DELETE /t/:tenantSlug/api/admin/campaigns/:id
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID to delete
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.ok - Always true
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database deletion fails
+     * 
+     * @example
+     * // Request: DELETE /api/admin/campaigns/123
+     * // Response
+     * {
+     *   ok: true
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id', 'delete', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -340,7 +466,45 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // GET /api/admin/campaigns/:id/form-config and /t/:tenantSlug/api/admin/campaigns/:id/form-config - Get form config
+    /**
+     * GET /api/admin/campaigns/:id/form-config and /t/:tenantSlug/api/admin/campaigns/:id/form-config - Get form config
+     * 
+     * Returns the form configuration for a campaign, including field visibility and requirements.
+     * 
+     * @route GET /api/admin/campaigns/:id/form-config
+     * @route GET /t/:tenantSlug/api/admin/campaigns/:id/form-config
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Form configuration object
+     * @returns {Object} returns.email - Email field configuration
+     * @returns {boolean} returns.email.visible - Whether email field is visible
+     * @returns {boolean} returns.email.required - Whether email field is required
+     * @returns {Object} returns.firstName - First name field configuration
+     * @returns {Object} returns.lastName - Last name field configuration
+     * @returns {Object} [returns.phone] - Phone field configuration (if exists)
+     * @returns {Object} [returns.address] - Address field configuration (if exists)
+     * @returns {Array} [returns.customFields] - Array of custom field configurations
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/campaigns/123/form-config
+     * // Response
+     * {
+     *   email: { visible: true, required: true },
+     *   firstName: { visible: true, required: true },
+     *   lastName: { visible: true, required: true },
+     *   phone: { visible: false, required: false },
+     *   customFields: []
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id/form-config', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -358,7 +522,45 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // PUT /api/admin/campaigns/:id/form-config and /t/:tenantSlug/api/admin/campaigns/:id/form-config - Update form config
+    /**
+     * PUT /api/admin/campaigns/:id/form-config and /t/:tenantSlug/api/admin/campaigns/:id/form-config - Update form config
+     * 
+     * Updates the form configuration for a campaign. Replaces the entire form configuration.
+     * 
+     * @route PUT /api/admin/campaigns/:id/form-config
+     * @route PUT /t/:tenantSlug/api/admin/campaigns/:id/form-config
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {Object} req.body.formConfig - Form configuration object (required)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.ok - Always true
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid or formConfig is invalid
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request: PUT /api/admin/campaigns/123/form-config
+     * // Body:
+     * {
+     *   formConfig: {
+     *     email: { visible: true, required: true },
+     *     firstName: { visible: true, required: true },
+     *     lastName: { visible: true, required: true },
+     *     phone: { visible: false, required: false }
+     *   }
+     * }
+     * // Response
+     * {
+     *   ok: true
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id/form-config', 'put', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -379,7 +581,43 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // GET /api/admin/campaigns-list and /t/:tenantSlug/api/admin/campaigns-list - Get campaigns list
+    /**
+     * GET /api/admin/campaigns-list and /t/:tenantSlug/api/admin/campaigns-list - Get campaigns list
+     * 
+     * Returns a simplified list of campaigns (id, name, code) for use in dropdowns and selects.
+     * Only returns campaigns with valid names, ordered by name.
+     * 
+     * @route GET /api/admin/campaigns-list
+     * @route GET /t/:tenantSlug/api/admin/campaigns-list
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Array<Object>} Array of simplified campaign objects
+     * @returns {number} returns[].id - Campaign ID
+     * @returns {string} returns[].name - Campaign name
+     * @returns {string} returns[].code - Campaign code
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/campaigns-list
+     * // Response
+     * [
+     *   {
+     *     id: 1,
+     *     name: "Sconto 20%",
+     *     code: "ABC123XYZ456"
+     *   },
+     *   {
+     *     id: 2,
+     *     name: "Promozione Estiva",
+     *     code: "DEF789GHI012"
+     *   }
+     * ]
+     */
     registerAdminRoute(app, '/campaigns-list', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -399,7 +637,42 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // GET /api/admin/campaigns/:id/custom-fields and /t/:tenantSlug/api/admin/campaigns/:id/custom-fields - Get custom fields
+    /**
+     * GET /api/admin/campaigns/:id/custom-fields and /t/:tenantSlug/api/admin/campaigns/:id/custom-fields - Get custom fields
+     * 
+     * Returns the custom fields configuration for a campaign.
+     * 
+     * @route GET /api/admin/campaigns/:id/custom-fields
+     * @route GET /t/:tenantSlug/api/admin/campaigns/:id/custom-fields
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Array<Object>} Array of custom field objects
+     * @returns {string} returns[].name - Custom field name
+     * @returns {string} returns[].label - Custom field label
+     * @returns {string} returns[].type - Custom field type (text, number, etc.)
+     * @returns {boolean} returns[].required - Whether field is required
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/campaigns/123/custom-fields
+     * // Response
+     * [
+     *   {
+     *     name: "allergies",
+     *     label: "Allergie",
+     *     type: "text",
+     *     required: false
+     *   }
+     * ]
+     */
     registerAdminRoute(app, '/campaigns/:id/custom-fields', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -418,7 +691,47 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // PUT /api/admin/campaigns/:id/custom-fields and /t/:tenantSlug/api/admin/campaigns/:id/custom-fields - Update custom fields
+    /**
+     * PUT /api/admin/campaigns/:id/custom-fields and /t/:tenantSlug/api/admin/campaigns/:id/custom-fields - Update custom fields
+     * 
+     * Updates the custom fields configuration for a campaign. Maximum 5 custom fields allowed.
+     * 
+     * @route PUT /api/admin/campaigns/:id/custom-fields
+     * @route PUT /t/:tenantSlug/api/admin/campaigns/:id/custom-fields
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {Array<Object>} req.body.customFields - Array of custom field objects (max 5, required)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.success - Always true
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid, customFields exceeds limit (5), or campaign not found
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database update fails
+     * 
+     * @example
+     * // Request: PUT /api/admin/campaigns/123/custom-fields
+     * // Body:
+     * {
+     *   customFields: [
+     *     {
+     *       name: "allergies",
+     *       label: "Allergie",
+     *       type: "text",
+     *       required: false
+     *     }
+     *   ]
+     * }
+     * // Response
+     * {
+     *   success: true
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id/custom-fields', 'put', async (req, res) => {
         try {
             const { customFields } = req.body;
@@ -448,7 +761,53 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // POST /t/:tenantSlug/api/admin/campaigns/:id/form-links - Generate form links (tenant-scoped only)
+    /**
+     * POST /t/:tenantSlug/api/admin/campaigns/:id/form-links - Generate form links
+     * 
+     * Generates one or more unique form links (tokens) for a campaign.
+     * Each link can be used once to access the campaign form.
+     * 
+     * @route POST /t/:tenantSlug/api/admin/campaigns/:id/form-links
+     * @middleware tenantLoader, requireSameTenantAsSession, requireRole('admin')
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.tenantSlug - Tenant slug from URL
+     * @param {string} req.params.id - Campaign ID
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {number} req.body.count - Number of links to generate (1-1000, required)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Generated links response
+     * @returns {Array<Object>} returns.links - Array of generated form link objects
+     * @returns {number} returns.links[].id - Form link ID
+     * @returns {string} returns.links[].token - Unique token for the form link
+     * @returns {string|null} returns.links[].used_at - Date when link was used (null if unused)
+     * @returns {number|null} returns.links[].coupon_id - ID of coupon created from this link (null if unused)
+     * @returns {string} returns.links[].created_at - Creation date (ISO datetime string)
+     * @returns {number} returns.count - Total number of links generated
+     * 
+     * @throws {400} Bad Request - If count is invalid or campaign not found
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If token generation fails
+     * 
+     * @example
+     * // Request: POST /t/my-tenant/api/admin/campaigns/123/form-links
+     * // Body: { count: 10 }
+     * // Response
+     * {
+     *   links: [
+     *     {
+     *       id: 1,
+     *       token: "ABC123XYZ456DEF7",
+     *       used_at: null,
+     *       coupon_id: null,
+     *       created_at: "2024-01-01T00:00:00.000Z"
+     *     }
+     *   ],
+     *   count: 10
+     * }
+     */
     app.post('/t/:tenantSlug/api/admin/campaigns/:id/form-links', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
         try {
             const { count } = req.body || {};
@@ -505,7 +864,57 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // GET /t/:tenantSlug/api/admin/campaigns/:id/form-links - List form links (tenant-scoped only)
+    /**
+     * GET /t/:tenantSlug/api/admin/campaigns/:id/form-links - List form links
+     * 
+     * Returns all form links for a campaign with usage statistics.
+     * Includes total, used, and available link counts.
+     * 
+     * @route GET /t/:tenantSlug/api/admin/campaigns/:id/form-links
+     * @middleware tenantLoader, requireSameTenantAsSession, requireRole('admin')
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.tenantSlug - Tenant slug from URL
+     * @param {string} req.params.id - Campaign ID
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Form links response with statistics
+     * @returns {Array<Object>} returns.links - Array of form link objects
+     * @returns {number} returns.links[].id - Form link ID
+     * @returns {string} returns.links[].token - Unique token for the form link
+     * @returns {string|null} returns.links[].used_at - Date when link was used (null if unused)
+     * @returns {number|null} returns.links[].coupon_id - ID of coupon created from this link (null if unused)
+     * @returns {string} returns.links[].created_at - Creation date (ISO datetime string)
+     * @returns {Object} returns.statistics - Usage statistics
+     * @returns {number} returns.statistics.total - Total number of links
+     * @returns {number} returns.statistics.used - Number of used links
+     * @returns {number} returns.statistics.available - Number of available (unused) links
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /t/my-tenant/api/admin/campaigns/123/form-links
+     * // Response
+     * {
+     *   links: [
+     *     {
+     *       id: 1,
+     *       token: "ABC123XYZ456DEF7",
+     *       used_at: null,
+     *       coupon_id: null,
+     *       created_at: "2024-01-01T00:00:00.000Z"
+     *     }
+     *   ],
+     *   statistics: {
+     *     total: 10,
+     *     used: 3,
+     *     available: 7
+     *   }
+     * }
+     */
     app.get('/t/:tenantSlug/api/admin/campaigns/:id/form-links', tenantLoader, requireSameTenantAsSession, requireRole('admin'), async (req, res) => {
         try {
             const campaignId = parseInt(req.params.id);
@@ -540,7 +949,43 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // GET /api/admin/campaigns/:id/products and /t/:tenantSlug/api/admin/campaigns/:id/products - Get campaign products
+    /**
+     * GET /api/admin/campaigns/:id/products and /t/:tenantSlug/api/admin/campaigns/:id/products - Get campaign products
+     * 
+     * Returns all products associated with a campaign, including assignment date.
+     * 
+     * @route GET /api/admin/campaigns/:id/products
+     * @route GET /t/:tenantSlug/api/admin/campaigns/:id/products
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Array<Object>} Array of product objects with assignment date
+     * @returns {number} returns[].id - Product ID
+     * @returns {string} returns[].name - Product name
+     * @returns {number} returns[].value - Product value
+     * @returns {number} returns[].margin_price - Product margin price
+     * @returns {string} returns[].assigned_at - Date when product was assigned to campaign (ISO datetime string)
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/campaigns/123/products
+     * // Response
+     * [
+     *   {
+     *     id: 1,
+     *     name: "Prodotto A",
+     *     value: 100.00,
+     *     margin_price: 30.00,
+     *     assigned_at: "2024-01-01T00:00:00.000Z"
+     *   }
+     * ]
+     */
     registerAdminRoute(app, '/campaigns/:id/products', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -561,7 +1006,37 @@ function setupCampaignsRoutes(app) {
         }
     });
 
-    // POST /api/admin/campaigns/:id/products and /t/:tenantSlug/api/admin/campaigns/:id/products - Update campaign products
+    /**
+     * POST /api/admin/campaigns/:id/products and /t/:tenantSlug/api/admin/campaigns/:id/products - Update campaign products
+     * 
+     * Updates the products associated with a campaign. Replaces all existing associations with the new list.
+     * 
+     * @route POST /api/admin/campaigns/:id/products
+     * @route POST /t/:tenantSlug/api/admin/campaigns/:id/products
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.params} req.params - URL parameters
+     * @param {string} req.params.id - Campaign ID
+     * @param {ExpressRequest.body} req.body - Request body
+     * @param {Array<number>} req.body.product_ids - Array of product IDs to associate with campaign (required)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Success response
+     * @returns {boolean} returns.success - Always true
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid or campaign not found
+     * @throws {404} Not Found - If campaign doesn't exist or doesn't belong to tenant
+     * @throws {500} Internal Server Error - If database operation fails
+     * 
+     * @example
+     * // Request: POST /api/admin/campaigns/123/products
+     * // Body: { product_ids: [1, 2, 3] }
+     * // Response
+     * {
+     *   success: true
+     * }
+     */
     registerAdminRoute(app, '/campaigns/:id/products', 'post', async (req, res) => {
         try {
             const { product_ids } = req.body;

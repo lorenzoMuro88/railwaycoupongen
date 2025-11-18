@@ -246,6 +246,10 @@ function setupAuthRoutes(app) {
      * @param {ExpressRequest} req - Express request object
      * @param {Express.Response} res - Express response object
      * @returns {void} Sends access.html file
+     * 
+     * @example
+     * // Request: GET /access
+     * // Response: HTML file (access.html)
      */
     app.get('/access', (req, res) => {
         res.sendFile(path.join(__dirname, '..', 'views', 'access.html'));
@@ -262,6 +266,10 @@ function setupAuthRoutes(app) {
      * @param {ExpressRequest} req - Express request object
      * @param {Express.Response} res - Express response object
      * @returns {void} Sends signup.html file
+     * 
+     * @example
+     * // Request: GET /signup
+     * // Response: HTML file (signup.html)
      */
     app.get('/signup', (req, res) => {
         res.sendFile(path.join(__dirname, '..', 'views', 'signup.html'));
@@ -281,6 +289,10 @@ function setupAuthRoutes(app) {
      * @param {Object} [req.session.user] - User session data (if logged in)
      * @param {Express.Response} res - Express response object
      * @returns {void} Sends login.html file or redirects if already logged in
+     * 
+     * @example
+     * // Request: GET /login
+     * // Response: HTML file (login.html) or redirect to /admin or /store if already logged in
      */
     app.get('/login', (req, res) => {
         // If already logged in, redirect to appropriate page
@@ -696,6 +708,10 @@ function setupAuthRoutes(app) {
      * @param {ExpressRequest} req - Express request object
      * @param {Express.Response} res - Express response object
      * @returns {void} Redirects to /access
+     * 
+     * @example
+     * // Request: GET /logout
+     * // Response: Redirect to /access
      */
     app.get('/logout', (req, res) => {
         const cookieName = process.env.SESSION_COOKIE_NAME || 'sessionId';
@@ -724,6 +740,10 @@ function setupAuthRoutes(app) {
      * @param {string} req.params.tenantSlug - Tenant slug from URL
      * @param {Express.Response} res - Express response object
      * @returns {void} Redirects to /access
+     * 
+     * @example
+     * // Request: GET /t/my-tenant/logout
+     * // Response: Redirect to /access
      */
     app.get('/t/:tenantSlug/logout', tenantLoader, (req, res) => {
         const cookieName = process.env.SESSION_COOKIE_NAME || 'sessionId';

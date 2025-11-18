@@ -5,10 +5,65 @@ const { registerAdminRoute, getTenantId, sendSanitizedJson } = require('../../ut
 const logger = require('../../utils/logger');
 
 /**
- * Setup analytics routes
+ * Setup analytics routes.
+ * 
+ * Registers all analytics-related admin routes for campaign and coupon analytics.
+ * 
+ * Routes registered:
+ * - GET /api/admin/analytics/summary - Get analytics summary
+ * - GET /api/admin/analytics/campaigns - Get analytics per campaign
+ * - GET /api/admin/analytics/temporal - Get temporal analytics
+ * - GET /api/admin/analytics/export - Export analytics data
+ * 
+ * @param {Express.App} app - Express application instance
+ * @returns {void}
  */
 function setupAnalyticsRoutes(app) {
-    // GET /api/admin/analytics/summary and /t/:tenantSlug/api/admin/analytics/summary - Analytics summary
+    /**
+     * GET /api/admin/analytics/summary and /t/:tenantSlug/api/admin/analytics/summary - Analytics summary
+     * 
+     * Returns aggregated analytics summary including total campaigns, coupons issued/redeemed,
+     * redemption rate, and estimated discount/margin calculations.
+     * 
+     * @route GET /api/admin/analytics/summary
+     * @route GET /t/:tenantSlug/api/admin/analytics/summary
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.query} req.query - Query parameters
+     * @param {string} [req.query.start] - Start date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.end] - End date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.campaignId] - Filter by campaign ID (optional)
+     * @param {string} [req.query.status] - Filter by status: "active" or "redeemed" (optional)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Object} Analytics summary object
+     * @returns {number} returns.totalCampaigns - Total number of campaigns
+     * @returns {number} returns.totalCouponsIssued - Total number of coupons issued
+     * @returns {number} returns.totalCouponsRedeemed - Total number of coupons redeemed
+     * @returns {number} returns.redemptionRate - Redemption rate (0-1)
+     * @returns {number} returns.estimatedDiscountIssued - Estimated total discount for issued coupons
+     * @returns {number} returns.estimatedDiscountRedeemed - Estimated total discount for redeemed coupons
+     * @returns {number} returns.estimatedGrossMarginOnRedeemed - Estimated gross margin on redeemed coupons
+     * @returns {number} returns.estimatedNetMarginAfterDiscount - Estimated net margin after discount
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid, date format invalid, or status invalid
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/analytics/summary?start=2024-01-01&end=2024-12-31
+     * // Response
+     * {
+     *   totalCampaigns: 5,
+     *   totalCouponsIssued: 1000,
+     *   totalCouponsRedeemed: 750,
+     *   redemptionRate: 0.75,
+     *   estimatedDiscountIssued: 5000.00,
+     *   estimatedDiscountRedeemed: 3750.00,
+     *   estimatedGrossMarginOnRedeemed: 10000.00,
+     *   estimatedNetMarginAfterDiscount: 6250.00
+     * }
+     */
     registerAdminRoute(app, '/analytics/summary', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -97,7 +152,55 @@ function setupAnalyticsRoutes(app) {
     });
 
 
-    // GET /api/admin/analytics/campaigns and /t/:tenantSlug/api/admin/analytics/campaigns - Analytics per campaign
+    /**
+     * GET /api/admin/analytics/campaigns and /t/:tenantSlug/api/admin/analytics/campaigns - Analytics per campaign
+     * 
+     * Returns analytics data grouped by campaign, including issued/redeemed counts,
+     * redemption rates, and estimated discount/margin calculations per campaign.
+     * 
+     * @route GET /api/admin/analytics/campaigns
+     * @route GET /t/:tenantSlug/api/admin/analytics/campaigns
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.query} req.query - Query parameters
+     * @param {string} [req.query.start] - Start date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.end] - End date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.campaignId] - Filter by campaign ID (optional)
+     * @param {string} [req.query.status] - Filter by status: "active" or "redeemed" (optional)
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Array<Object>} Array of campaign analytics objects
+     * @returns {number} returns[].id - Campaign ID
+     * @returns {string} returns[].name - Campaign name
+     * @returns {number} returns[].issued - Number of coupons issued for this campaign
+     * @returns {number} returns[].redeemed - Number of coupons redeemed for this campaign
+     * @returns {number} returns[].redemptionRate - Redemption rate for this campaign (0-1)
+     * @returns {number} returns[].estDiscountIssued - Estimated total discount for issued coupons
+     * @returns {number} returns[].estDiscountRedeemed - Estimated total discount for redeemed coupons
+     * @returns {number} returns[].estGrossMarginRedeemed - Estimated gross margin on redeemed coupons
+     * @returns {number} returns[].estNetMarginAfterDiscount - Estimated net margin after discount
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid, date format invalid, or status invalid
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/analytics/campaigns?start=2024-01-01
+     * // Response
+     * [
+     *   {
+     *     id: 1,
+     *     name: "Sconto 20%",
+     *     issued: 500,
+     *     redeemed: 375,
+     *     redemptionRate: 0.75,
+     *     estDiscountIssued: 2500.00,
+     *     estDiscountRedeemed: 1875.00,
+     *     estGrossMarginRedeemed: 5000.00,
+     *     estNetMarginAfterDiscount: 3125.00
+     *   }
+     * ]
+     */
     registerAdminRoute(app, '/analytics/campaigns', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -182,7 +285,48 @@ function setupAnalyticsRoutes(app) {
     });
 
 
-    // GET /api/admin/analytics/temporal and /t/:tenantSlug/api/admin/analytics/temporal - Temporal analytics
+    /**
+     * GET /api/admin/analytics/temporal and /t/:tenantSlug/api/admin/analytics/temporal - Temporal analytics
+     * 
+     * Returns analytics data grouped by time period (day or week), showing trends
+     * over time for coupons issued/redeemed, discounts applied, and margins.
+     * 
+     * @route GET /api/admin/analytics/temporal
+     * @route GET /t/:tenantSlug/api/admin/analytics/temporal
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.query} req.query - Query parameters
+     * @param {string} [req.query.start] - Start date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.end] - End date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.campaignId] - Filter by campaign ID (optional)
+     * @param {string} [req.query.status] - Filter by status: "active" or "redeemed" (optional)
+     * @param {string} [req.query.groupBy='day'] - Group by "day" or "week" (default: "day")
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {Array<Object>} Array of temporal analytics objects
+     * @returns {string} returns[].period - Time period (YYYY-MM-DD for day, YYYY-Www for week)
+     * @returns {number} returns[].issued - Number of coupons issued in this period
+     * @returns {number} returns[].redeemed - Number of coupons redeemed in this period
+     * @returns {number} returns[].discount_applied - Total discount applied in this period
+     * @returns {number} returns[].gross_margin - Gross margin for redeemed coupons in this period
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid, date format invalid, status invalid, or groupBy invalid
+     * @throws {500} Internal Server Error - If database query fails
+     * 
+     * @example
+     * // Request: GET /api/admin/analytics/temporal?start=2024-01-01&groupBy=day
+     * // Response
+     * [
+     *   {
+     *     period: "2024-01-01",
+     *     issued: 50,
+     *     redeemed: 35,
+     *     discount_applied: 175.00,
+     *     gross_margin: 500.00
+     *   }
+     * ]
+     */
     registerAdminRoute(app, '/analytics/temporal', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
@@ -276,7 +420,65 @@ function setupAnalyticsRoutes(app) {
     });
 
 
-    // GET /api/admin/analytics/export and /t/:tenantSlug/api/admin/analytics/export - Export analytics
+    /**
+     * GET /api/admin/analytics/export and /t/:tenantSlug/api/admin/analytics/export - Export analytics
+     * 
+     * Exports detailed analytics data as CSV or JSON format.
+     * Includes coupon details, user information, campaign data, and calculated averages.
+     * 
+     * @route GET /api/admin/analytics/export
+     * @route GET /t/:tenantSlug/api/admin/analytics/export
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
+     * 
+     * @param {ExpressRequest} req - Express request object
+     * @param {ExpressRequest.query} req.query - Query parameters
+     * @param {string} [req.query.start] - Start date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.end] - End date filter (YYYY-MM-DD format, optional)
+     * @param {string} [req.query.campaignId] - Filter by campaign ID (optional)
+     * @param {string} [req.query.status] - Filter by status: "active" or "redeemed" (optional)
+     * @param {string} [req.query.format='csv'] - Export format: "csv" or "json" (default: "csv")
+     * @param {Express.Response} res - Express response object
+     * 
+     * @returns {string|Object} CSV file content (if format=csv) or JSON object (if format=json)
+     * @returns {string} Content-Type: text/csv (if CSV) or application/json (if JSON)
+     * @returns {string} Content-Disposition: attachment; filename="analytics-export.csv" (if CSV)
+     * 
+     * CSV Columns (if format=csv):
+     * - Code, Status, Issued At, Redeemed At, Campaign, First Name, Last Name, Email, Discount Type, Discount Value, Avg Product Value, Avg Margin
+     * 
+     * JSON Structure (if format=json):
+     * Array of objects with: code, status, issued_at, redeemed_at, campaign_id, campaign_name, first_name, last_name, email, discount_type, discount_value, avg_product_value, avg_margin
+     * 
+     * @throws {400} Bad Request - If tenant ID is invalid, date format invalid, or status invalid
+     * @throws {500} Internal Server Error - If database query fails or export generation fails
+     * 
+     * @example
+     * // Request: GET /api/admin/analytics/export?format=csv&start=2024-01-01
+     * // Response: CSV file download with headers
+     * // Content-Type: text/csv
+     * // Content-Disposition: attachment; filename="analytics-export.csv"
+     * 
+     * @example
+     * // Request: GET /api/admin/analytics/export?format=json
+     * // Response
+     * [
+     *   {
+     *     code: "ABC123XYZ456",
+     *     status: "redeemed",
+     *     issued_at: "2024-01-01T00:00:00.000Z",
+     *     redeemed_at: "2024-01-15T00:00:00.000Z",
+     *     campaign_id: 1,
+     *     campaign_name: "Sconto 20%",
+     *     first_name: "Mario",
+     *     last_name: "Rossi",
+     *     email: "mario@example.com",
+     *     discount_type: "percent",
+     *     discount_value: "20",
+     *     avg_product_value: 100.00,
+     *     avg_margin: 30.00
+     *   }
+     * ]
+     */
     registerAdminRoute(app, '/analytics/export', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
