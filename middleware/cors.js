@@ -34,6 +34,10 @@ const corsOptions = {
             return callback(null, true);
         }
         
+        // Always allow same-origin requests (when origin matches the request host)
+        // This is handled by checking if origin matches any of the allowed origins
+        // or if it's a same-origin request (no origin header means same-origin, but we already handled that above)
+        
         // If no allowed origins configured, only allow same-origin
         if (ALLOWED_ORIGINS.length === 0) {
             // In development, allow all origins for easier testing
