@@ -78,6 +78,25 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // ============================================================================
+// SECTION 1.5: Health Check Endpoint (Early - Before Heavy Middleware)
+// ============================================================================
+// Health check endpoint must be early to avoid middleware overhead
+// This ensures Railway health checks are fast and reliable
+/**
+ * GET /health - Simple health check (no database check)
+ * 
+ * Returns basic health status without database connectivity check.
+ * Useful for load balancer health checks that need fast response.
+ * 
+ * @route GET /health
+ * @public
+ * 
+ * @returns {Object} Health status
+ * @returns {boolean} returns.ok - Always true
+ */
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+// ============================================================================
 // SECTION 2: HTTPS Enforcement
 // ============================================================================
 // Redirect HTTP to HTTPS in production for transport layer security
@@ -2541,19 +2560,8 @@ app.get('/t/:tenantSlug/redeem/:code', tenantLoader, (req, res) => {
 });
 
 // Health endpoints
-/**
- * GET /health - Simple health check (no database check)
- * 
- * Returns basic health status without database connectivity check.
- * Useful for load balancer health checks that need fast response.
- * 
- * @route GET /health
- * @public
- * 
- * @returns {Object} Health status
- * @returns {boolean} returns.ok - Always true
- */
-app.get('/health', (req, res) => res.json({ ok: true }));
+// Note: /health endpoint is defined early in the file (after trust proxy) 
+// to avoid middleware overhead for Railway health checks
 
 /**
  * GET /healthz - Health check with database connectivity
