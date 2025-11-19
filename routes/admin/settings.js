@@ -24,8 +24,8 @@ const UPLOADS_BASE_DIR = process.env.UPLOADS_DIR
  * - GET /api/admin/test-email - Test email configuration
  * - PUT /api/admin/email-from-name - Update email sender name
  * - GET /api/admin/email-from-name - Get email sender name
- * - GET /api/admin/form-customization - Get form customization (legacy)
- * - POST /api/admin/form-customization - Update form customization (legacy)
+ * - GET /api/admin/form-customization - Get form customization
+ * - POST /api/admin/form-customization - Update form customization
  * - GET /api/admin/email-template - Get email template
  * - POST /api/admin/email-template - Update email template
  * - POST /api/admin/upload-image - Upload image file
@@ -205,18 +205,16 @@ function setupSettingsRoutes(app) {
     });
 
     /**
-     * GET /api/admin/form-customization - Get form customization (legacy)
+     * GET /api/admin/form-customization and /t/:tenantSlug/api/admin/form-customization - Get form customization
      * 
      * Retrieves the form customization configuration for the tenant.
      * Returns empty object if no configuration exists.
      * 
      * @route GET /api/admin/form-customization
-     * @middleware requireAdmin
+     * @route GET /t/:tenantSlug/api/admin/form-customization
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
      * 
      * @param {ExpressRequest} req - Express request object
-     * @param {ExpressRequest.session} req.session - Session object
-     * @param {Object} req.session.user - User session data
-     * @param {number} req.session.user.tenantId - Tenant ID from session
      * @param {Express.Response} res - Express response object
      * 
      * @returns {Object} Form customization configuration object (parsed JSON)
@@ -234,11 +232,11 @@ function setupSettingsRoutes(app) {
      *   customFields: []
      * }
      */
-    app.get('/api/admin/form-customization', requireAdmin, async (req, res) => {
+    registerAdminRoute(app, '/form-customization', 'get', async (req, res) => {
         try {
             const dbConn = await getDb();
             await ensureFormCustomizationTenantId(dbConn);
-            const tenantId = req.session.user.tenantId;
+            const tenantId = await getTenantId(req);
             if (!tenantId) {
                 return res.status(400).json({ error: 'Tenant non valido' });
             }
@@ -255,19 +253,17 @@ function setupSettingsRoutes(app) {
     });
 
     /**
-     * POST /api/admin/form-customization - Update form customization (legacy)
+     * POST /api/admin/form-customization and /t/:tenantSlug/api/admin/form-customization - Update form customization
      * 
      * Updates or creates the form customization configuration for the tenant.
      * Configuration is stored as JSON string in the database.
      * 
      * @route POST /api/admin/form-customization
-     * @middleware requireAdmin
+     * @route POST /t/:tenantSlug/api/admin/form-customization
+     * @middleware requireAdmin (legacy) | tenantLoader, requireSameTenantAsSession, requireRole('admin') (tenant-scoped)
      * 
      * @param {ExpressRequest} req - Express request object
      * @param {ExpressRequest.body} req.body - Form customization configuration object (will be stringified)
-     * @param {ExpressRequest.session} req.session - Session object
-     * @param {Object} req.session.user - User session data
-     * @param {number} req.session.user.tenantId - Tenant ID from session
      * @param {Express.Response} res - Express response object
      * 
      * @returns {Object} Update result
@@ -293,11 +289,11 @@ function setupSettingsRoutes(app) {
      *   message: "Configurazione salvata con successo!"
      * }
      */
-    app.post('/api/admin/form-customization', requireAdmin, async (req, res) => {
+    registerAdminRoute(app, '/form-customization', 'post', async (req, res) => {
         try {
             const dbConn = await getDb();
             await ensureFormCustomizationTenantId(dbConn);
-            const tenantId = req.session.user.tenantId;
+            const tenantId = await getTenantId(req);
             if (!tenantId) {
                 return res.status(400).json({ error: 'Tenant non valido' });
             }

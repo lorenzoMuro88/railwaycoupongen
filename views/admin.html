@@ -1236,7 +1236,6 @@
     </style>
     </head>
 <body>
-    <a href="#main-content" class="skip-link">Salta al contenuto principale</a>
     <script src="/static/navigation.js"></script>
     <!-- Navigation Bar -->
     <div id="navigation-container"></div>
@@ -1293,10 +1292,18 @@
                         </label>
                     </div>
                     <div class="form-row">
-                        <label>Data limite di utilizzo (opzionale)
+                        <label>Data limite generazione coupon (opzionale)
                             <input type="datetime-local" id="campaignExpiryDate" placeholder="Seleziona data e ora di scadenza" />
                             <small style="color: var(--text-light); font-size: 0.85rem; margin-top: 0.25rem; display: block;">
-                                La campagna scadrà automaticamente alla data selezionata
+                                Dopo questa data non sarà più possibile generare nuovi coupon tramite il form
+                            </small>
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label>Data limite bruciatura coupon (opzionale)
+                            <input type="datetime-local" id="couponExpiryDate" placeholder="Seleziona data e ora di scadenza" />
+                            <small style="color: var(--text-light); font-size: 0.85rem; margin-top: 0.25rem; display: block;">
+                                Dopo questa data i coupon generati non potranno più essere bruciati
                             </small>
                         </label>
                     </div>
@@ -2869,6 +2876,7 @@
             const description = document.getElementById('campaignDescription').value;
             const discountType = currentDiscountType;
             const expiryDate = document.getElementById('campaignExpiryDate').value;
+            const couponExpiryDate = document.getElementById('couponExpiryDate').value;
             
             // Ensure the input is visible and accessible
             const discountValueElement = document.getElementById('discountValue');
@@ -2898,7 +2906,7 @@
                 const r = await fetch(`${tenantBase}/api/admin/campaigns`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description, discount_type: discountType, discount_value: discountValue, expiry_date: expiryDate || null })
+                    body: JSON.stringify({ name, description, discount_type: discountType, discount_value: discountValue, expiry_date: expiryDate || null, coupon_expiry_date: couponExpiryDate || null })
                 });
                 if(!r.ok){
                     const error = await r.json();
@@ -2986,7 +2994,7 @@
                                 <button class="actions-btn" onclick="toggleActionsMenu(${camp.id})" title="Azioni">
                                 </button>
                                 <div class="actions-bar" id="actions-${camp.id}" data-expiry="${camp.expiry_date || ''}">
-                                    <button onclick="openEditCampaignModal(${camp.id}, '${(camp.name || '').replace(/'/g, "&#39;")}', '${(camp.description || '').replace(/'/g, "&#39;")}', '${camp.expiry_date || ''}')">
+                                    <button onclick="openEditCampaignModal(${camp.id}, '${(camp.name || '').replace(/'/g, "&#39;")}', '${(camp.description || '').replace(/'/g, "&#39;")}', '${camp.expiry_date || ''}', '${camp.coupon_expiry_date || ''}')">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M12 20h9"/>
                                             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
@@ -3129,8 +3137,9 @@
             }
         }
 
-        function openEditCampaignModal(id, name, description, expiryIso){
+        function openEditCampaignModal(id, name, description, expiryIso, couponExpiryIso){
             const isoLocal = expiryIso ? new Date(expiryIso).toISOString().slice(0,16) : '';
+            const couponIsoLocal = couponExpiryIso ? new Date(couponExpiryIso).toISOString().slice(0,16) : '';
             showModal({
                 title: 'Modifica campagna',
                 message: `
@@ -3141,8 +3150,17 @@
                         <label style="display:block;margin:.5rem 0">Descrizione
                             <input type="text" id="editCampaignDescription" value="${(description || '').replace(/"/g,'&quot;')}" />
                         </label>
-                        <label style="display:block;margin:.5rem 0">Data limite di utilizzo (opzionale)
+                        <label style="display:block;margin:.5rem 0">Data limite generazione coupon (opzionale)
                             <input type="datetime-local" id="editCampaignExpiry" value="${isoLocal}" />
+                            <small style="color: var(--text-light); font-size: 0.85rem; margin-top: 0.25rem; display: block;">
+                                Dopo questa data non sarà più possibile generare nuovi coupon tramite il form
+                            </small>
+                        </label>
+                        <label style="display:block;margin:.5rem 0">Data limite bruciatura coupon (opzionale)
+                            <input type="datetime-local" id="editCouponExpiry" value="${couponIsoLocal}" />
+                            <small style="color: var(--text-light); font-size: 0.85rem; margin-top: 0.25rem; display: block;">
+                                Dopo questa data i coupon generati non potranno più essere bruciati
+                            </small>
                         </label>
                     </div>
                 `,
@@ -3152,7 +3170,8 @@
                     const updated = {
                         name: document.getElementById('editCampaignName')?.value || name,
                         description: document.getElementById('editCampaignDescription')?.value || description,
-                        expiry_date: document.getElementById('editCampaignExpiry')?.value || null
+                        expiry_date: document.getElementById('editCampaignExpiry')?.value || null,
+                        coupon_expiry_date: document.getElementById('editCouponExpiry')?.value || null
                     };
                     try {
                         const r = await fetch(`/api/admin/campaigns/${id}`, {

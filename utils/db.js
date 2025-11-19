@@ -444,6 +444,14 @@ async function migrateCouponsTable(dbConn) {
         logger.debug('Adding tenant_id column to coupons...');
         await dbConn.exec('ALTER TABLE coupons ADD COLUMN tenant_id INTEGER');
     }
+    
+    // Check if expiry_date column exists in coupons table
+    const columnsAfterMigration = await dbConn.all("PRAGMA table_info(coupons)");
+    const columnNamesAfterMigration = columnsAfterMigration.map(col => col.name);
+    if (!columnNamesAfterMigration.includes('expiry_date')) {
+        logger.debug('Adding expiry_date column to coupons...');
+        await dbConn.exec('ALTER TABLE coupons ADD COLUMN expiry_date DATETIME');
+    }
 }
 
 async function migrateCampaignsTable(dbConn, defaultTenantId) {
@@ -520,6 +528,12 @@ async function migrateCampaignsTable(dbConn, defaultTenantId) {
     if (!campaignColumnNames.includes('expiry_date')) {
         logger.debug('Adding expiry_date column to campaigns...');
         await dbConn.exec('ALTER TABLE campaigns ADD COLUMN expiry_date DATETIME');
+    }
+    
+    // Check if coupon_expiry_date column exists in campaigns table
+    if (!campaignColumnNames.includes('coupon_expiry_date')) {
+        logger.debug('Adding coupon_expiry_date column to campaigns...');
+        await dbConn.exec('ALTER TABLE campaigns ADD COLUMN coupon_expiry_date DATETIME');
     }
 }
 

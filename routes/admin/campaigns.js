@@ -194,7 +194,7 @@ function setupCampaignsRoutes(app) {
     registerAdminRoute(app, '/campaigns', 'post', async (req, res) => {
         let tenantId = null;
         try {
-            const { name, description, discount_type, discount_value, expiry_date } = req.body || {};
+            const { name, description, discount_type, discount_value, expiry_date, coupon_expiry_date } = req.body || {};
             
             // Validation: check name is valid string
             if (typeof name !== 'string' || !name.trim()) {
@@ -234,8 +234,8 @@ function setupCampaignsRoutes(app) {
                 customFields: []
             });
             const result = await dbConn.run(
-                'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, tenant_id, is_active, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)',
-                campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, tenantId, expiry_date || null
+                'INSERT INTO campaigns (campaign_code, name, description, discount_type, discount_value, form_config, tenant_id, is_active, expiry_date, coupon_expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+                campaignCode, name, description || null, discount_type, discount_value, defaultFormConfig, tenantId, expiry_date || null, coupon_expiry_date || null
             );
             
             // Audit logging
@@ -274,7 +274,8 @@ function setupCampaignsRoutes(app) {
      * @param {string} [req.body.description] - Campaign description (optional)
      * @param {string} [req.body.discount_type] - Discount type: "percent", "fixed", or "text" (optional)
      * @param {string} [req.body.discount_value] - Discount value (optional)
-     * @param {string|null} [req.body.expiry_date] - Expiry date ISO string or null (optional)
+     * @param {string|null} [req.body.expiry_date] - Expiry date ISO string or null (optional) - Scadenza per generazione coupon
+     * @param {string|null} [req.body.coupon_expiry_date] - Coupon expiry date ISO string or null (optional) - Scadenza per bruciatura coupon
      * @param {Express.Response} res - Express response object
      * 
      * @returns {Object} Updated campaign object
@@ -305,7 +306,7 @@ function setupCampaignsRoutes(app) {
      */
     registerAdminRoute(app, '/campaigns/:id', 'put', async (req, res) => {
         try {
-            const { name, description, discount_type, discount_value, expiry_date } = req.body || {};
+            const { name, description, discount_type, discount_value, expiry_date, coupon_expiry_date } = req.body || {};
             const fields = [];
             const params = [];
             if (typeof name === 'string') { fields.push('name = ?'); params.push(name); }
@@ -313,6 +314,7 @@ function setupCampaignsRoutes(app) {
             if (typeof discount_type === 'string') { fields.push('discount_type = ?'); params.push(discount_type); }
             if (typeof discount_value === 'string') { fields.push('discount_value = ?'); params.push(discount_value); }
             if (typeof expiry_date === 'string' || expiry_date === null) { fields.push('expiry_date = ?'); params.push(expiry_date || null); }
+            if (typeof coupon_expiry_date === 'string' || coupon_expiry_date === null) { fields.push('coupon_expiry_date = ?'); params.push(coupon_expiry_date || null); }
             if (fields.length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
             const dbConn = await getDb();
             const tenantId = await getTenantId(req);

@@ -332,3 +332,4 @@ I file statici possono accedere a variabili globali iniettate:
 
 *Documentazione aggiornata: 2024*
 
+

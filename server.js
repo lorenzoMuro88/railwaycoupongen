@@ -760,6 +760,14 @@ async function getDb() {
             await db.exec('ALTER TABLE coupons ADD COLUMN tenant_id INTEGER');
         }
         
+        // Check if expiry_date column exists in coupons table
+        const columnsAfterMigration = await db.all("PRAGMA table_info(coupons)");
+        const columnNamesAfterMigration = columnsAfterMigration.map(col => col.name);
+        if (!columnNamesAfterMigration.includes('expiry_date')) {
+            logger.debug('Adding expiry_date column to coupons...');
+            await db.exec('ALTER TABLE coupons ADD COLUMN expiry_date DATETIME');
+        }
+        
         // Check if campaign_code column exists in campaigns table
         const campaignColumns = await db.all("PRAGMA table_info(campaigns)");
         const campaignColumnNames = campaignColumns.map(col => col.name);
@@ -838,6 +846,12 @@ async function getDb() {
         if (!campaignColumnNames.includes('expiry_date')) {
             logger.debug('Adding expiry_date column to campaigns...');
             await db.exec('ALTER TABLE campaigns ADD COLUMN expiry_date DATETIME');
+        }
+        
+        // Check if coupon_expiry_date column exists in campaigns table
+        if (!campaignColumnNames.includes('coupon_expiry_date')) {
+            logger.debug('Adding coupon_expiry_date column to campaigns...');
+            await db.exec('ALTER TABLE campaigns ADD COLUMN coupon_expiry_date DATETIME');
         }
         
         // Check if new columns exist in users table
@@ -1681,7 +1695,7 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             const formLink = await dbConn.get(
                 `SELECT fl.id, fl.token, fl.used_at, fl.campaign_id, fl.tenant_id, 
                  c.campaign_code, c.name, c.description, c.is_active, c.discount_type, 
-                 c.discount_value, c.form_config, c.expiry_date, c.tenant_id as campaign_tenant_id
+                 c.discount_value, c.form_config, c.expiry_date, c.coupon_expiry_date, c.tenant_id as campaign_tenant_id
                  FROM form_links fl 
                  JOIN campaigns c ON c.id = fl.campaign_id 
                  WHERE fl.token = ? AND fl.tenant_id = ?`,
@@ -1725,7 +1739,8 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
                 id: formLink.campaign_id,
                 campaign_code: formLink.campaign_code,
                 tenant_id: formLink.campaign_tenant_id || formLink.tenant_id,
-                form_config: formLink.form_config
+                form_config: formLink.form_config,
+                coupon_expiry_date: formLink.coupon_expiry_date
             };
             discountType = formLink.discount_type;
             discountValue = formLink.discount_value;
@@ -1747,7 +1762,7 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
                     return res.status(400).send('Questo coupon non esiste o è scaduto');
                 }
                 
-                // Check if campaign has expired
+                // Check if campaign has expired (expiry_date is for form generation, not coupon redemption)
                 if (specificCampaign.expiry_date && new Date(specificCampaign.expiry_date) < new Date()) {
                     // Auto-deactivate expired campaign
                     await dbConn.run('UPDATE campaigns SET is_active = 0 WHERE id = ?', specificCampaign.id);
@@ -1757,6 +1772,8 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
                 discountType = specificCampaign.discount_type;
                 discountValue = specificCampaign.discount_value;
                 campaignId = specificCampaign.id;
+                // Store coupon_expiry_date for later use
+                specificCampaign.coupon_expiry_date = specificCampaign.coupon_expiry_date;
             } else {
                 return res.status(400).send('Questo coupon non esiste o è scaduto');
             }
@@ -1796,9 +1813,21 @@ app.post('/t/:tenantSlug/submit', tenantLoader, checkSubmitRateLimit, verifyReca
             }
         }
 
+        // Get coupon_expiry_date from campaign (either from formLink or from direct campaign query)
+        let couponExpiryDate = null;
+        if (specificCampaign.coupon_expiry_date) {
+            couponExpiryDate = specificCampaign.coupon_expiry_date;
+        } else if (campaignId) {
+            // Fallback: retrieve campaign to get coupon_expiry_date
+            const fullCampaign = await dbConn.get('SELECT coupon_expiry_date FROM campaigns WHERE id = ?', campaignId);
+            if (fullCampaign && fullCampaign.coupon_expiry_date) {
+                couponExpiryDate = fullCampaign.coupon_expiry_date;
+            }
+        }
+        
         const couponResult = await dbConn.run(
-            'INSERT INTO coupons (code, user_id, campaign_id, discount_type, discount_value, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            couponCode, userId, campaignId, discountType, discountValue, 'active', specificCampaign.tenant_id
+            'INSERT INTO coupons (code, user_id, campaign_id, discount_type, discount_value, status, tenant_id, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            couponCode, userId, campaignId, discountType, discountValue, 'active', specificCampaign.tenant_id, couponExpiryDate
         );
         
         // Update form_link with coupon_id if form_token was used
@@ -2283,6 +2312,11 @@ app.post('/api/coupons/:code/redeem', async (req, res) => {
         if (!coupon) return res.status(404).json({ error: 'Non trovato' });
         if (coupon.status !== 'active') return res.status(400).json({ error: 'Coupon non attivo' });
         
+        // Check if coupon has expired (expiry_date is for coupon redemption)
+        if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
+            return res.status(400).json({ error: 'Coupon scaduto' });
+        }
+        
         await dbConn.run('UPDATE coupons SET status = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?', 'redeemed', coupon.id);
         res.json({ ok: true, code: coupon.code, status: 'redeemed' });
     } catch (e) {
@@ -2296,6 +2330,12 @@ app.post('/t/:tenantSlug/api/coupons/:code/redeem', tenantLoader, async (req, re
         const coupon = await dbConn.get('SELECT * FROM coupons WHERE code = ? AND tenant_id = ?', req.params.code, req.tenant.id);
         if (!coupon) return res.status(404).json({ error: 'Non trovato' });
         if (coupon.status !== 'active') return res.status(400).json({ error: 'Coupon non attivo' });
+        
+        // Check if coupon has expired (expiry_date is for coupon redemption)
+        if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
+            return res.status(400).json({ error: 'Coupon scaduto' });
+        }
+        
         await dbConn.run('UPDATE coupons SET status = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?', 'redeemed', coupon.id);
         res.json({ ok: true, code: coupon.code, status: 'redeemed' });
     } catch (e) {
