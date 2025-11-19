@@ -209,7 +209,16 @@ const formSubmissionSchema = Joi.object({
     phone: phoneSchema,
     address: addressSchema,
     allergies: Joi.string().trim().max(500).allow('', null),
-    campaign_id: Joi.number().integer().positive().allow(null),
+    campaign_id: Joi.alternatives().try(
+        Joi.string().trim().max(50),
+        Joi.number().integer().positive()
+    ).allow('', null).custom((value, helpers) => {
+        // Convert number to string for consistency (campaign_id is used as campaign_code)
+        if (typeof value === 'number') {
+            return String(value);
+        }
+        return value;
+    }),
     form_token: Joi.string().trim().max(200).allow('', null),
     // Custom fields are validated dynamically based on campaign config
 }).unknown(true); // Allow custom fields
@@ -226,7 +235,8 @@ const campaignSchema = Joi.object({
     discount_type: discountTypeSchema,
     discount_value: discountValueSchema,
     form_config: Joi.string().allow('', null), // JSON string, validated separately
-    expiry_date: Joi.date().iso().allow(null),
+    expiry_date: Joi.date().iso().allow(null), // Scadenza per generazione coupon
+    coupon_expiry_date: Joi.date().iso().allow(null), // Scadenza per bruciatura coupon
     campaign_code: Joi.string().trim().max(50).allow('', null)
 });
 
